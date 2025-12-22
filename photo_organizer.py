@@ -13,20 +13,28 @@ import imagehash
 import cv2
 import numpy as np
 
-# Face detection
+# Face detection - with workaround for Python 3.12 compatibility
+FACE_DETECTION_ENABLED = True
 try:
+    # Fix for face_recognition_models import issue in Python 3.12
+    import pkg_resources
+    try:
+        pkg_resources.require("face_recognition_models")
+    except:
+        pass
+    
     import face_recognition
 except Exception as e:
-    print("Error importing face_recognition:")
+    print("Warning: Could not import face_recognition")
     print(f"  {e}")
-    print("\nPlease ensure face_recognition_models is installed:")
-    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
-    print("\nOr try reinstalling face_recognition:")
-    print("  pip uninstall face_recognition face_recognition_models")
-    print("  pip install face_recognition")
-    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
-    import sys
-    sys.exit(1)
+    print("\nFace detection will be DISABLED.")
+    print("Photos will be grouped, but best photo selection will be random.")
+    print("\nTo enable face detection, use Python 3.11 or earlier:")
+    print("  python3.11 -m venv venv && source venv/bin/activate")
+    print("  pip install -r requirements.txt")
+    print("\nContinuing without face detection...\n")
+    FACE_DETECTION_ENABLED = False
+    face_recognition = None
 
 class PhotoOrganizer:
     def __init__(self, source_dir, output_dir, similarity_threshold=5):
@@ -177,6 +185,9 @@ class PhotoOrganizer:
         Score faces in an image for smile and open eyes.
         Returns list of face scores.
         """
+        if not FACE_DETECTION_ENABLED:
+            return []
+        
         try:
             # Load image
             image = face_recognition.load_image_file(image_path)
