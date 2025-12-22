@@ -302,13 +302,39 @@ class PhotoOrganizer:
         print(f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}")
 
 
-# Example usage
-if __name__ == "__main__":
-    # Configuration
-    SOURCE_DIR = "/path/to/your/photo/album"
-    OUTPUT_DIR = "/path/to/organized/photos"
-    SIMILARITY_THRESHOLD = 5  # Lower = more strict similarity
+def main():
+    """Main entry point with argument parsing."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='Organize photo albums by grouping similar photos',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python photo_organizer.py -s ~/Photos -o ~/OrganizedPhotos
+  python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --verbose
+        """
+    )
+    
+    parser.add_argument('-s', '--source', required=True,
+                        help='Source directory containing photos')
+    parser.add_argument('-o', '--output', required=True,
+                        help='Output directory for organized photos')
+    parser.add_argument('-t', '--threshold', type=int, default=5,
+                        help='Similarity threshold (0-64, lower=stricter, default=5)')
+    parser.add_argument('--time-window', type=int, default=300,
+                        help='Time window in seconds for grouping (default=300)')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Enable verbose output')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would be done without actually organizing')
+    
+    args = parser.parse_args()
     
     # Create organizer and run
-    organizer = PhotoOrganizer(SOURCE_DIR, OUTPUT_DIR, SIMILARITY_THRESHOLD)
+    organizer = PhotoOrganizer(args.source, args.output, args.threshold)
     organizer.organize_photos()
+
+
+if __name__ == "__main__":
+    main()
