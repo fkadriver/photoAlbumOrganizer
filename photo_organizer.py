@@ -14,7 +14,19 @@ import cv2
 import numpy as np
 
 # Face detection
-import face_recognition
+try:
+    import face_recognition
+except Exception as e:
+    print("Error importing face_recognition:")
+    print(f"  {e}")
+    print("\nPlease ensure face_recognition_models is installed:")
+    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
+    print("\nOr try reinstalling face_recognition:")
+    print("  pip uninstall face_recognition face_recognition_models")
+    print("  pip install face_recognition")
+    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
+    import sys
+    sys.exit(1)
 
 class PhotoOrganizer:
     def __init__(self, source_dir, output_dir, similarity_threshold=5):
