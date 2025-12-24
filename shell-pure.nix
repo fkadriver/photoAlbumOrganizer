@@ -65,18 +65,43 @@ in pkgs.mkShell {
     echo "Python: $(python --version)"
     echo ""
     
-    # Check for face_recognition
-    if ! python -c "import face_recognition" 2>/dev/null; then
-      echo "⚠️  First time setup needed:"
-      echo "  pip install --user imagehash face_recognition"
-      echo "  pip install --user git+https://github.com/ageitgey/face_recognition_models"
+    # Run verification tests
+    echo "Running environment verification..."
+    echo ""
+    
+    MISSING_PACKAGES=()
+    
+    # Check NixOS-provided packages
+    python -c "import PIL" 2>/dev/null || MISSING_PACKAGES+=("Pillow (NixOS)")
+    python -c "import cv2" 2>/dev/null || MISSING_PACKAGES+=("opencv (NixOS)")
+    python -c "import numpy" 2>/dev/null || MISSING_PACKAGES+=("numpy (NixOS)")
+    python -c "import dlib" 2>/dev/null || MISSING_PACKAGES+=("dlib (NixOS)")
+    
+    # Check user-installed packages
+    python -c "import imagehash" 2>/dev/null || MISSING_PACKAGES+=("imagehash (pip)")
+    python -c "import face_recognition" 2>/dev/null || MISSING_PACKAGES+=("face_recognition (pip)")
+    
+    # Report results
+    if [ ''${#MISSING_PACKAGES[@]} -eq 0 ]; then
+      echo "✓ All packages installed and working!"
+      echo ""
+      echo "Ready to use:"
+      echo "  python photo_organizer.py -s ~/Photos -o ~/Organized"
       echo ""
     else
-      echo "✓ Ready to use!"
+      echo "⚠️  Missing packages:"
+      for pkg in "''${MISSING_PACKAGES[@]}"; do
+        echo "  - $pkg"
+      done
       echo ""
-      echo "Run: python photo_organizer.py -s ~/Photos -o ~/Organized"
-      echo ""
+      if [[ " ''${MISSING_PACKAGES[@]} " =~ "pip" ]]; then
+        echo "One-time setup - install missing packages:"
+        echo "  pip install --user imagehash face_recognition"
+        echo "  pip install --user git+https://github.com/ageitgey/face_recognition_models"
+        echo ""
+      fi
     fi
+    
     echo "================================================"
     echo ""
   '';
