@@ -60,6 +60,8 @@ python photo_organizer.py -s /path/to/photos -o /path/to/output
                          Higher values = more loose grouping
 --time-window SECONDS    Time window for grouping photos (default=300)
                          Photos within this window are grouped together
+--no-time-window         Disable time window check entirely
+                         Group by visual similarity only (ignores timestamps)
 --verbose                Enable verbose output
 --dry-run               Show what would be done without organizing
 ```
@@ -84,6 +86,16 @@ python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 600
 **Test run without making changes:**
 ```bash
 python photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
+```
+
+**Group only by visual similarity (ignore timestamps):**
+```bash
+python photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
+```
+
+**Custom time window (10 minutes instead of 5):**
+```bash
+python photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
 ```
 
 ## Output Structure

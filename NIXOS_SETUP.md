@@ -2,6 +2,66 @@
 
 This project provides both traditional `shell.nix` and modern `flake.nix` configurations for NixOS users.
 
+## Quick Setup with direnv (Recommended)
+
+For automatic environment activation when entering the project directory:
+
+### 1. Install direnv
+
+```bash
+# Add to your NixOS configuration.nix
+environment.systemPackages = with pkgs; [
+  direnv
+  nix-direnv
+];
+
+# Or install for current user
+nix-env -iA nixpkgs.direnv nixpkgs.nix-direnv
+```
+
+### 2. Configure direnv
+
+Add to your `~/.config/direnv/direnvrc` (or `~/.direnvrc`):
+
+```bash
+source $HOME/.nix-profile/share/nix-direnv/direnvrc
+```
+
+### 3. Hook direnv into your shell
+
+**For bash** (`~/.bashrc`):
+```bash
+eval "$(direnv hook bash)"
+```
+
+**For zsh** (`~/.zshrc`):
+```bash
+eval "$(direnv hook zsh)"
+```
+
+**For fish** (`~/.config/fish/config.fish`):
+```fish
+direnv hook fish | source
+```
+
+### 4. Enable in this project
+
+```bash
+# The .envrc file is already in the repo
+# Just allow it once
+direnv allow
+
+# Now every time you cd into this directory, the environment activates automatically!
+cd ~/photoAlbumOrganizer  # Environment loads automatically
+```
+
+### 5. Install Python dependencies (first time only)
+
+```bash
+pip install -r requirements.txt
+pip install git+https://github.com/ageitgey/face_recognition_models
+```
+
 ## Option 1: Using shell.nix (Traditional)
 
 ```bash
@@ -141,10 +201,27 @@ nix flake update
 
 ## Adding to .gitignore
 
-The `.gitignore` already includes `venv/`, but you may want to add:
+The `.gitignore` already includes `.direnv/` and `.envrc` is tracked in git, so you're all set!
 
-```
-# Nix
-result
-.direnv/
+## Benefits of direnv
+
+- ✅ **Automatic activation**: Environment loads when you `cd` into the project
+- ✅ **Automatic deactivation**: Unloads when you leave the directory
+- ✅ **Fast**: Caches the environment, much faster than `nix develop` each time
+- ✅ **Editor integration**: Works seamlessly with VSCode, Vim, Emacs, etc.
+
+## direnv Commands
+
+```bash
+# Allow .envrc in current directory (first time only)
+direnv allow
+
+# Reload environment (after changing .envrc or flake.nix)
+direnv reload
+
+# Disable for current session
+direnv deny
+
+# Check status
+direnv status
 ```

@@ -13,23 +13,31 @@ import imagehash
 import cv2
 import numpy as np
 
-# Face detection
+# Face detection - with workaround for Python 3.12 compatibility
+FACE_DETECTION_ENABLED = True
 try:
+    # Fix for face_recognition_models import issue in Python 3.12
+    import pkg_resources
+    try:
+        pkg_resources.require("face_recognition_models")
+    except:
+        pass
+    
     import face_recognition
 except Exception as e:
-    print("Error importing face_recognition:")
+    print("Warning: Could not import face_recognition")
     print(f"  {e}")
-    print("\nPlease ensure face_recognition_models is installed:")
-    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
-    print("\nOr try reinstalling face_recognition:")
-    print("  pip uninstall face_recognition face_recognition_models")
-    print("  pip install face_recognition")
-    print("  pip install git+https://github.com/ageitgey/face_recognition_models")
-    import sys
-    sys.exit(1)
+    print("\nFace detection will be DISABLED.")
+    print("Photos will be grouped, but best photo selection will be random.")
+    print("\nTo enable face detection, use Python 3.11 or earlier:")
+    print("  python3.11 -m venv venv && source venv/bin/activate")
+    print("  pip install -r requirements.txt")
+    print("\nContinuing without face detection...\n")
+    FACE_DETECTION_ENABLED = False
+    face_recognition = None
 
 class PhotoOrganizer:
-    def __init__(self, source_dir, output_dir, similarity_threshold=5):
+    def __init__(self, source_dir, output_dir, similarity_threshold=5, time_window=300, use_time_window=True):
         """
         Initialize the photo organizer.
         
@@ -37,10 +45,14 @@ class PhotoOrganizer:
             source_dir: Root directory containing photos
             output_dir: Directory where organized groups will be created
             similarity_threshold: Hamming distance threshold for image similarity (lower = more similar)
+            time_window: Time window in seconds for grouping photos (default: 300)
+            use_time_window: Whether to use time window for grouping (default: True)
         """
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)
         self.similarity_threshold = similarity_threshold
+        self.time_window = time_window
+        self.use_time_window = use_time_window
         self.output_dir.mkdir(exist_ok=True)
         
         # Supported formats
@@ -154,15 +166,19 @@ class PhotoOrganizer:
                 hash_diff = data1['hash'] - data2['hash']
                 
                 if hash_diff <= self.similarity_threshold:
-                    # Additional temporal check if both have datetime
-                    if data1['datetime'] and data2['datetime']:
+                    # Additional temporal check if enabled and both have datetime
+                    if self.use_time_window and data1['datetime'] and data2['datetime']:
                         time_diff = abs((data1['datetime'] - data2['datetime']).total_seconds())
-                        # If within 5 minutes, consider it part of burst
-                        if time_diff <= 300:
+                        # If within time window, consider it part of burst
+                        if time_diff <= self.time_window:
                             group.append(data2)
                             used.add(j)
-                    else:
-                        # If no datetime, rely on hash alone
+                    elif not self.use_time_window:
+                        # If time window disabled, rely on hash alone
+                        group.append(data2)
+                        used.add(j)
+                    elif not data1['datetime'] or not data2['datetime']:
+                        # If no datetime available, rely on hash alone
                         group.append(data2)
                         used.add(j)
             
@@ -177,6 +193,9 @@ class PhotoOrganizer:
         Score faces in an image for smile and open eyes.
         Returns list of face scores.
         """
+        if not FACE_DETECTION_ENABLED:
+            return []
+        
         try:
             # Load image
             image = face_recognition.load_image_file(image_path)
@@ -336,6 +355,8 @@ Examples:
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
                         help='Time window in seconds for grouping (default=300)')
+    parser.add_argument('--no-time-window', action='store_true',
+                        help='Disable time window check, group by visual similarity only')
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose output')
     parser.add_argument('--dry-run', action='store_true',
@@ -344,7 +365,13 @@ Examples:
     args = parser.parse_args()
     
     # Create organizer and run
-    organizer = PhotoOrganizer(args.source, args.output, args.threshold)
+    organizer = PhotoOrganizer(
+        args.source, 
+        args.output, 
+        args.threshold,
+        args.time_window,
+        use_time_window=not args.no_time_window
+    )
     organizer.organize_photos()
 
 
