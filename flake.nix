@@ -1,5 +1,5 @@
 {
-  description = "Photo Album Organizer - Development Environment";
+  description = "Photo Album Organizer - Pure NixOS Development Environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -11,82 +11,121 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         python = pkgs.python311;
-        pythonPackages = python.pkgs;
+        
+        # Custom Python environment with all dependencies
+        pythonEnv = python.withPackages (ps: with ps; [
+          # Image processing
+          pillow
+          opencv4
+          numpy
+          scipy
+          pywavelets
+          
+          # Face recognition (if available in nixpkgs)
+          # Note: face_recognition may need manual installation
+          dlib
+          
+          # Utilities
+          click
+          
+          # Development tools
+          pip
+          setuptools
+          wheel
+        ]);
+        
+        # Face recognition needs to be installed via pip as it's not in nixpkgs
+        faceRecognitionSetup = pkgs.writeShellScriptBin "setup-face-recognition" ''
+          echo "Installing face_recognition packages..."
+          ${pythonEnv}/bin/pip install --user imagehash face_recognition
+          ${pythonEnv}/bin/pip install --user git+https://github.com/ageitgey/face_recognition_models
+          echo "✓ Face recognition packages installed!"
+        '';
+        
       in
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            # Python 3.11
-            python
-            pythonPackages.pip
-            pythonPackages.virtualenv
+          buildInputs = [
+            pythonEnv
+            faceRecognitionSetup
             
-            # Build tools
-            cmake
-            gcc
-            gnumake
-            pkg-config
+            # System libraries needed by OpenCV and other packages
+            pkgs.libGL
+            pkgs.glib
+            pkgs.libz
+            pkgs.stdenv.cc.cc.lib
             
-            # Image processing libraries
-            libpng
-            libjpeg
-            libwebp
+            # Build tools (in case pip needs to compile anything)
+            pkgs.cmake
+            pkgs.gcc
+            pkgs.gnumake
+            pkgs.pkg-config
             
-            # X11 for dlib GUI support
-            xorg.libX11
-            xorg.libXext
+            # Image libraries
+            pkgs.libpng
+            pkgs.libjpeg
+            pkgs.libwebp
             
-            # BLAS/LAPACK for optimized operations
-            openblas
-            lapack
+            # X11 support
+            pkgs.xorg.libX11
+            pkgs.xorg.libXext
             
-            # OpenCV
-            opencv4
+            # BLAS/LAPACK
+            pkgs.openblas
+            pkgs.lapack
           ];
 
           shellHook = ''
-            # Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+            # Set library paths
+            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
             
-            # Create virtual environment if it doesn't exist
-            if [ ! -d "venv" ]; then
-              echo "Creating Python virtual environment with Python ${python.version}..."
-              ${python}/bin/python -m venv venv
-            fi
-            
-            source venv/bin/activate
-            
-            # Upgrade pip
-            pip install --upgrade pip setuptools wheel
+            # Set up Python path for user packages
+            export PYTHONPATH="$HOME/.local/lib/python${python.pythonVersion}/site-packages:$PYTHONPATH"
             
             echo ""
             echo "╔════════════════════════════════════════════════╗"
-            echo "║   Photo Album Organizer - Dev Environment     ║"
+            echo "║   Photo Album Organizer - Pure NixOS Setup    ║"
             echo "╚════════════════════════════════════════════════╝"
             echo ""
             echo "  Python: $(python --version)"
-            echo "  Virtual env: $(which python)"
-            echo ""
-            echo "Quick Start:"
-            echo "  1. Install dependencies:"
-            echo "     pip install -r requirements.txt"
-            echo "     pip install git+https://github.com/ageitgey/face_recognition_models"
-            echo ""
-            echo "  2. Run the organizer:"
-            echo "     python photo_organizer.py -s <source> -o <output>"
-            echo ""
-            echo "  3. Run tests:"
-            echo "     python -c 'import face_recognition; print(\"✓ Face recognition working!\")"
+            echo "  Using: NixOS-managed Python packages"
             echo ""
             
-            # Set environment variables for compilation
-            export OPENBLAS_NUM_THREADS=1
-            export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
-            export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:$PKG_CONFIG_PATH"
-            
-            # Prevent Python from writing bytecode
-            export PYTHONDONTWRITEBYTECODE=1
+            # Check if face_recognition is installed
+            if ! python -c "import face_recognition" 2>/dev/null; then
+              echo "⚠️  face_recognition not yet installed"
+              echo ""
+              echo "Run this once to install face_recognition:"
+              echo "  setup-face-recognition"
+              echo ""
+            else
+              echo "✓ All packages ready!"
+              echo ""
+              echo "Run the organizer:"
+              echo "  python photo_organizer.py -s <source> -o <output>"
+              echo ""
+            fi
           '';
+        };
+        
+        # Create a package for the photo organizer
+        packages.default = pkgs.python311Packages.buildPythonApplication {
+          pname = "photo-organizer";
+          version = "0.1.0";
+          src = ./.;
+          
+          propagatedBuildInputs = with pkgs.python311Packages; [
+            pillow
+            opencv4
+            numpy
+            scipy
+            pywavelets
+            dlib
+            click
+          ];
+          
+          # Skip tests for now
+          doCheck = false;
         };
       }
     );
