@@ -33,6 +33,9 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
+    # Set library paths for NixOS
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+    
     # Create and activate virtual environment if it doesn't exist
     if [ ! -d "venv" ]; then
       echo "Creating Python virtual environment..."
