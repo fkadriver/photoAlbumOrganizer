@@ -96,8 +96,8 @@ in pkgs.mkShell {
       echo ""
       if [[ " ''${MISSING_PACKAGES[@]} " =~ "pip" ]]; then
         echo "One-time setup - install missing packages:"
-        echo "  pip install --user imagehash face_recognition"
-        echo "  pip install --user git+https://github.com/ageitgey/face_recognition_models"
+        echo "  pip install imagehash face_recognition"
+        echo "  pip install git+https://github.com/ageitgey/face_recognition_models"
         echo ""
       fi
     fi
