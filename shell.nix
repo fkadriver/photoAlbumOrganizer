@@ -1,108 +1,89 @@
 { pkgs ? import <nixpkgs> {} }:
 
-let
-  python = pkgs.python311;
-  
-  # Python environment with NixOS packages
-  pythonEnv = python.withPackages (ps: with ps; [
-    # Image processing
-    pillow
+pkgs.mkShell {
+  buildInputs = with pkgs; [
+    # Python 3.11
+    python311
+    python311Packages.pip
+    python311Packages.virtualenv
+    
+    # System dependencies for dlib compilation
+    cmake
+    gcc
+    gnumake
+    
+    # System libraries for OpenCV
+    libGL
+    glib
+    zlib
+    stdenv.cc.cc.lib
+    
+    # Image processing libraries
+    libpng
+    libjpeg
+    libwebp
+    
+    # X11 for dlib GUI support (optional but suppresses warnings)
+    xorg.libX11
+    xorg.libXext
+    
+    # BLAS/LAPACK for optimized matrix operations
+    openblas
+    lapack
+    
+    # OpenCV dependencies
     opencv4
-    numpy
-    scipy
-    pywavelets
-    
-    # Face recognition dependencies
-    dlib
-    click
-    
-    # Development tools
-    pip
-    setuptools
-    wheel
-  ]);
-  
-in pkgs.mkShell {
-  buildInputs = [
-    pythonEnv
-    
-    # System libraries
-    pkgs.libGL
-    pkgs.glib
-    pkgs.zlib
-    pkgs.stdenv.cc.cc.lib
-    
-    # Build tools
-    pkgs.cmake
-    pkgs.gcc
-    pkgs.gnumake
-    
-    # Image libraries
-    pkgs.libpng
-    pkgs.libjpeg
-    pkgs.libwebp
-    
-    # X11
-    pkgs.xorg.libX11
-    pkgs.xorg.libXext
-    
-    # BLAS/LAPACK
-    pkgs.openblas
-    pkgs.lapack
   ];
 
   shellHook = ''
-    # Set library paths for OpenCV and other binary packages
+    # CRITICAL: Set library paths for NixOS
     export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
     
-    # Python user packages location
-    export PYTHONPATH="$HOME/.local/lib/python${python.pythonVersion}/site-packages:$PYTHONPATH"
+    # Create and activate virtual environment if it doesn't exist
+    if [ ! -d "venv" ]; then
+      echo "Creating Python virtual environment..."
+      python3.11 -m venv venv
+    fi
+    
+    source venv/bin/activate
+    
+    # Upgrade pip
+    pip install --upgrade pip 2>/dev/null
     
     echo ""
     echo "================================================"
-    echo "Photo Album Organizer - Pure NixOS Environment"
+    echo "Photo Album Organizer Development Environment"
     echo "================================================"
     echo "Python: $(python --version)"
     echo ""
     
-    # Run verification tests
-    echo "Running environment verification..."
-    echo ""
-    
+    # Check packages
+    echo "Checking packages..."
     MISSING_PACKAGES=()
     
-    # Check NixOS-provided packages
-    python -c "import PIL" 2>/dev/null || MISSING_PACKAGES+=("Pillow (NixOS)")
-    python -c "import cv2" 2>/dev/null || MISSING_PACKAGES+=("opencv (NixOS)")
-    python -c "import numpy" 2>/dev/null || MISSING_PACKAGES+=("numpy (NixOS)")
-    python -c "import dlib" 2>/dev/null || MISSING_PACKAGES+=("dlib (NixOS)")
+    python -c "import PIL" 2>/dev/null || MISSING_PACKAGES+=("Pillow")
+    python -c "import imagehash" 2>/dev/null || MISSING_PACKAGES+=("imagehash")
+    python -c "import cv2" 2>/dev/null || MISSING_PACKAGES+=("opencv-python")
+    python -c "import numpy" 2>/dev/null || MISSING_PACKAGES+=("numpy")
+    python -c "import face_recognition" 2>/dev/null || MISSING_PACKAGES+=("face_recognition")
     
-    # Check user-installed packages
-    python -c "import imagehash" 2>/dev/null || MISSING_PACKAGES+=("imagehash (pip)")
-    python -c "import face_recognition" 2>/dev/null || MISSING_PACKAGES+=("face_recognition (pip)")
-    
-    # Report results
     if [ ''${#MISSING_PACKAGES[@]} -eq 0 ]; then
-      echo "✓ All packages installed and working!"
-      echo ""
-      echo "Ready to use:"
-      echo "  python photo_organizer.py -s ~/Photos -o ~/Organized"
+      echo "✓ All packages ready!"
       echo ""
     else
-      echo "⚠️  Missing packages:"
-      for pkg in "''${MISSING_PACKAGES[@]}"; do
-        echo "  - $pkg"
-      done
+      echo "⚠️  Missing: ''${MISSING_PACKAGES[@]}"
       echo ""
-      if [[ " ''${MISSING_PACKAGES[@]} " =~ "pip" ]]; then
-        echo "One-time setup - install missing packages:"
-        echo "  pip install --user imagehash face_recognition"
-        echo "  pip install --user git+https://github.com/ageitgey/face_recognition_models"
-        echo ""
-      fi
+      echo "Install: pip install -r requirements.txt"
+      echo "         pip install git+https://github.com/ageitgey/face_recognition_models"
+      echo ""
     fi
     
     echo "================================================"
     echo ""
+    
+    # Set environment variables for dlib compilation
+    export OPENBLAS_NUM_THREADS=1
+    export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
+    export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:$PKG_CONFIG_PATH"
   '';
 }
