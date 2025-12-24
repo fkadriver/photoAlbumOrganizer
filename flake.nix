@@ -37,8 +37,8 @@
         # Face recognition needs to be installed via pip as it's not in nixpkgs
         faceRecognitionSetup = pkgs.writeShellScriptBin "setup-face-recognition" ''
           echo "Installing face_recognition packages..."
-          ${pythonEnv}/bin/pip install --user imagehash face_recognition
-          ${pythonEnv}/bin/pip install --user git+https://github.com/ageitgey/face_recognition_models
+          ${pythonEnv}/bin/pip install imagehash face_recognition
+          ${pythonEnv}/bin/pip install git+https://github.com/ageitgey/face_recognition_models
           echo "✓ Face recognition packages installed!"
         '';
         
