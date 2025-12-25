@@ -15,6 +15,7 @@ pkgs.mkShell {
     # System libraries for OpenCV
     libGL
     glib
+    glib.out
     zlib
     stdenv.cc.cc.lib
     
@@ -37,7 +38,12 @@ pkgs.mkShell {
 
   shellHook = ''
     # CRITICAL: Set library paths for NixOS
-    export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+    
+    # Fix BLAS/LAPACK warnings
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export MKL_NUM_THREADS=1
     
     # Create and activate virtual environment if it doesn't exist
     if [ ! -d "venv" ]; then

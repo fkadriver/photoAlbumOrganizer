@@ -30,6 +30,7 @@
             # System libraries for OpenCV and binary packages
             libGL
             glib
+            glib.out  # Provides libgthread-2.0.so.0
             zlib
             stdenv.cc.cc.lib
             
@@ -52,7 +53,14 @@
 
           shellHook = ''
             # CRITICAL: Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+            
+            # Fix BLAS/LAPACK warnings by using single-threaded mode
+            export OMP_NUM_THREADS=1
+            export OPENBLAS_NUM_THREADS=1
+            export MKL_NUM_THREADS=1
+            export VECLIB_MAXIMUM_THREADS=1
+            export NUMEXPR_NUM_THREADS=1
             
             # Create virtual environment if it doesn't exist
             if [ ! -d "venv" ]; then
