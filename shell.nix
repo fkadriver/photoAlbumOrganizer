@@ -11,6 +11,7 @@ pkgs.mkShell {
     cmake
     gcc
     gnumake
+    pkg-config
     
     # System libraries for OpenCV
     libGL
@@ -88,7 +89,6 @@ pkgs.mkShell {
     echo ""
     
     # Set environment variables for dlib compilation
-    export OPENBLAS_NUM_THREADS=1
     export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
     export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:$PKG_CONFIG_PATH"
   '';

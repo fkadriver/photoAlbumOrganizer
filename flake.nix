@@ -112,7 +112,6 @@
             fi
             
             # Set environment variables
-            export OPENBLAS_NUM_THREADS=1
             export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
             export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:$PKG_CONFIG_PATH"
             export PYTHONDONTWRITEBYTECODE=1
