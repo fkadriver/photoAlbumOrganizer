@@ -101,9 +101,34 @@ class ImmichClient:
             True if connection successful
         """
         try:
-            response = self._get('/api/server-info/ping')
-            data = response.json()
-            return data.get('res') == 'pong'
+            # Try the newer endpoint first (v1.118+)
+            try:
+                response = self._get('/api/server/ping')
+                data = response.json()
+                if data.get('res') == 'pong':
+                    return True
+            except:
+                pass
+
+            # Try older endpoint
+            try:
+                response = self._get('/api/server-info/ping')
+                data = response.json()
+                if data.get('res') == 'pong':
+                    return True
+            except:
+                pass
+
+            # Try getting server version as fallback
+            try:
+                response = self._get('/api/server-info/version')
+                # If we get a successful response with version info, server is up
+                if response.status_code == 200:
+                    return True
+            except:
+                pass
+
+            return False
         except Exception as e:
             print(f"Failed to ping Immich server: {e}")
             return False
