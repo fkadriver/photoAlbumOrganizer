@@ -128,6 +128,10 @@ case "$MODE" in
             echo ""
         fi
 
+        # Export variables so Python subprocess can access them
+        export IMMICH_URL
+        export IMMICH_API_KEY
+
         python -c "
 from immich_client import ImmichClient
 import os
