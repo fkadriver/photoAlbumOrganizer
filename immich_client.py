@@ -144,19 +144,50 @@ class ImmichClient:
             List of ImmichAsset objects
         """
         try:
-            # Get all assets using search endpoint
-            response = self._post('/api/search/metadata', json={
-                'isArchived': False if skip_archived else None
-            })
-            data = response.json()
-
             assets = []
-            if 'assets' in data and 'items' in data['assets']:
-                for item in data['assets']['items']:
+            page = 1
+            page_size = 1000  # Request 1000 items per page
+            total_fetched = 0
+
+            while True:
+                # Get assets using search endpoint with pagination
+                response = self._post('/api/search/metadata', json={
+                    'isArchived': False if skip_archived else None,
+                    'page': page,
+                    'size': page_size
+                })
+                data = response.json()
+
+                # Check if we got any assets
+                items = []
+                if 'assets' in data and 'items' in data['assets']:
+                    items = data['assets']['items']
+                elif 'items' in data:
+                    # Some versions might return items directly
+                    items = data['items']
+
+                if not items:
+                    # No more items, we're done
+                    break
+
+                # Filter and add images only
+                images_this_page = 0
+                for item in items:
                     # Only include images, skip videos
                     if item.get('type') == 'IMAGE':
                         assets.append(ImmichAsset(item))
+                        images_this_page += 1
 
+                total_fetched += len(items)
+                print(f"Fetched page {page}: {len(items)} items ({images_this_page} images, {total_fetched} total assets)")
+
+                # If we got fewer items than requested, we've reached the end
+                if len(items) < page_size:
+                    break
+
+                page += 1
+
+            print(f"Total assets fetched: {len(assets)} images out of {total_fetched} total assets")
             return assets
 
         except Exception as e:
