@@ -53,7 +53,7 @@
 
           shellHook = ''
             # CRITICAL: Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
             # Fix BLAS/LAPACK warnings by using single-threaded mode
             export OMP_NUM_THREADS=1
@@ -64,7 +64,7 @@
 
             # Set build environment variables
             export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
-            export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:$PKG_CONFIG_PATH"
+            export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
             export PYTHONDONTWRITEBYTECODE=1
 
             # Create virtual environment if it doesn't exist
