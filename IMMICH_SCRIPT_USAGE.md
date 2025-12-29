@@ -1,0 +1,293 @@
+# immich.sh Usage Guide
+
+The [immich.sh](immich.sh) script is a convenient wrapper for running the photo organizer with your Immich instance.
+
+## Quick Start
+
+The script is now configured with your Immich URL and API key is stored securely.
+
+### Test Connection
+
+```bash
+./immich.sh test
+```
+
+### Tag Duplicates (Recommended First Step)
+
+```bash
+./immich.sh tag-only
+# or just:
+./immich.sh
+```
+
+This tags similar photos in Immich with "photo-organizer-duplicate" - you can review and delete them in the Immich web UI.
+
+### Create Albums
+
+```bash
+./immich.sh create-albums
+```
+
+This creates albums "Organized-0001", "Organized-0002", etc. with similar photos grouped together and marks the best photo in each group as a favorite.
+
+### Download and Organize Locally
+
+```bash
+./immich.sh download ~/Photos/Organized
+```
+
+Downloads photos from Immich and creates local organized folders.
+
+## All Modes
+
+### Basic Modes
+
+```bash
+# Tag duplicates (default, safest)
+./immich.sh tag-only
+./immich.sh tag
+
+# Create albums from groups
+./immich.sh create-albums
+./immich.sh albums
+
+# Download and organize locally
+./immich.sh download [OUTPUT_DIR]
+
+# Test connection
+./immich.sh test
+
+# Show help
+./immich.sh help
+```
+
+### Process Specific Album
+
+```bash
+# Tag duplicates in specific album
+./immich.sh album "Vacation 2024" tag
+
+# Create sub-albums from album
+./immich.sh album "Vacation 2024" create-albums
+
+# Download specific album
+./immich.sh album "Vacation 2024" download ~/Photos/Vacation2024
+```
+
+## Configuration
+
+### API Key Storage
+
+Your API key is stored securely in:
+```
+~/.config/photo-organizer/immich.conf
+```
+
+**Security:**
+- File permissions: 600 (owner read/write only)
+- Not committed to git
+- Can also use environment variable: `export IMMICH_API_KEY="your-key"`
+
+### Change Immich URL
+
+Edit line 12 in [immich.sh](immich.sh):
+```bash
+IMMICH_URL="${IMMICH_URL:-https://your-immich-url.ts.net}"
+```
+
+Or set environment variable:
+```bash
+export IMMICH_URL="https://your-immich-url.ts.net"
+./immich.sh tag-only
+```
+
+### Adjust Similarity Threshold
+
+Edit line 46 in [immich.sh](immich.sh):
+```bash
+--threshold 5    # Change to 3 (stricter) or 8 (looser)
+```
+
+**Threshold guide:**
+- 3: Very strict (only near-duplicates)
+- 5: Default (burst photos)
+- 8: Looser (similar compositions)
+
+## Examples
+
+### Safe First Run
+
+```bash
+# 1. Test connection
+./immich.sh test
+
+# 2. Tag duplicates to review
+./immich.sh tag-only
+
+# 3. Review in Immich web UI
+#    - Search for tag "photo-organizer-duplicate"
+#    - Manually delete unwanted photos
+
+# 4. If satisfied, create albums
+./immich.sh create-albums
+```
+
+### Process Family Photos Album
+
+```bash
+# Create organized albums from "Family Photos 2024"
+./immich.sh album "Family Photos 2024" create-albums
+
+# Result: Creates "Organized-0001", "Organized-0002", etc.
+# with best photos marked as favorites
+```
+
+### Batch Processing
+
+```bash
+# Process multiple albums
+for album in "2020" "2021" "2022" "2023" "2024"; do
+    echo "Processing $album..."
+    ./immich.sh album "$album" create-albums
+done
+```
+
+### Download to Local Archive
+
+```bash
+# Download entire library organized
+./immich.sh download ~/Archive/Immich/$(date +%Y-%m-%d)
+
+# Download specific album
+./immich.sh album "Best Photos" download ~/Archive/BestPhotos
+```
+
+## Workflow Recommendations
+
+### Workflow 1: Tag and Review
+
+```bash
+./immich.sh tag-only
+# Review in Immich web UI
+# Delete unwanted duplicates
+# Done!
+```
+
+### Workflow 2: Organized Albums
+
+```bash
+./immich.sh create-albums
+# Review created albums in Immich
+# Delete unwanted photos from each album
+# Keep albums or merge as needed
+```
+
+### Workflow 3: Local Backup
+
+```bash
+./immich.sh download ~/Backups/Immich-Organized
+# Review local folders
+# Best photos already separated
+# Can upload back to Immich if needed
+```
+
+## Troubleshooting
+
+### API Key Not Found
+
+```bash
+# Check if config exists
+cat ~/.config/photo-organizer/immich.conf
+
+# Recreate if needed
+echo 'IMMICH_API_KEY="your-key-here"' > ~/.config/photo-organizer/immich.conf
+chmod 600 ~/.config/photo-organizer/immich.conf
+```
+
+### Connection Failed
+
+```bash
+# Test connection
+./immich.sh test
+
+# Check URL is correct
+echo $IMMICH_URL
+
+# Try with curl
+curl -H "x-api-key: YOUR_KEY" https://immich.warthog-royal.ts.net/api/server-info/version
+```
+
+### Script Not Executable
+
+```bash
+chmod +x immich.sh
+```
+
+### Wrong Python Command
+
+The script uses `python` - if your system uses `python3`, edit line 54, 60, 70, etc.:
+```bash
+python3 photo_organizer.py ...
+```
+
+## Advanced Usage
+
+### Custom Threshold Per Run
+
+Edit the script temporarily or create a copy:
+```bash
+cp immich.sh immich-strict.sh
+# Edit immich-strict.sh line 46: --threshold 3
+./immich-strict.sh tag-only
+```
+
+### Process Only Recent Photos
+
+The script processes all photos by default. To filter by date, you'd need to:
+1. Create an album in Immich with recent photos
+2. Use: `./immich.sh album "Recent" tag-only`
+
+### Dry Run
+
+There's no built-in dry run, but you can:
+1. Create a test album with a few photos
+2. Run: `./immich.sh album "Test" tag-only`
+3. Verify results before processing entire library
+
+## Script Maintenance
+
+### Update Immich URL
+
+```bash
+# Edit line 12 in immich.sh
+IMMICH_URL="${IMMICH_URL:-https://new-url.ts.net}"
+```
+
+### Update API Key
+
+```bash
+# Update config file
+echo 'IMMICH_API_KEY="new-key"' > ~/.config/photo-organizer/immich.conf
+chmod 600 ~/.config/photo-organizer/immich.conf
+```
+
+### Add New Mode
+
+Edit the `case "$MODE" in` section (line 50) in [immich.sh](immich.sh) to add custom modes.
+
+## See Also
+
+- [IMMICH_USAGE.md](IMMICH_USAGE.md) - Detailed Immich integration guide
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [README.md](README.md) - Main project documentation
+
+## Summary
+
+The [immich.sh](immich.sh) script makes it easy to use the photo organizer with Immich:
+
+✅ **Secure** - API key stored in protected config file
+✅ **Simple** - Easy commands for common tasks
+✅ **Flexible** - Multiple modes and options
+✅ **Safe** - Default mode (tag-only) doesn't modify photos
+
+Start with: `./immich.sh test` then `./immich.sh tag-only`
