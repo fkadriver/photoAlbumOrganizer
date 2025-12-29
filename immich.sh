@@ -11,6 +11,7 @@ set -euo pipefail
 # Configuration
 IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
+IGNORE_TIMESTAMP="${IGNORE_TIMESTAMP:-0}"  # Set to 1 to disable time window check
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -45,6 +46,11 @@ COMMON_ARGS=(
     --immich-api-key "$IMMICH_API_KEY"
     --threshold 5
 )
+
+# Add --no-time-window flag if IGNORE_TIMESTAMP is set
+if [ "$IGNORE_TIMESTAMP" = "1" ]; then
+    COMMON_ARGS+=(--no-time-window)
+fi
 
 # Run based on mode
 case "$MODE" in
@@ -156,6 +162,12 @@ CONFIGURATION:
 
   URL: $IMMICH_URL
   API Key: ${IMMICH_API_KEY:0:10}...
+
+OPTIONS:
+  IGNORE_TIMESTAMP=1    Disable time window check, group by visual similarity only
+                        (default: groups photos taken within 5 minutes)
+
+  Example: IGNORE_TIMESTAMP=1 $0 tag-only
 
 THRESHOLD:
   Default: 5 (burst photos)
