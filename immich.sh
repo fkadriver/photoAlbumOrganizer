@@ -115,6 +115,39 @@ case "$MODE" in
         esac
         ;;
 
+    cleanup|clean)
+        PREFIX="${2:-Organized-}"
+        DRY_RUN="${3:-yes}"
+
+        echo "🗑️  Cleaning up albums with prefix: $PREFIX"
+        echo ""
+
+        if [ "$DRY_RUN" = "yes" ]; then
+            echo "DRY RUN MODE - No albums will be deleted"
+            echo "To actually delete, run: $0 cleanup '$PREFIX' no"
+            echo ""
+        fi
+
+        python -c "
+from immich_client import ImmichClient
+import os
+
+url = os.environ.get('IMMICH_URL', 'https://immich.warthog-royal.ts.net')
+api_key = os.environ.get('IMMICH_API_KEY')
+
+if not api_key:
+    print('Error: IMMICH_API_KEY not set')
+    exit(1)
+
+client = ImmichClient(url, api_key)
+dry_run = '$DRY_RUN' == 'yes'
+matched, deleted = client.delete_albums_by_prefix('$PREFIX', dry_run=dry_run)
+
+if not dry_run and deleted > 0:
+    print(f'\n✓ Successfully cleaned up {deleted} album(s)')
+"
+        ;;
+
     test)
         echo "🧪 Testing connection to Immich..."
         echo ""
@@ -132,6 +165,7 @@ MODES:
   albums, create-albums  Create albums for similar photo groups
   download [OUTPUT_DIR]  Download and organize photos locally
   album NAME [MODE]      Process specific album
+  cleanup [PREFIX] [yes|no]  Delete albums by prefix (default: "Organized-", dry-run: yes)
   test                   Test Immich connection
   help                   Show this help message
 
@@ -152,6 +186,15 @@ EXAMPLES:
 
   # Process specific album
   $0 album "Vacation 2024" create-albums
+
+  # Clean up created albums (dry run first)
+  $0 cleanup
+
+  # Actually delete albums with "Organized-" prefix
+  $0 cleanup "Organized-" no
+
+  # Delete albums with custom prefix
+  $0 cleanup "MyPrefix-" no
 
   # Test connection
   $0 test

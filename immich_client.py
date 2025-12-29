@@ -93,6 +93,13 @@ class ImmichClient:
         response.raise_for_status()
         return response
 
+    def _delete(self, endpoint: str, **kwargs) -> requests.Response:
+        """Make DELETE request to Immich API."""
+        url = f"{self.url}{endpoint}"
+        response = self.session.delete(url, **kwargs)
+        response.raise_for_status()
+        return response
+
     def ping(self) -> bool:
         """
         Test connection to Immich server.
@@ -383,3 +390,75 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to add assets to album: {e}")
             return False
+
+    def delete_album(self, album_id: str) -> bool:
+        """
+        Delete an album.
+
+        Args:
+            album_id: Album ID to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            self._delete(f'/api/albums/{album_id}')
+            return True
+        except Exception as e:
+            print(f"Failed to delete album {album_id}: {e}")
+            return False
+
+    def delete_albums_by_prefix(self, prefix: str, dry_run: bool = True) -> tuple[int, int]:
+        """
+        Delete all albums with a specific name prefix.
+
+        Args:
+            prefix: Album name prefix to match (e.g., "Organized-")
+            dry_run: If True, only show what would be deleted without actually deleting
+
+        Returns:
+            Tuple of (matched_count, deleted_count)
+        """
+        try:
+            albums = self.get_albums()
+            matched_albums = [
+                album for album in albums
+                if album.get('albumName', '').startswith(prefix)
+            ]
+
+            matched_count = len(matched_albums)
+            deleted_count = 0
+
+            if matched_count == 0:
+                print(f"No albums found with prefix '{prefix}'")
+                return (0, 0)
+
+            print(f"\nFound {matched_count} album(s) with prefix '{prefix}':")
+            for album in matched_albums:
+                album_name = album.get('albumName', 'Unknown')
+                album_id = album.get('id', 'Unknown')
+                asset_count = album.get('assetCount', 0)
+                print(f"  - {album_name} (ID: {album_id}, {asset_count} assets)")
+
+            if dry_run:
+                print(f"\nDRY RUN: Would delete {matched_count} album(s)")
+                print("Run with dry_run=False to actually delete these albums")
+                return (matched_count, 0)
+
+            print(f"\nDeleting {matched_count} album(s)...")
+            for album in matched_albums:
+                album_name = album.get('albumName', 'Unknown')
+                album_id = album.get('id')
+                if album_id:
+                    if self.delete_album(album_id):
+                        deleted_count += 1
+                        print(f"  ✓ Deleted: {album_name}")
+                    else:
+                        print(f"  ✗ Failed to delete: {album_name}")
+
+            print(f"\nDeleted {deleted_count} of {matched_count} album(s)")
+            return (matched_count, deleted_count)
+
+        except Exception as e:
+            print(f"Failed to delete albums by prefix: {e}")
+            return (0, 0)

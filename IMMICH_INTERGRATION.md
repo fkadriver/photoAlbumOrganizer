@@ -45,6 +45,10 @@ The Photo Organizer requires different permissions depending on the mode you're 
 - ✅ `album.create` - Create new albums
 - ✅ `albumAsset.create` (or `album.update`) - Add assets to albums
 
+**For cleanup mode (delete albums):**
+- ✅ `album.read` - List albums to find matches
+- ✅ `album.delete` - Delete albums by prefix
+
 **For download mode:**
 - ✅ `asset.read` - Read asset metadata
 - ✅ `asset.download` - Download full resolution images
@@ -58,7 +62,7 @@ The Photo Organizer requires different permissions depending on the mode you're 
 Enable these permissions when creating your API key:
 - Server: `server.about`, `server.statistics`
 - Asset: `asset.read`, `asset.update`, `asset.download`
-- Album: `album.read`, `album.create`, `albumAsset.create`
+- Album: `album.read`, `album.create`, `album.delete`, `albumAsset.create`
 
 2. **Configure Environment**:
 ```bash
@@ -218,6 +222,7 @@ python photo_organizer.py --source-type immich \
 | `/api/albums` | GET | List albums | ✅ |
 | `/api/albums` | POST | Create album | ✅ |
 | `/api/albums/{id}` | GET | Get album details | ✅ |
+| `/api/albums/{id}` | DELETE | Delete album | ✅ |
 | `/api/albums/{id}/assets` | PUT | Add assets to album | ✅ |
 
 ## Performance Considerations
