@@ -27,6 +27,39 @@ Integration with [Immich](https://immich.app/) - the self-hosted photo and video
    - Create a new API key
    - Copy the key
 
+#### Required API Key Permissions
+
+The Photo Organizer requires different permissions depending on the mode you're using:
+
+**Server Permissions:**
+- ✅ `server.about` or `server.statistics` - For connection testing and server info
+
+**For tag-only mode (minimum):**
+- ✅ `asset.read` - Read asset metadata, search assets, get thumbnails
+- ✅ `asset.update` - Update tags on assets
+
+**For create-albums mode:**
+- ✅ `asset.read` - Read asset metadata
+- ✅ `asset.update` - Mark assets as favorites
+- ✅ `album.read` - List and read album information
+- ✅ `album.create` - Create new albums
+- ✅ `albumAsset.create` (or `album.update`) - Add assets to albums
+
+**For download mode:**
+- ✅ `asset.read` - Read asset metadata
+- ✅ `asset.download` - Download full resolution images
+
+**Permissions NOT needed:**
+- ❌ `server.versionCheck`, `server.apkLinks`, `server.storage` - Not used
+
+**Note:** If you're running Immich version before v1.138.0, you may need to enable the **"all"** permission for the API key, as granular permissions were added in later versions.
+
+**Recommended setup for full functionality:**
+Enable these permissions when creating your API key:
+- Server: `server.about`, `server.statistics`
+- Asset: `asset.read`, `asset.update`, `asset.download`
+- Album: `album.read`, `album.create`, `albumAsset.create`
+
 2. **Configure Environment**:
 ```bash
 # Add to .envrc or export manually
