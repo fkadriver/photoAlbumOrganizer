@@ -63,3 +63,6 @@ result
 result-*
 .direnv/
 flake.lock
+
+# Immich configs
+immich.sh
