@@ -212,7 +212,7 @@ python photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
 python photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --no-time-window
 # Very strict matching, no time restrictions
 ```
-
+ 
 **For grouping similar compositions (different angles of same scene):**
 ```bash
 python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
