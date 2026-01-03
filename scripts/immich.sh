@@ -11,9 +11,13 @@ set -euo pipefail
 # Configuration
 IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
-IGNORE_TIMESTAMP="${IGNORE_TIMESTAMP:-0}"  # Set to 1 to disable time window check
-RESUME="${RESUME:-0}"  # Set to 1 to resume from previous run
-TEST_LIMIT="${TEST_LIMIT:-}"  # Set to N to limit processing to first N photos (for testing)
+
+# Default options
+IGNORE_TIMESTAMP=0
+ENABLE_HDR=0
+ENABLE_FACE_SWAP=0
+RESUME=0
+TEST_LIMIT=""
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -38,8 +42,38 @@ if [ -z "$IMMICH_API_KEY" ]; then
     exit 1
 fi
 
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ignore-timestamp)
+            IGNORE_TIMESTAMP=1
+            shift
+            ;;
+        --enable-hdr)
+            ENABLE_HDR=1
+            shift
+            ;;
+        --enable-face-swap)
+            ENABLE_FACE_SWAP=1
+            shift
+            ;;
+        --resume)
+            RESUME=1
+            shift
+            ;;
+        --limit)
+            TEST_LIMIT="$2"
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 # Default mode
 MODE="${1:-tag-only}"
+shift || true
 
 # Common arguments
 COMMON_ARGS=(
@@ -49,26 +83,48 @@ COMMON_ARGS=(
     --threshold 5
 )
 
-# Add --no-time-window flag if IGNORE_TIMESTAMP is set
+# Add --no-time-window flag if requested
 if [ "$IGNORE_TIMESTAMP" = "1" ]; then
     COMMON_ARGS+=(--no-time-window)
 fi
 
-# Add --resume flag if RESUME is set
+# Add --enable-hdr flag if requested
+if [ "$ENABLE_HDR" = "1" ]; then
+    COMMON_ARGS+=(--enable-hdr)
+fi
+
+# Add --enable-face-swap flag if requested
+if [ "$ENABLE_FACE_SWAP" = "1" ]; then
+    COMMON_ARGS+=(--enable-face-swap)
+fi
+
+# Add --resume flag if requested
 if [ "$RESUME" = "1" ]; then
     COMMON_ARGS+=(--resume)
 fi
 
-# Add --limit flag if TEST_LIMIT is set
+# Add --limit flag if set
 if [ -n "$TEST_LIMIT" ]; then
     COMMON_ARGS+=(--limit "$TEST_LIMIT")
     echo "🔬 TEST MODE: Processing limited to first $TEST_LIMIT photos"
     echo ""
 fi
 
+# Print active features
+FEATURES=()
+[ "$IGNORE_TIMESTAMP" = "1" ] && FEATURES+=("ignore-timestamp")
+[ "$ENABLE_HDR" = "1" ] && FEATURES+=("HDR")
+[ "$ENABLE_FACE_SWAP" = "1" ] && FEATURES+=("face-swap")
+[ "$RESUME" = "1" ] && FEATURES+=("resume")
+
+if [ ${#FEATURES[@]} -gt 0 ]; then
+    echo "✨ Active features: ${FEATURES[*]}"
+    echo ""
+fi
+
 # Run based on mode
 case "$MODE" in
-    tag-only|tag)
+    tag-only|tag|"")
         echo "🏷️  Tagging potential duplicates in Immich..."
         echo ""
         python src/photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
@@ -77,14 +133,27 @@ case "$MODE" in
     albums|create-albums)
         echo "📁 Creating albums for similar photo groups..."
         echo ""
-        python src/photo_organizer.py "${COMMON_ARGS[@]}" \
-            --create-albums \
-            --mark-best-favorite \
-            --album-prefix "Organized-"
+
+        # For HDR and face swap, we need to download photos
+        if [ "$ENABLE_HDR" = "1" ] || [ "$ENABLE_FACE_SWAP" = "1" ]; then
+            OUTPUT_DIR="${1:-~/Organized/Immich}"
+            echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
+            echo ""
+            python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                --create-albums \
+                --mark-best-favorite \
+                --album-prefix "Organized-" \
+                --output "$OUTPUT_DIR"
+        else
+            python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                --create-albums \
+                --mark-best-favorite \
+                --album-prefix "Organized-"
+        fi
         ;;
 
     download)
-        OUTPUT_DIR="${2:-~/Organized/Immich}"
+        OUTPUT_DIR="${1:-~/Organized/Immich}"
         echo "⬇️  Downloading and organizing photos to: $OUTPUT_DIR"
         echo ""
         python src/photo_organizer.py "${COMMON_ARGS[@]}" \
@@ -92,13 +161,13 @@ case "$MODE" in
         ;;
 
     album)
-        if [ -z "${2:-}" ]; then
+        if [ -z "${1:-}" ]; then
             echo "Error: Album name required"
-            echo "Usage: $0 album 'Album Name' [mode]"
+            echo "Usage: $0 [OPTIONS] album 'Album Name' [mode]"
             exit 1
         fi
-        ALBUM_NAME="$2"
-        ALBUM_MODE="${3:-create-albums}"
+        ALBUM_NAME="$1"
+        ALBUM_MODE="${2:-create-albums}"
 
         echo "📷 Processing album: $ALBUM_NAME"
         echo ""
@@ -110,13 +179,25 @@ case "$MODE" in
                     --tag-only
                 ;;
             create-albums|albums)
-                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
-                    --immich-album "$ALBUM_NAME" \
-                    --create-albums \
-                    --mark-best-favorite
+                # For HDR and face swap, we need to download photos
+                if [ "$ENABLE_HDR" = "1" ] || [ "$ENABLE_FACE_SWAP" = "1" ]; then
+                    OUTPUT_DIR="${3:-~/Organized/Immich/$ALBUM_NAME}"
+                    echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
+                    echo ""
+                    python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                        --immich-album "$ALBUM_NAME" \
+                        --create-albums \
+                        --mark-best-favorite \
+                        --output "$OUTPUT_DIR"
+                else
+                    python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                        --immich-album "$ALBUM_NAME" \
+                        --create-albums \
+                        --mark-best-favorite
+                fi
                 ;;
             download)
-                OUTPUT_DIR="${4:-~/Organized/Immich/$ALBUM_NAME}"
+                OUTPUT_DIR="${3:-~/Organized/Immich/$ALBUM_NAME}"
                 python src/photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --output "$OUTPUT_DIR"
@@ -130,8 +211,8 @@ case "$MODE" in
         ;;
 
     cleanup|clean)
-        PREFIX="${2:-Organized-}"
-        DRY_RUN="${3:-yes}"
+        PREFIX="${1:-Organized-}"
+        DRY_RUN="${2:-yes}"
 
         echo "🗑️  Cleaning up albums with prefix: $PREFIX"
         echo ""
@@ -178,11 +259,18 @@ if not dry_run and deleted > 0:
         cat <<EOF
 Immich Photo Organizer Script
 
-Usage: $0 [MODE] [OPTIONS]
+Usage: $0 [OPTIONS] [MODE] [MODE_ARGS]
+
+OPTIONS:
+  --ignore-timestamp     Group by visual similarity only (ignore time window)
+  --enable-hdr          Enable HDR merging for bracketed exposures
+  --enable-face-swap    Enable face swapping to fix closed eyes
+  --resume              Resume from previous interrupted run
+  --limit N             Limit processing to first N photos (for testing)
 
 MODES:
   tag-only, tag          Tag duplicate photos in Immich (default, safest)
-  albums, create-albums  Create albums for similar photo groups
+  albums, create-albums  Create albums for similar photo groups [OUTPUT_DIR]
   download [OUTPUT_DIR]  Download and organize photos locally
   album NAME [MODE]      Process specific album
   cleanup [PREFIX] [yes|no]  Delete albums by prefix (default: "Organized-", dry-run: yes)
@@ -191,7 +279,7 @@ MODES:
 
 ALBUM MODES:
   tag                    Tag duplicates in specific album
-  create-albums          Create sub-albums from album
+  create-albums          Create sub-albums from album [OUTPUT_DIR]
   download [OUTPUT_DIR]  Download and organize album
 
 EXAMPLES:
@@ -201,20 +289,32 @@ EXAMPLES:
   # Create albums and mark favorites
   $0 create-albums
 
-  # Download to specific directory
-  $0 download ~/Photos/Organized
+  # Create albums with HDR and face swapping (downloads to ~/Organized/Immich)
+  $0 --enable-hdr --enable-face-swap create-albums
 
-  # Process specific album
-  $0 album "Vacation 2024" create-albums
+  # Ignore timestamps, group purely by visual similarity
+  $0 --ignore-timestamp create-albums
+
+  # All advanced features together with custom output
+  $0 --ignore-timestamp --enable-hdr --enable-face-swap create-albums ~/Photos/Organized
+
+  # Download to specific directory with all features
+  $0 --enable-hdr --enable-face-swap download ~/Photos/Organized
+
+  # Process specific album with advanced features
+  $0 --enable-hdr --enable-face-swap album "Vacation 2024" create-albums
+
+  # Test with limited photos first
+  $0 --limit 50 tag-only
+
+  # Resume interrupted run
+  $0 --resume create-albums
 
   # Clean up created albums (dry run first)
   $0 cleanup
 
   # Actually delete albums with "Organized-" prefix
   $0 cleanup "Organized-" no
-
-  # Delete albums with custom prefix
-  $0 cleanup "MyPrefix-" no
 
   # Test connection
   $0 test
@@ -226,20 +326,22 @@ CONFIGURATION:
   URL: $IMMICH_URL
   API Key: ${IMMICH_API_KEY:0:10}...
 
-OPTIONS:
-  IGNORE_TIMESTAMP=1    Disable time window check, group by visual similarity only
-                        (default: groups photos taken within 5 minutes)
-
-  RESUME=1              Resume from previous interrupted run
-                        (useful for large libraries or unstable connections)
-
-  TEST_LIMIT=N          Limit processing to first N photos (for testing)
-                        (useful for testing features on subset before full run)
-
-  Examples:
-    IGNORE_TIMESTAMP=1 $0 tag-only
-    RESUME=1 $0 create-albums
-    TEST_LIMIT=100 $0 tag-only
+FEATURES:
+  --ignore-timestamp     Disable time window check (default: groups photos within 5 minutes)
+  --enable-hdr          Merge bracketed exposures into HDR images
+                        - Automatically detects exposure brackets from EXIF
+                        - Creates hdr_merged.jpg in group directory
+                        - Requires download mode
+  --enable-face-swap    Fix closed eyes automatically
+                        - Detects faces with closed eyes
+                        - Swaps with same person from other photos
+                        - Creates face_swapped.jpg in group directory
+                        - Requires download mode and face_recognition library
+  --resume              Resume from previous interrupted run
+                        - Useful for large libraries or unstable connections
+                        - Saves progress every 50 photos
+  --limit N             Process only first N photos (for testing)
+                        - Quick way to test features on subset before full run
 
 THRESHOLD:
   Default: 5 (burst photos)
@@ -249,7 +351,10 @@ THRESHOLD:
   To customize threshold, edit this script and change:
   --threshold 5
 
-For more options, see: python photo_organizer.py --help
+NOTE: HDR and face-swap require downloading photos, so they automatically
+      enable download mode when used with 'create-albums' mode.
+
+For more options, see: python src/photo_organizer.py --help
 EOF
         ;;
 
