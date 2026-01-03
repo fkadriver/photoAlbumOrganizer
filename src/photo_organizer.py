@@ -49,7 +49,8 @@ class PhotoOrganizer:
     def __init__(self, photo_source: PhotoSource, output_dir, similarity_threshold=5,
                  time_window=300, use_time_window=True, tag_only=False,
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
-                 resume=False, state_file=None, limit=None):
+                 resume=False, state_file=None, limit=None,
+                 enable_hdr=False, hdr_gamma=2.2):
         """
         Initialize the photo organizer.
 
@@ -66,6 +67,8 @@ class PhotoOrganizer:
             resume: Resume from previous interrupted run
             state_file: Path to state file for resume capability
             limit: Maximum number of photos to process (for testing, default: None for unlimited)
+            enable_hdr: Enable HDR merging for bracketed shots (default: False)
+            hdr_gamma: HDR tone mapping gamma value (default: 2.2)
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -77,6 +80,8 @@ class PhotoOrganizer:
         self.album_prefix = album_prefix
         self.mark_best_favorite = mark_best_favorite
         self.limit = limit
+        self.enable_hdr = enable_hdr
+        self.hdr_gamma = hdr_gamma
 
         # Resume capability
         self.resume = resume
@@ -395,7 +400,122 @@ class PhotoOrganizer:
                     f.write(f"{key}: {value}\n")
                 
                 f.write("\n")
-    
+
+    def should_merge_hdr(self, group) -> bool:
+        """
+        Determine if group should be merged using HDR.
+        True if photos are taken in quick succession with different exposures.
+
+        Args:
+            group: List of photo_data dictionaries
+
+        Returns:
+            bool: True if group is likely a bracketed exposure sequence
+        """
+        if not self.enable_hdr or len(group) < 2:
+            return False
+
+        # Check if photos have different exposure values
+        exposures = []
+        for photo_data in group:
+            metadata = photo_data.get('metadata', {})
+
+            # Try to get exposure time from EXIF
+            exposure = metadata.get('exif_ExposureTime')
+            if not exposure:
+                # Try alternate formats
+                exposure = metadata.get('exif_exposure_time')
+
+            if exposure:
+                try:
+                    # Convert fractional exposure (e.g., "1/250") to float
+                    if isinstance(exposure, str) and '/' in exposure:
+                        num, denom = exposure.split('/')
+                        exposures.append(float(num) / float(denom))
+                    else:
+                        exposures.append(float(exposure))
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+        # If we have at least 2 different exposures, likely a bracket
+        if len(exposures) >= 2 and len(set(exposures)) > 1:
+            print(f"  HDR: Detected bracketed exposures: {exposures}")
+            return True
+
+        return False
+
+    def merge_exposures_hdr(self, group):
+        """
+        Merge multiple exposures using HDR technique.
+        Useful when group contains bracketed shots.
+
+        Args:
+            group: List of photo_data dictionaries with bracketed exposures
+
+        Returns:
+            numpy.ndarray: Merged HDR image (8-bit LDR), or None if merge fails
+        """
+        if len(group) < 2:
+            return None
+
+        try:
+            # Load images
+            images = []
+            for photo_data in group:
+                photo = photo_data['photo']
+
+                # Get image path
+                if photo.cached_path:
+                    img_path = photo.cached_path
+                else:
+                    # Download temporarily if not cached
+                    data = self.photo_source.get_photo_data(photo)
+                    # Create temp file
+                    import tempfile
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+                    temp_file.write(data)
+                    temp_file.close()
+                    img_path = Path(temp_file.name)
+
+                # Load image
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    print(f"  HDR: Warning - Could not load image: {img_path}")
+                    continue
+
+                images.append(img)
+
+            if len(images) < 2:
+                print(f"  HDR: Not enough valid images to merge ({len(images)} loaded)")
+                return None
+
+            print(f"  HDR: Merging {len(images)} exposures...")
+
+            # Create exposure times array (use equal weighting if actual times unavailable)
+            times = np.array([1.0] * len(images), dtype=np.float32)
+
+            # Estimate camera response function
+            calibrate = cv2.createCalibrateDebevec()
+            response = calibrate.process(images, times)
+
+            # Merge exposures to HDR
+            merge = cv2.createMergeDebevec()
+            hdr = merge.process(images, times, response)
+
+            # Tone mapping using Drago algorithm
+            tonemap = cv2.createTonemapDrago(gamma=self.hdr_gamma)
+            ldr = tonemap.process(hdr)
+
+            # Convert to 8-bit
+            ldr = np.clip(ldr * 255, 0, 255).astype('uint8')
+
+            print(f"  HDR: Merge successful (gamma={self.hdr_gamma})")
+            return ldr
+
+        except Exception as e:
+            print(f"  HDR: Merge failed: {e}")
+            return None
+
     def organize_photos(self, album: str = None):
         """Main method to organize photos into groups."""
         try:
@@ -511,6 +631,15 @@ class PhotoOrganizer:
                     else:
                         best_dst.write_bytes(data)
 
+                    # HDR merging if enabled and appropriate
+                    if self.should_merge_hdr(group):
+                        hdr_image = self.merge_exposures_hdr(group)
+                        if hdr_image is not None:
+                            # Save HDR merged image
+                            hdr_dst = group_dir / "hdr_merged.jpg"
+                            cv2.imwrite(str(hdr_dst), hdr_image)
+                            print(f"  HDR: Saved merged image: {hdr_dst.name}")
+
                     print(f"Group {i} complete: {group_dir}")
 
                 # Mark group as completed
@@ -566,6 +695,10 @@ Examples:
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     -o ~/Organized
+
+  # HDR merging for bracketed exposures
+  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+    --enable-hdr --hdr-gamma 2.2
         """
     )
 
@@ -616,6 +749,12 @@ Examples:
                         help='Resume from previous interrupted run')
     parser.add_argument('--state-file',
                         help='Path to state file for resume capability')
+
+    # Advanced image processing
+    parser.add_argument('--enable-hdr', action='store_true',
+                        help='Enable HDR merging for bracketed exposure shots')
+    parser.add_argument('--hdr-gamma', type=float, default=2.2,
+                        help='HDR tone mapping gamma value (default: 2.2)')
 
     # Other arguments
     parser.add_argument('--verbose', action='store_true',
@@ -668,7 +807,9 @@ Examples:
         mark_best_favorite=args.mark_best_favorite,
         resume=args.resume,
         state_file=args.state_file,
-        limit=args.limit
+        limit=args.limit,
+        enable_hdr=args.enable_hdr,
+        hdr_gamma=args.hdr_gamma
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
