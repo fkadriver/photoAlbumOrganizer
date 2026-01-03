@@ -37,13 +37,13 @@ CREATE TABLE photo_hashes (
 **Usage:**
 ```bash
 # Start new scan (automatically creates checkpoint)
-python photo_organizer.py -s ~/Photos -o ~/Organized
+python ../src/photo_organizer.py -s ~/Photos -o ~/Organized
 
 # Resume interrupted scan
-python photo_organizer.py --resume
+python ../src/photo_organizer.py --resume
 
 # Use cached hashes (skip recomputation)
-python photo_organizer.py -s ~/Photos --use-cache
+python ../src/photo_organizer.py -s ~/Photos --use-cache
 ```
 
 **Implementation:**
@@ -93,13 +93,13 @@ facenet-pytorch>=2.5.0
 **Usage:**
 ```bash
 # Automatic GPU detection
-python photo_organizer.py -s ~/Photos --gpu
+python ../src/photo_organizer.py -s ~/Photos --gpu
 
 # Force CPU (even if GPU available)
-python photo_organizer.py -s ~/Photos --no-gpu
+python ../src/photo_organizer.py -s ~/Photos --no-gpu
 
 # Specify GPU device
-python photo_organizer.py -s ~/Photos --gpu-device 0
+python ../src/photo_organizer.py -s ~/Photos --gpu-device 0
 ```
 
 **Performance Impact:**
@@ -198,13 +198,13 @@ class FaceSwapper:
 **Usage:**
 ```bash
 # Create composites for all groups
-python photo_organizer.py -s ~/Photos -o ~/Organized --face-swap
+python ../src/photo_organizer.py -s ~/Photos -o ~/Organized --face-swap
 
 # Show before/after comparison
-python photo_organizer.py --face-swap --show-comparison
+python ../src/photo_organizer.py --face-swap --show-comparison
 
 # Only create composite for groups with faces
-python photo_organizer.py --face-swap --faces-only
+python ../src/photo_organizer.py --face-swap --faces-only
 ```
 
 **Output:**
@@ -300,13 +300,13 @@ class ParallelPhotoProcessor:
 **Usage:**
 ```bash
 # Use all CPU cores
-python photo_organizer.py -s ~/Photos --parallel
+python ../src/photo_organizer.py -s ~/Photos --parallel
 
 # Specify thread count
-python photo_organizer.py -s ~/Photos --threads 8
+python ../src/photo_organizer.py -s ~/Photos --threads 8
 
 # Single-threaded (for debugging)
-python photo_organizer.py -s ~/Photos --threads 1
+python ../src/photo_organizer.py -s ~/Photos --threads 1
 ```
 
 ### Database Optimization

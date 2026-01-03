@@ -89,14 +89,14 @@ See [IMMICH_USAGE.md](IMMICH_USAGE.md) for complete usage guide and examples.
 
 ```bash
 # Tag duplicates in Immich (no download)
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
   --tag-only
 
 # Create Immich albums for each group
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -104,14 +104,14 @@ python photo_organizer.py \
   --mark-best-favorite
 
 # Download and organize locally
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
   --output ~/Organized
 
 # Process specific album
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -190,21 +190,21 @@ See [IMMICH_USAGE.md](IMMICH_USAGE.md) for detailed workflows.
 
 **Tag duplicates for review:**
 ```bash
-python photo_organizer.py --source-type immich \
+python ../src/photo_organizer.py --source-type immich \
   --immich-url URL --immich-api-key KEY \
   --tag-only --threshold 3
 ```
 
 **Create albums with favorites:**
 ```bash
-python photo_organizer.py --source-type immich \
+python ../src/photo_organizer.py --source-type immich \
   --immich-url URL --immich-api-key KEY \
   --create-albums --mark-best-favorite
 ```
 
 **Download and organize:**
 ```bash
-python photo_organizer.py --source-type immich \
+python ../src/photo_organizer.py --source-type immich \
   --immich-url URL --immich-api-key KEY \
   --output ~/Organized
 ```
@@ -295,7 +295,7 @@ print('Connected!' if client.ping() else 'Failed')
 "
 
 # 2. Test with small album
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \

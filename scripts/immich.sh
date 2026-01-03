@@ -12,6 +12,7 @@ set -euo pipefail
 IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
 IGNORE_TIMESTAMP="${IGNORE_TIMESTAMP:-0}"  # Set to 1 to disable time window check
+RESUME="${RESUME:-0}"  # Set to 1 to resume from previous run
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -52,18 +53,23 @@ if [ "$IGNORE_TIMESTAMP" = "1" ]; then
     COMMON_ARGS+=(--no-time-window)
 fi
 
+# Add --resume flag if RESUME is set
+if [ "$RESUME" = "1" ]; then
+    COMMON_ARGS+=(--resume)
+fi
+
 # Run based on mode
 case "$MODE" in
     tag-only|tag)
         echo "🏷️  Tagging potential duplicates in Immich..."
         echo ""
-        python photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
+        python src/photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
         ;;
 
     albums|create-albums)
         echo "📁 Creating albums for similar photo groups..."
         echo ""
-        python photo_organizer.py "${COMMON_ARGS[@]}" \
+        python src/photo_organizer.py "${COMMON_ARGS[@]}" \
             --create-albums \
             --mark-best-favorite \
             --album-prefix "Organized-"
@@ -73,7 +79,7 @@ case "$MODE" in
         OUTPUT_DIR="${2:-~/Organized/Immich}"
         echo "⬇️  Downloading and organizing photos to: $OUTPUT_DIR"
         echo ""
-        python photo_organizer.py "${COMMON_ARGS[@]}" \
+        python src/photo_organizer.py "${COMMON_ARGS[@]}" \
             --output "$OUTPUT_DIR"
         ;;
 
@@ -91,19 +97,19 @@ case "$MODE" in
 
         case "$ALBUM_MODE" in
             tag)
-                python photo_organizer.py "${COMMON_ARGS[@]}" \
+                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --tag-only
                 ;;
             create-albums|albums)
-                python photo_organizer.py "${COMMON_ARGS[@]}" \
+                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --create-albums \
                     --mark-best-favorite
                 ;;
             download)
                 OUTPUT_DIR="${4:-~/Organized/Immich/$ALBUM_NAME}"
-                python photo_organizer.py "${COMMON_ARGS[@]}" \
+                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --output "$OUTPUT_DIR"
                 ;;
@@ -133,6 +139,8 @@ case "$MODE" in
         export IMMICH_API_KEY
 
         python -c "
+import sys
+sys.path.insert(0, 'src')
 from immich_client import ImmichClient
 import os
 
@@ -155,7 +163,7 @@ if not dry_run and deleted > 0:
     test)
         echo "🧪 Testing connection to Immich..."
         echo ""
-        python test_immich_connection.py
+        python scripts/test_immich_connection.py
         ;;
 
     help|--help|-h)
@@ -214,7 +222,12 @@ OPTIONS:
   IGNORE_TIMESTAMP=1    Disable time window check, group by visual similarity only
                         (default: groups photos taken within 5 minutes)
 
-  Example: IGNORE_TIMESTAMP=1 $0 tag-only
+  RESUME=1              Resume from previous interrupted run
+                        (useful for large libraries or unstable connections)
+
+  Examples:
+    IGNORE_TIMESTAMP=1 $0 tag-only
+    RESUME=1 $0 create-albums
 
 THRESHOLD:
   Default: 5 (burst photos)

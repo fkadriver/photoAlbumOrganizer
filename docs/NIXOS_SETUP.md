@@ -30,7 +30,7 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 python verify_environment.py
 
 # Start organizing!
-python photo_organizer.py -s ~/Photos -o ~/Organized
+python ../src/photo_organizer.py -s ~/Photos -o ~/Organized
 ```
 
 That's it! Every time you `cd` into the directory, the environment automatically activates.
@@ -96,7 +96,7 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 python verify_environment.py
 
 # Run
-python photo_organizer.py -s ~/Photos -o ~/Organized
+python ../src/photo_organizer.py -s ~/Photos -o ~/Organized
 ```
 
 ## First-Time Setup
@@ -140,10 +140,10 @@ Photo Album Organizer - Environment Verification
 
 ```bash
 # Dry run to test without making changes
-python photo_organizer.py -s ~/Photos -o ~/Test --dry-run
+python ../src/photo_organizer.py -s ~/Photos -o ~/Test --dry-run
 
 # Process a small subset first
-python photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
+python ../src/photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
 ```
 
 ## Troubleshooting

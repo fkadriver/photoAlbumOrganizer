@@ -112,7 +112,7 @@ direnv allow
 cd ~/photoAlbumOrganizer
 
 # Environment is active - you can use Python and all dependencies
-python photo_organizer.py -s /source -o /output
+python ../src/photo_organizer.py -s /source -o /output
 
 # Leave the directory - environment unloads automatically
 cd ~

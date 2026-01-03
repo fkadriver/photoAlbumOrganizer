@@ -9,15 +9,15 @@ The script is now configured with your Immich URL and API key is stored securely
 ### Test Connection
 
 ```bash
-./immich.sh test
+../scripts/immich.sh test
 ```
 
 ### Tag Duplicates (Recommended First Step)
 
 ```bash
-./immich.sh tag-only
+../scripts/immich.sh tag-only
 # or just:
-./immich.sh
+../scripts/immich.sh
 ```
 
 This tags similar photos in Immich with "photo-organizer-duplicate" - you can review and delete them in the Immich web UI.
@@ -25,7 +25,7 @@ This tags similar photos in Immich with "photo-organizer-duplicate" - you can re
 ### Create Albums
 
 ```bash
-./immich.sh create-albums
+../scripts/immich.sh create-albums
 ```
 
 This creates albums "Organized-0001", "Organized-0002", etc. with similar photos grouped together and marks the best photo in each group as a favorite.
@@ -33,7 +33,7 @@ This creates albums "Organized-0001", "Organized-0002", etc. with similar photos
 ### Download and Organize Locally
 
 ```bash
-./immich.sh download ~/Photos/Organized
+../scripts/immich.sh download ~/Photos/Organized
 ```
 
 Downloads photos from Immich and creates local organized folders.
@@ -44,34 +44,34 @@ Downloads photos from Immich and creates local organized folders.
 
 ```bash
 # Tag duplicates (default, safest)
-./immich.sh tag-only
-./immich.sh tag
+../scripts/immich.sh tag-only
+../scripts/immich.sh tag
 
 # Create albums from groups
-./immich.sh create-albums
-./immich.sh albums
+../scripts/immich.sh create-albums
+../scripts/immich.sh albums
 
 # Download and organize locally
-./immich.sh download [OUTPUT_DIR]
+../scripts/immich.sh download [OUTPUT_DIR]
 
 # Test connection
-./immich.sh test
+../scripts/immich.sh test
 
 # Show help
-./immich.sh help
+../scripts/immich.sh help
 ```
 
 ### Process Specific Album
 
 ```bash
 # Tag duplicates in specific album
-./immich.sh album "Vacation 2024" tag
+../scripts/immich.sh album "Vacation 2024" tag
 
 # Create sub-albums from album
-./immich.sh album "Vacation 2024" create-albums
+../scripts/immich.sh album "Vacation 2024" create-albums
 
 # Download specific album
-./immich.sh album "Vacation 2024" download ~/Photos/Vacation2024
+../scripts/immich.sh album "Vacation 2024" download ~/Photos/Vacation2024
 ```
 
 ## Configuration
@@ -98,7 +98,7 @@ IMMICH_URL="${IMMICH_URL:-https://your-immich-url.ts.net}"
 Or set environment variable:
 ```bash
 export IMMICH_URL="https://your-immich-url.ts.net"
-./immich.sh tag-only
+../scripts/immich.sh tag-only
 ```
 
 ### Adjust Similarity Threshold
@@ -119,24 +119,24 @@ Edit line 46 in [immich.sh](immich.sh):
 
 ```bash
 # 1. Test connection
-./immich.sh test
+../scripts/immich.sh test
 
 # 2. Tag duplicates to review
-./immich.sh tag-only
+../scripts/immich.sh tag-only
 
 # 3. Review in Immich web UI
 #    - Search for tag "photo-organizer-duplicate"
 #    - Manually delete unwanted photos
 
 # 4. If satisfied, create albums
-./immich.sh create-albums
+../scripts/immich.sh create-albums
 ```
 
 ### Process Family Photos Album
 
 ```bash
 # Create organized albums from "Family Photos 2024"
-./immich.sh album "Family Photos 2024" create-albums
+../scripts/immich.sh album "Family Photos 2024" create-albums
 
 # Result: Creates "Organized-0001", "Organized-0002", etc.
 # with best photos marked as favorites
@@ -148,7 +148,7 @@ Edit line 46 in [immich.sh](immich.sh):
 # Process multiple albums
 for album in "2020" "2021" "2022" "2023" "2024"; do
     echo "Processing $album..."
-    ./immich.sh album "$album" create-albums
+    ../scripts/immich.sh album "$album" create-albums
 done
 ```
 
@@ -156,10 +156,10 @@ done
 
 ```bash
 # Download entire library organized
-./immich.sh download ~/Archive/Immich/$(date +%Y-%m-%d)
+../scripts/immich.sh download ~/Archive/Immich/$(date +%Y-%m-%d)
 
 # Download specific album
-./immich.sh album "Best Photos" download ~/Archive/BestPhotos
+../scripts/immich.sh album "Best Photos" download ~/Archive/BestPhotos
 ```
 
 ## Workflow Recommendations
@@ -167,7 +167,7 @@ done
 ### Workflow 1: Tag and Review
 
 ```bash
-./immich.sh tag-only
+../scripts/immich.sh tag-only
 # Review in Immich web UI
 # Delete unwanted duplicates
 # Done!
@@ -176,7 +176,7 @@ done
 ### Workflow 2: Organized Albums
 
 ```bash
-./immich.sh create-albums
+../scripts/immich.sh create-albums
 # Review created albums in Immich
 # Delete unwanted photos from each album
 # Keep albums or merge as needed
@@ -185,7 +185,7 @@ done
 ### Workflow 3: Local Backup
 
 ```bash
-./immich.sh download ~/Backups/Immich-Organized
+../scripts/immich.sh download ~/Backups/Immich-Organized
 # Review local folders
 # Best photos already separated
 # Can upload back to Immich if needed
@@ -208,7 +208,7 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 
 ```bash
 # Test connection
-./immich.sh test
+../scripts/immich.sh test
 
 # Check URL is correct
 echo $IMMICH_URL
@@ -245,13 +245,13 @@ cp immich.sh immich-strict.sh
 
 The script processes all photos by default. To filter by date, you'd need to:
 1. Create an album in Immich with recent photos
-2. Use: `./immich.sh album "Recent" tag-only`
+2. Use: `../scripts/immich.sh album "Recent" tag-only`
 
 ### Dry Run
 
 There's no built-in dry run, but you can:
 1. Create a test album with a few photos
-2. Run: `./immich.sh album "Test" tag-only`
+2. Run: `../scripts/immich.sh album "Test" tag-only`
 3. Verify results before processing entire library
 
 ## Script Maintenance
@@ -290,4 +290,4 @@ The [immich.sh](immich.sh) script makes it easy to use the photo organizer with 
 ✅ **Flexible** - Multiple modes and options
 ✅ **Safe** - Default mode (tag-only) doesn't modify photos
 
-Start with: `./immich.sh test` then `./immich.sh tag-only`
+Start with: `../scripts/immich.sh test` then `../scripts/immich.sh tag-only`

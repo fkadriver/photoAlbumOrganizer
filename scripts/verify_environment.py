@@ -145,7 +145,7 @@ def main():
         print("✓ All tests passed! Environment is ready.")
         print()
         print("You can now run:")
-        print("  python photo_organizer.py -s ~/Photos -o ~/Organized")
+        print("  python src/photo_organizer.py -s ~/Photos -o ~/Organized")
         print()
         sys.exit(0)
 

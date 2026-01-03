@@ -6,6 +6,7 @@ Usage: python test_immich_connection.py
 
 import sys
 import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from immich_client import ImmichClient
 
 
@@ -74,7 +75,7 @@ def test_connection():
         print("\n" + "=" * 60)
         print("✅ All tests passed! Immich integration is working.")
         print("\nYou can now use:")
-        print(f"  python photo_organizer.py \\")
+        print(f"  python src/photo_organizer.py \\")
         print(f"    --source-type immich \\")
         print(f"    --immich-url {url} \\")
         print(f"    --immich-api-key YOUR_KEY \\")

@@ -165,10 +165,10 @@ The welcome message now includes Immich commands:
 
 ```
 Ready to use:
-  • Local: python photo_organizer.py -s <source> -o <output>
-  • Immich: python photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only
+  • Local: python ../src/photo_organizer.py -s <source> -o <output>
+  • Immich: python ../src/photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only
 
-Tip: Run 'python test_immich_connection.py' to test Immich connectivity
+Tip: Run 'python ../scripts/test_immich_connection.py' to test Immich connectivity
 ```
 
 Enjoy your optimized development environment! 🚀

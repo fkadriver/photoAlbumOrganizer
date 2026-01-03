@@ -19,7 +19,7 @@ pip install requests
 
 ```bash
 # Test that everything works
-python test_immich_connection.py
+python ../scripts/test_immich_connection.py
 ```
 
 When prompted, enter:
@@ -33,7 +33,7 @@ When prompted, enter:
 This scans your Immich library and tags similar photos without downloading anything.
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -51,7 +51,7 @@ python photo_organizer.py \
 This creates Immich albums grouping similar photos together.
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -70,7 +70,7 @@ python photo_organizer.py \
 This downloads from Immich and creates organized local folders.
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -100,7 +100,7 @@ The `--threshold` parameter controls how similar photos must be:
 ## Process Specific Album
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -118,7 +118,7 @@ export IMMICH_URL="http://immich:2283"
 export IMMICH_API_KEY="your-api-key-here"
 
 # Then use:
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url "$IMMICH_URL" \
   --immich-api-key "$IMMICH_API_KEY" \
@@ -141,7 +141,7 @@ Should return: `{"res":"pong"}`
 Add `--no-verify-ssl`:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url https://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -154,7 +154,7 @@ python photo_organizer.py \
 Use full resolution instead of thumbnails:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \
@@ -173,7 +173,7 @@ python photo_organizer.py \
 The original local photo organization still works:
 
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 5
+python ../src/photo_organizer.py -s ~/Photos -o ~/Organized -t 5
 ```
 
 All the Immich features are additions - nothing was removed!
@@ -183,7 +183,7 @@ All the Immich features are additions - nothing was removed!
 **Start with tag-only mode** - it's the safest way to see what will be grouped:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://YOUR_IMMICH:2283 \
   --immich-api-key YOUR_API_KEY \

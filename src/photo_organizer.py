@@ -3,9 +3,11 @@ import shutil
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 import json
 import hashlib
+import signal
+import sys
 
 # Image processing
 from PIL import Image
@@ -16,6 +18,9 @@ import numpy as np
 
 # Photo source abstraction
 from photo_sources import PhotoSource, LocalPhotoSource, ImmichPhotoSource, Photo
+
+# Resume capability
+from processing_state import ProcessingState
 
 # Face detection - with workaround for Python 3.12 compatibility
 FACE_DETECTION_ENABLED = True
@@ -43,7 +48,8 @@ except Exception as e:
 class PhotoOrganizer:
     def __init__(self, photo_source: PhotoSource, output_dir, similarity_threshold=5,
                  time_window=300, use_time_window=True, tag_only=False,
-                 create_albums=False, album_prefix="Organized-", mark_best_favorite=False):
+                 create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
+                 resume=False, state_file=None):
         """
         Initialize the photo organizer.
 
@@ -57,6 +63,8 @@ class PhotoOrganizer:
             create_albums: Create albums for each group (Immich only)
             album_prefix: Prefix for created albums
             mark_best_favorite: Mark best photo as favorite (Immich only)
+            resume: Resume from previous interrupted run
+            state_file: Path to state file for resume capability
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -68,9 +76,79 @@ class PhotoOrganizer:
         self.album_prefix = album_prefix
         self.mark_best_favorite = mark_best_favorite
 
+        # Resume capability
+        self.resume = resume
+        if state_file:
+            self.state_file = Path(state_file)
+        else:
+            # Default state file in output directory or current directory
+            if self.output_dir:
+                self.state_file = self.output_dir / '.photo_organizer_state.pkl'
+            else:
+                self.state_file = Path('.photo_organizer_state.pkl')
+
+        self.state = ProcessingState(self.state_file)
+
+        # Load existing state if resuming
+        if self.resume:
+            if self.state.load():
+                print("\n" + "="*60)
+                print("RESUMING FROM PREVIOUS RUN")
+                print("="*60)
+                print(self.state.get_progress_summary())
+                print("="*60 + "\n")
+
+                # Verify compatibility
+                source_type = photo_source.__class__.__name__
+                source_path = getattr(photo_source, 'source_dir', None)
+                if hasattr(source_path, '__str__'):
+                    source_path = str(source_path)
+
+                if not self.state.verify_compatibility(source_type, source_path, similarity_threshold):
+                    print("Warning: Parameters have changed since last run!")
+                    print("Starting fresh to avoid inconsistencies...")
+                    self.state = ProcessingState(self.state_file)
+                    self.resume = False
+            else:
+                print(f"No previous state found at {self.state_file}")
+                print("Starting fresh...")
+                self.resume = False
+        else:
+            # Initialize state for new run
+            source_type = photo_source.__class__.__name__
+            source_path = getattr(photo_source, 'source_dir', None)
+            if hasattr(source_path, '__str__'):
+                source_path = str(source_path)
+
+            self.state.initialize(
+                source_type=source_type,
+                source_path=source_path,
+                output_path=str(output_dir) if output_dir else None,
+                threshold=similarity_threshold,
+                time_window=time_window,
+                use_time_window=use_time_window
+            )
+
         if self.output_dir:
             self.output_dir.mkdir(exist_ok=True)
-    
+
+        # Setup signal handlers for graceful interruption
+        self._interrupted = False
+        self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Setup signal handlers for graceful interruption."""
+        def signal_handler(signum, frame):
+            print("\n\nInterrupt received! Saving state...")
+            self._interrupted = True
+            self.state.save()
+            print(f"\nState saved to: {self.state_file}")
+            print(f"Resume with: --resume --state-file {self.state_file}")
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
     def extract_metadata(self, photo: Photo):
         """Extract metadata from a photo."""
         return self.photo_source.get_metadata(photo)
@@ -124,12 +202,22 @@ class PhotoOrganizer:
         # Compute hashes and metadata
         photo_data = []
         for i, photo in enumerate(photos):
+            if self._interrupted:
+                break
+
             if i % 100 == 0:
                 print(f"Processing {i}/{len(photos)}...")
 
-            hash_val = self.compute_hash(photo)
-            if hash_val is None:
-                continue
+            # Check if we have cached hash
+            cached_hash = self.state.get_cached_hash(photo.id)
+            if cached_hash:
+                hash_val = imagehash.hex_to_hash(cached_hash)
+            else:
+                hash_val = self.compute_hash(photo)
+                if hash_val is None:
+                    continue
+                # Cache the computed hash
+                self.state.mark_hash_computed(photo.id, hash_val)
 
             metadata = self.extract_metadata(photo)
             dt = self.get_datetime_from_metadata(metadata)
@@ -308,104 +396,137 @@ class PhotoOrganizer:
     
     def organize_photos(self, album: str = None):
         """Main method to organize photos into groups."""
-        # Find all photos
-        photos = self.find_all_photos(album=album)
-        print(f"Found {len(photos)} photos")
+        try:
+            # Find all photos
+            photos = self.find_all_photos(album=album)
+            print(f"Found {len(photos)} photos")
 
-        # Group similar photos
-        groups = self.group_similar_photos(photos)
+            # Track discovered photos
+            for photo in photos:
+                self.state.mark_photo_discovered()
 
-        if not groups:
-            print("No similar photo groups found.")
-            return
+            # Group similar photos
+            groups = self.group_similar_photos(photos)
 
-        # Process each group
-        for i, group in enumerate(groups, 1):
-            print(f"\nProcessing group {i}/{len(groups)} ({len(group)} photos)...")
+            if not groups:
+                print("No similar photo groups found.")
+                self.state.cleanup()
+                return
 
-            # Find best photo
-            best_photo_data = self.find_best_photo(group)
-            best_photo = best_photo_data['photo']
+            # Record total groups found
+            self.state.set_groups_found(len(groups))
 
-            # Tag-only mode (for Immich)
-            if self.tag_only:
-                # Tag all photos in group as potential duplicates
-                tag = "photo-organizer-duplicate"
-                for photo_data in group:
-                    self.photo_source.tag_photo(photo_data['photo'], [tag])
-                print(f"Tagged {len(group)} photos as potential duplicates")
+            # Process each group
+            for i, group in enumerate(groups, 1):
+                if self._interrupted:
+                    break
 
-            # Create albums mode (for Immich)
-            if self.create_albums:
-                album_name = f"{self.album_prefix}{i:04d}"
-                photos_in_group = [pd['photo'] for pd in group]
-                if self.photo_source.create_album(album_name, photos_in_group):
-                    print(f"Created album: {album_name}")
+                # Skip already completed groups
+                if self.state.is_group_completed(i):
+                    print(f"\nSkipping group {i}/{len(groups)} (already completed)")
+                    continue
 
-            # Mark best as favorite (for Immich)
-            if self.mark_best_favorite:
-                if self.photo_source.set_favorite(best_photo, True):
-                    print(f"Marked best photo as favorite: {best_photo.id}")
+                print(f"\nProcessing group {i}/{len(groups)} ({len(group)} photos)...")
 
-            # Full organization mode (download and organize)
+                # Find best photo
+                best_photo_data = self.find_best_photo(group)
+                best_photo = best_photo_data['photo']
+
+                # Tag-only mode (for Immich)
+                if self.tag_only:
+                    # Tag all photos in group as potential duplicates
+                    tag = "photo-organizer-duplicate"
+                    for photo_data in group:
+                        self.photo_source.tag_photo(photo_data['photo'], [tag])
+                    print(f"Tagged {len(group)} photos as potential duplicates")
+
+                # Create albums mode (for Immich)
+                if self.create_albums:
+                    album_name = f"{self.album_prefix}{i:04d}"
+                    photos_in_group = [pd['photo'] for pd in group]
+                    if self.photo_source.create_album(album_name, photos_in_group):
+                        print(f"Created album: {album_name}")
+
+                # Mark best as favorite (for Immich)
+                if self.mark_best_favorite:
+                    if self.photo_source.set_favorite(best_photo, True):
+                        print(f"Marked best photo as favorite: {best_photo.id}")
+
+                # Full organization mode (download and organize)
+                if self.output_dir and not self.tag_only:
+                    # Create group directory
+                    group_dir = self.output_dir / f"group_{i:04d}"
+                    group_dir.mkdir(exist_ok=True)
+
+                    # Copy original photos
+                    originals_dir = group_dir / 'originals'
+                    originals_dir.mkdir(exist_ok=True)
+
+                    for photo_data in group:
+                        photo = photo_data['photo']
+
+                        # Get photo data
+                        if photo.cached_path:
+                            src = photo.cached_path
+                            dst = originals_dir / src.name
+                        else:
+                            # Download photo
+                            data = self.photo_source.get_photo_data(photo)
+                            filename = photo.metadata.get('filename', f"{photo.id}.jpg")
+                            dst = originals_dir / filename
+
+                        # Handle name collisions
+                        counter = 1
+                        original_dst = dst
+                        while dst.exists():
+                            dst = original_dst.parent / f"{original_dst.stem}_{counter}{original_dst.suffix}"
+                            counter += 1
+
+                        if photo.cached_path:
+                            shutil.copy2(src, dst)
+                        else:
+                            dst.write_bytes(data)
+
+                    # Save metadata
+                    self.save_metadata(group, group_dir)
+
+                    # Copy best photo
+                    best = best_photo_data['photo']
+                    if best.cached_path:
+                        src = best.cached_path
+                        filename = src.name
+                    else:
+                        data = self.photo_source.get_photo_data(best)
+                        filename = best.metadata.get('filename', f"{best.id}.jpg")
+
+                    best_dst = group_dir / f"best_{filename}"
+                    if best.cached_path:
+                        shutil.copy2(src, best_dst)
+                    else:
+                        best_dst.write_bytes(data)
+
+                    print(f"Group {i} complete: {group_dir}")
+
+                # Mark group as completed
+                self.state.mark_group_completed(i)
+
+            # If we completed all groups successfully, cleanup state file
+            if not self._interrupted and self.state.state['groups_processed'] == len(groups):
+                print("\nAll groups processed successfully!")
+                self.state.cleanup()
+
             if self.output_dir and not self.tag_only:
-                # Create group directory
-                group_dir = self.output_dir / f"group_{i:04d}"
-                group_dir.mkdir(exist_ok=True)
+                print(f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}")
+            else:
+                print(f"\nProcessed {len(groups)} groups")
 
-                # Copy original photos
-                originals_dir = group_dir / 'originals'
-                originals_dir.mkdir(exist_ok=True)
-
-                for photo_data in group:
-                    photo = photo_data['photo']
-
-                    # Get photo data
-                    if photo.cached_path:
-                        src = photo.cached_path
-                        dst = originals_dir / src.name
-                    else:
-                        # Download photo
-                        data = self.photo_source.get_photo_data(photo)
-                        filename = photo.metadata.get('filename', f"{photo.id}.jpg")
-                        dst = originals_dir / filename
-
-                    # Handle name collisions
-                    counter = 1
-                    original_dst = dst
-                    while dst.exists():
-                        dst = original_dst.parent / f"{original_dst.stem}_{counter}{original_dst.suffix}"
-                        counter += 1
-
-                    if photo.cached_path:
-                        shutil.copy2(src, dst)
-                    else:
-                        dst.write_bytes(data)
-
-                # Save metadata
-                self.save_metadata(group, group_dir)
-
-                # Copy best photo
-                best = best_photo_data['photo']
-                if best.cached_path:
-                    src = best.cached_path
-                    filename = src.name
-                else:
-                    data = self.photo_source.get_photo_data(best)
-                    filename = best.metadata.get('filename', f"{best.id}.jpg")
-
-                best_dst = group_dir / f"best_{filename}"
-                if best.cached_path:
-                    shutil.copy2(src, best_dst)
-                else:
-                    best_dst.write_bytes(data)
-
-                print(f"Group {i} complete: {group_dir}")
-
-        if self.output_dir and not self.tag_only:
-            print(f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}")
-        else:
-            print(f"\nProcessed {len(groups)} groups")
+        except Exception as e:
+            # Save state on unexpected error
+            print(f"\nError during processing: {e}")
+            self.state.save()
+            print(f"State saved to: {self.state_file}")
+            print(f"Resume with: --resume --state-file {self.state_file}")
+            raise
 
 
 def main():
@@ -484,6 +605,12 @@ Examples:
     parser.add_argument('--mark-best-favorite', action='store_true',
                         help='Mark best photo in each group as favorite (Immich only)')
 
+    # Resume capability
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from previous interrupted run')
+    parser.add_argument('--state-file',
+                        help='Path to state file for resume capability')
+
     # Other arguments
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose output')
@@ -530,7 +657,9 @@ Examples:
         tag_only=args.tag_only,
         create_albums=args.create_albums,
         album_prefix=args.album_prefix,
-        mark_best_favorite=args.mark_best_favorite
+        mark_best_favorite=args.mark_best_favorite,
+        resume=args.resume,
+        state_file=args.state_file
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)

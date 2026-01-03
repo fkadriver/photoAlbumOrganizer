@@ -29,7 +29,7 @@ pip install -r requirements.txt
 This mode scans your Immich library and tags similar photos without downloading anything:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://your-immich-server:2283 \
   --immich-api-key YOUR_API_KEY_HERE \
@@ -47,7 +47,7 @@ After running, you can:
 This creates Immich albums grouping similar photos together:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://your-immich-server:2283 \
   --immich-api-key YOUR_API_KEY_HERE \
@@ -65,7 +65,7 @@ This will:
 Download photos from Immich and organize them into local folders:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://your-immich-server:2283 \
   --immich-api-key YOUR_API_KEY_HERE \
@@ -151,7 +151,7 @@ python photo_organizer.py \
 
 1. **Scan and tag duplicates:**
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -171,7 +171,7 @@ python photo_organizer.py \
 
 1. **Create albums for similar photos:**
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -190,7 +190,7 @@ python photo_organizer.py \
 If you have an album called "Vacation 2024":
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -204,7 +204,7 @@ python photo_organizer.py \
 Download and organize photos locally:
 
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -243,7 +243,7 @@ Then use a wrapper script:
 #!/bin/bash
 # save as immich-organize.sh
 
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url "$IMMICH_URL" \
   --immich-api-key "$IMMICH_API_KEY" \
@@ -268,7 +268,7 @@ chmod +x immich-organize.sh
 
 ```bash
 # Thumbnails are used by default
-python photo_organizer.py --source-type immich ...
+python ../src/photo_organizer.py --source-type immich ...
 ```
 
 **Use full resolution:**
@@ -277,7 +277,7 @@ python photo_organizer.py --source-type immich ...
 - More storage needed
 
 ```bash
-python photo_organizer.py --source-type immich ... --use-full-resolution
+python ../src/photo_organizer.py --source-type immich ... --use-full-resolution
 ```
 
 ### Cache Management
@@ -289,7 +289,7 @@ The cache stores downloaded photos to avoid re-downloading:
 
 **Adjust cache size:**
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-cache-size 10000  # 10GB cache
   ...
@@ -307,7 +307,7 @@ For libraries with thousands of photos:
 1. **Process by album:**
 ```bash
 for album in "2020" "2021" "2022" "2023" "2024"; do
-  python photo_organizer.py \
+  python ../src/photo_organizer.py \
     --source-type immich \
     --immich-url "$IMMICH_URL" \
     --immich-api-key "$IMMICH_API_KEY" \
@@ -341,7 +341,7 @@ curl -H "x-api-key: YOUR_KEY" http://immich:2283/api/server-info/ping
 
 For self-signed certificates:
 ```bash
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --no-verify-ssl \
   ...
@@ -392,7 +392,7 @@ for album in albums:
 # monthly-cleanup.sh
 
 # Tag potential duplicates
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url "$IMMICH_URL" \
   --immich-api-key "$IMMICH_API_KEY" \
@@ -409,7 +409,7 @@ echo "Then run this script again to organize remaining photos"
 #!/bin/bash
 # create-organized-albums.sh
 
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url "$IMMICH_URL" \
   --immich-api-key "$IMMICH_API_KEY" \

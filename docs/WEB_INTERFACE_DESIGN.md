@@ -268,7 +268,7 @@ class Photo(BaseModel):
 
 ```bash
 # Start processing and web server
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   -s ~/Photos \
   -o ~/Organized \
   --web-ui \
@@ -283,7 +283,7 @@ python photo_organizer.py \
 
 ```bash
 # Review previously processed groups
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --web-only \
   --database groups.db \
   --port 8000
@@ -293,7 +293,7 @@ python photo_organizer.py \
 
 ```bash
 # Process Immich photos with web review
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source immich \
   --web-ui \
   --port 8000
@@ -308,7 +308,7 @@ python photo_organizer.py \
 
 1. **Initial Scan**
    ```bash
-   python photo_organizer.py -s ~/Photos --web-ui
+   python ../src/photo_organizer.py -s ~/Photos --web-ui
    ```
 
 2. **Review in Browser**
@@ -333,7 +333,7 @@ python photo_organizer.py \
 
 1. **Scan Immich Library**
    ```bash
-   python photo_organizer.py \
+   python ../src/photo_organizer.py \
      --source immich \
      --web-ui \
      --tag-mode

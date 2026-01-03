@@ -113,10 +113,11 @@
                 echo "✓ All packages installed!"
                 echo ""
                 echo "Ready to use:"
-                echo "  • Local: python photo_organizer.py -s <source> -o <output>"
-                echo "  • Immich: python photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only"
+                echo "  • Local: python src/photo_organizer.py -s <source> -o <output>"
+                echo "  • Immich: python src/photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only"
+                echo "  • Immich (wrapper): ./scripts/immich.sh help"
                 echo ""
-                echo "Tip: Run 'python test_immich_connection.py' to test Immich connectivity"
+                echo "Tip: Run 'python scripts/test_immich_connection.py' to test Immich connectivity"
                 echo ""
 
                 # Mark check as done

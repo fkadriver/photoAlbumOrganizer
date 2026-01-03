@@ -1,6 +1,6 @@
 # Photo Album Organizer
 
-A Python tool to organize large photo collections by automatically grouping similar photos (bursts, duplicates, similar shots) and selecting the best image from each group based on facial expression quality.
+A Python tool to organize large photo collections by automatically grouping similar photos (bursts, duplicates, similar shots) and selecting the best image from each group based on facial expression quality. Now with full [Immich](https://immich.app/) integration for self-hosted photo management!
 
 ## Features
 
@@ -8,9 +8,16 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
 - **Face Quality Detection**: Scores faces for smiles and open eyes using OpenCV and face_recognition
 - **Best Photo Selection**: Automatically selects the best photo from each group
+- **Immich Integration**: Full integration with Immich self-hosted photo management
+  - Tag duplicates directly in Immich
+  - Create organized albums automatically
+  - Mark best photos as favorites
+  - Process photos without downloading (tag-only mode)
+  - Smart caching for performance
 - **Metadata Preservation**: Extracts and saves all EXIF and file metadata to text files
 - **Original Preservation**: Keeps all original photos safely in organized folders
 - **Multi-Format Support**: Handles JPEG, PNG, HEIC, and RAW formats (CR2, NEF, ARW, DNG)
+- **Resume Capability**: Interrupt and resume processing without losing progress (perfect for large libraries)
 - **NixOS Optimized**: First-class NixOS support with automatic environment setup
 
 ## Table of Contents
@@ -20,18 +27,21 @@ A Python tool to organize large photo collections by automatically grouping simi
   - [Other Linux/macOS](#other-linuxmacos)
   - [Windows](#windows)
 - [Usage](#usage)
+  - [Local Photos](#basic-usage)
+  - [Immich Integration](#immich-integration)
 - [Command Line Options](#command-line-options)
 - [Output Structure](#output-structure)
 - [Configuration Guide](#configuration-guide)
 - [Performance](#performance)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Immich Integration Guide](docs/IMMICH_USAGE.md)
 
 ## Installation
 
 ### NixOS (Recommended)
 
-NixOS users get automatic environment setup with all dependencies properly linked. See [NIXOS_SETUP.md](NIXOS_SETUP.md) for detailed instructions.
+NixOS users get automatic environment setup with all dependencies properly linked. See [docs/NIXOS_SETUP.md](docs/NIXOS_SETUP.md) for detailed instructions.
 
 **Quick Start with direnv (automatic environment):**
 
@@ -48,10 +58,10 @@ pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 
 # Verify installation
-python verify_environment.py
+python scripts/verify_environment.py
 
 # Ready to use!
-python photo_organizer.py -s ~/Photos -o ~/Organized
+python src/photo_organizer.py -s ~/Photos -o ~/Organized
 ```
 
 **Without direnv:**
@@ -65,10 +75,10 @@ pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 
 # Run the organizer
-python photo_organizer.py -s ~/Photos -o ~/Organized
+python src/photo_organizer.py -s ~/Photos -o ~/Organized
 ```
 
-See [DIRENV_SETUP.md](DIRENV_SETUP.md) for automatic environment activation setup.
+See [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md) for automatic environment activation setup.
 
 ### Other Linux/macOS
 
@@ -129,42 +139,69 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (Local Photos)
 
 ```bash
-python photo_organizer.py -s /path/to/photos -o /path/to/output
+python src/photo_organizer.py -s /path/to/photos -o /path/to/output
 ```
+
+### Immich Integration
+
+The Photo Album Organizer now includes full integration with [Immich](https://immich.app/) self-hosted photo management!
+
+**Quick Start with Immich:**
+
+```bash
+# Test connection
+python scripts/test_immich_connection.py
+
+# Tag duplicates in Immich (safest, recommended first step)
+python src/photo_organizer.py \
+  --source-type immich \
+  --immich-url https://your-immich-url \
+  --immich-api-key YOUR_KEY \
+  --tag-only
+
+# Or use the convenient wrapper script
+./scripts/immich.sh tag-only
+./scripts/immich.sh create-albums
+./scripts/immich.sh help
+```
+
+**See the complete Immich guide:** [docs/IMMICH_USAGE.md](docs/IMMICH_USAGE.md)
+
+**Quick setup script:** [scripts/immich.sh](scripts/immich.sh) - Convenient wrapper for all Immich operations
 
 ### Common Use Cases
 
 **Organize burst photos with default settings:**
 ```bash
-python photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
+python src/photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
 ```
 
 **Group all visually similar photos regardless of timestamp:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
 ```
 
 **Stricter similarity for near-duplicates only:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 3
+python src/photo_organizer.py -s ~/Photos -o ~/Organized -t 3
 ```
 
 **Looser grouping for similar compositions:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 8
+python src/photo_organizer.py -s ~/Photos -o ~/Organized -t 8
 ```
 
 **Custom time window (10 minutes instead of default 5):**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
 ```
 
 **Dry run to preview without changes:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
 ```
 
 ## Command Line Options
@@ -197,25 +234,25 @@ Optional Arguments:
 
 **For burst photos from the same moment:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 5
+python src/photo_organizer.py -s ~/Photos -o ~/Organized -t 5
 # Default settings work well - groups visually similar photos taken within 5 minutes
 ```
 
 **For photos with incorrect timestamps:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --no-time-window
 # Ignores timestamps, groups purely by visual similarity
 ```
 
 **For finding duplicates across your entire library:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --no-time-window
+python src/photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --no-time-window
 # Very strict matching, no time restrictions
 ```
  
 **For grouping similar compositions (different angles of same scene):**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
+python src/photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
 # Looser matching, 30-minute window
 ```
 
@@ -356,7 +393,7 @@ The threshold parameter controls how similar photos must be to be grouped:
 ```bash
 # Process by year
 for year in 2020 2021 2022 2023 2024; do
-  python photo_organizer.py -s ~/Photos/$year -o ~/Organized/$year
+  python src/photo_organizer.py -s ~/Photos/$year -o ~/Organized/$year
 done
 ```
 
@@ -454,30 +491,41 @@ These are harmless BLAS/LAPACK threading warnings. They're suppressed in the Nix
 
 ```bash
 # Verify environment
-python verify_environment.py
+python scripts/verify_environment.py
 
 # Run with verbose output to debug
-python photo_organizer.py -s test_photos -o output --verbose
+python src/photo_organizer.py -s test_photos -o output --verbose
 
 # Dry run to test without changes
-python photo_organizer.py -s test_photos -o output --dry-run
+python src/photo_organizer.py -s test_photos -o output --dry-run
 ```
 
 ### Project Structure
 
 ```
 photoAlbumOrganizer/
-├── photo_organizer.py          # Main application
-├── verify_environment.py       # Environment verification tool
-├── requirements.txt            # Python dependencies
-├── flake.nix                  # NixOS development environment
-├── shell.nix                  # Alternative NixOS shell
-├── .envrc                     # direnv configuration
-├── README.md                  # This file
-├── NIXOS_SETUP.md            # NixOS-specific setup guide
-├── DIRENV_SETUP.md           # direnv configuration guide
-├── migration_guide.md        # Guide for migrating to pure NixOS
-└── LICENSE                   # MIT License
+├── src/                       # Python source code
+│   ├── photo_organizer.py    # Main application
+│   ├── photo_sources.py      # Photo source abstraction (local/Immich)
+│   ├── immich_client.py      # Immich API client
+│   └── processing_state.py   # Resume capability state management
+├── scripts/                   # Utility scripts
+│   ├── immich.sh            # Immich wrapper script
+│   ├── test_immich_connection.py  # Test Immich connectivity
+│   └── verify_environment.py      # Environment verification
+├── docs/                      # Documentation
+│   ├── IMMICH_USAGE.md       # Immich integration guide
+│   ├── RESUME_CAPABILITY.md  # Resume feature guide
+│   ├── NIXOS_SETUP.md        # NixOS setup guide
+│   ├── DIRENV_SETUP.md       # direnv configuration guide
+│   ├── QUICKSTART.md         # Quick start guide
+│   └── ...                   # Additional documentation
+├── requirements.txt          # Python dependencies
+├── flake.nix                # NixOS development environment
+├── shell.nix                # Alternative NixOS shell
+├── .envrc                   # direnv configuration
+├── README.md                # This file
+└── LICENSE                  # MIT License
 ```
 
 ### Contributing
@@ -490,6 +538,22 @@ Contributions welcome! Please:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+### Recent Enhancements
+
+- [x] **Immich Integration** - Full integration with Immich self-hosted photo management
+  - Tag duplicates directly in Immich
+  - Create organized albums
+  - Mark best photos as favorites
+  - Smart caching for performance
+  - See [docs/IMMICH_USAGE.md](docs/IMMICH_USAGE.md) for details
+
+- [x] **Resume Capability** - Interrupt and resume long-running jobs without losing progress
+  - Automatic state persistence every 50 photos
+  - Graceful interruption with Ctrl+C
+  - Hash caching for faster resume
+  - Skip already-processed groups
+  - See [docs/RESUME_CAPABILITY.md](docs/RESUME_CAPABILITY.md) for details
+
 ### Future Enhancements
 
 - [ ] Advanced face swapping with face alignment and blending
@@ -497,11 +561,15 @@ Contributions welcome! Please:
 - [ ] GPU acceleration for face detection
 - [ ] Web interface for reviewing and managing groups
 - [ ] HDR/exposure blending for merged photos
-- [ ] Resume capability for interrupted processing
-- [ ] Cloud storage integration (Google Photos, iCloud, Immich)
+- [ ] Cloud storage integration (Google Photos, iCloud)
 - [ ] Machine learning for better "best photo" selection
 - [ ] Duplicate detection mode (find exact duplicates)
 - [ ] Video support for organizing video clips
+- [ ] Async/parallel downloads for Immich (using aiohttp)
+- [ ] Batch API operations for better Immich performance
+- [ ] Integration with Immich's ML features
+- [ ] Shared album support in Immich
+- [ ] Smart archival suggestions based on quality scores
 
 ## License
 

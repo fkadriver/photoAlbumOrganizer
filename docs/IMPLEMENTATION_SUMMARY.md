@@ -124,14 +124,14 @@ if not cached_path:
 
 ```bash
 # Tag duplicates (no download)
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
   --tag-only
 
 # Create albums
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -139,14 +139,14 @@ python photo_organizer.py \
   --mark-best-favorite
 
 # Download and organize
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
   --output ~/Organized
 
 # Process specific album
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -225,7 +225,7 @@ print('Connected!' if client.ping() else 'Connection failed')
 "
 
 # 3. Test tag-only mode (safest)
-python photo_organizer.py \
+python ../src/photo_organizer.py \
   --source-type immich \
   --immich-url http://immich:2283 \
   --immich-api-key YOUR_KEY \
@@ -271,7 +271,7 @@ python photo_organizer.py \
 
 1. **Test with your Immich instance:**
    ```bash
-   python photo_organizer.py \
+   python ../src/photo_organizer.py \
      --source-type immich \
      --immich-url YOUR_IMMICH_URL \
      --immich-api-key YOUR_API_KEY \
@@ -283,7 +283,7 @@ python photo_organizer.py \
 
 3. **Try album creation** mode:
    ```bash
-   python photo_organizer.py \
+   python ../src/photo_organizer.py \
      --source-type immich \
      --immich-url YOUR_IMMICH_URL \
      --immich-api-key YOUR_API_KEY \
