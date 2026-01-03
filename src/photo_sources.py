@@ -40,12 +40,13 @@ class PhotoSource(ABC):
     """Abstract base class for photo sources."""
 
     @abstractmethod
-    def list_photos(self, album: Optional[str] = None) -> List[Photo]:
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
         """
         List all photos from this source.
 
         Args:
             album: Optional album/folder filter
+            limit: Optional limit on number of photos to return (for testing/performance)
 
         Returns:
             List of Photo objects
@@ -137,7 +138,7 @@ class LocalPhotoSource(PhotoSource):
             '.jpg', '.jpeg', '.png', '.heic', '.cr2', '.nef', '.arw', '.dng'
         }
 
-    def list_photos(self, album: Optional[str] = None) -> List[Photo]:
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
         """List all photos in the directory."""
         photos = []
 
@@ -379,7 +380,7 @@ class ImmichPhotoSource(PhotoSource):
         if not self.client.ping():
             raise ConnectionError(f"Failed to connect to Immich server at {url}")
 
-    def list_photos(self, album: Optional[str] = None) -> List[Photo]:
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
         """List all photos from Immich."""
         if album:
             # Get album by name
@@ -395,9 +396,9 @@ class ImmichPhotoSource(PhotoSource):
                 print(f"Album '{album}' not found")
                 return []
 
-            assets = self.client.get_album_assets(album_id)
+            assets = self.client.get_album_assets(album_id, limit=limit)
         else:
-            assets = self.client.get_all_assets()
+            assets = self.client.get_all_assets(limit=limit)
 
         photos = []
         for asset in assets:

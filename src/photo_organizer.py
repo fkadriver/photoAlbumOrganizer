@@ -173,7 +173,7 @@ class PhotoOrganizer:
     
     def find_all_photos(self, album: str = None):
         """Find all photos from the photo source."""
-        return self.photo_source.list_photos(album=album)
+        return self.photo_source.list_photos(album=album, limit=self.limit)
     
     def compute_hash(self, photo: Photo):
         """Compute perceptual hash for a photo."""
@@ -399,15 +399,13 @@ class PhotoOrganizer:
     def organize_photos(self, album: str = None):
         """Main method to organize photos into groups."""
         try:
-            # Find all photos
+            # Find all photos (limit is applied at source level for efficiency)
             photos = self.find_all_photos(album=album)
-            print(f"Found {len(photos)} photos")
 
-            # Apply limit if specified (for testing)
             if self.limit is not None and self.limit > 0:
-                original_count = len(photos)
-                photos = photos[:self.limit]
-                print(f"🔬 TEST MODE: Limited to first {len(photos)} photos (found {original_count} total)")
+                print(f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})")
+            else:
+                print(f"Found {len(photos)} photos")
 
             # Track discovered photos
             for photo in photos:

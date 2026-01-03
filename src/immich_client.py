@@ -140,12 +140,13 @@ class ImmichClient:
             print(f"Failed to ping Immich server: {e}")
             return False
 
-    def get_all_assets(self, skip_archived: bool = True) -> List[ImmichAsset]:
+    def get_all_assets(self, skip_archived: bool = True, limit: Optional[int] = None) -> List[ImmichAsset]:
         """
         Get all assets from Immich.
 
         Args:
             skip_archived: Skip archived assets
+            limit: Maximum number of images to return (for testing/performance)
 
         Returns:
             List of ImmichAsset objects
@@ -184,6 +185,12 @@ class ImmichClient:
                     if item.get('type') == 'IMAGE':
                         assets.append(ImmichAsset(item))
                         images_this_page += 1
+
+                        # Stop if we've reached the limit
+                        if limit is not None and len(assets) >= limit:
+                            print(f"Fetched page {page}: {len(items)} items ({images_this_page} images)")
+                            print(f"✓ Reached limit of {limit} images")
+                            return assets
 
                 total_fetched += len(items)
                 print(f"Fetched page {page}: {len(items)} items ({images_this_page} images, {total_fetched} total assets)")
@@ -322,12 +329,13 @@ class ImmichClient:
             print(f"Failed to get albums: {e}")
             return []
 
-    def get_album_assets(self, album_id: str) -> List[ImmichAsset]:
+    def get_album_assets(self, album_id: str, limit: Optional[int] = None) -> List[ImmichAsset]:
         """
         Get all assets in an album.
 
         Args:
             album_id: Album ID
+            limit: Maximum number of images to return (for testing/performance)
 
         Returns:
             List of ImmichAsset objects
@@ -340,6 +348,11 @@ class ImmichClient:
             for asset_data in data.get('assets', []):
                 if asset_data.get('type') == 'IMAGE':
                     assets.append(ImmichAsset(asset_data))
+
+                    # Stop if we've reached the limit
+                    if limit is not None and len(assets) >= limit:
+                        print(f"✓ Reached limit of {limit} images from album")
+                        break
 
             return assets
         except Exception as e:
