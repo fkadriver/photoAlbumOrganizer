@@ -23,9 +23,11 @@ Both **Phase 1 and Phase 2** of the Immich integration have been fully implement
    - Interactive API key input
    - Comprehensive diagnostics
 
-### Documentation (5 files)
-4. **[IMMICH_USAGE.md](IMMICH_USAGE.md)** (600+ lines)
+### Documentation (4 files)
+4. **[IMMICH.md](IMMICH.md)** (700+ lines)
    - Complete user guide
+   - immich.sh wrapper script documentation
+   - Direct Python usage (advanced)
    - Multiple workflow examples
    - Troubleshooting section
    - Configuration guide
@@ -39,11 +41,6 @@ Both **Phase 1 and Phase 2** of the Immich integration have been fully implement
    - Technical implementation details
    - Architecture overview
    - API reference
-
-7. **[IMMICH_SCRIPT_USAGE.md](IMMICH_SCRIPT_USAGE.md)** (300+ lines)
-   - immich.sh wrapper script guide
-   - All modes explained
-   - Security best practices
 
 8. **[DIRENV_OPTIMIZATION.md](DIRENV_OPTIMIZATION.md)** (200+ lines)
    - Direnv optimization guide
@@ -74,7 +71,7 @@ Both **Phase 1 and Phase 2** of the Immich integration have been fully implement
 2. **[requirements.txt](requirements.txt)**
    - Added `requests>=2.31.0` for HTTP API calls
 
-3. **[IMMICH_INTERGRATION.md](IMMICH_INTERGRATION.md)**
+3. **[IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md)**
    - Updated to show completed status
    - Added implementation details
    - Complete API endpoint table
@@ -172,13 +169,12 @@ Start here based on your needs:
 
 ### For Users
 1. **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide ⭐ START HERE
-2. **[IMMICH_USAGE.md](IMMICH_USAGE.md)** - Complete usage guide
-3. **[IMMICH_SCRIPT_USAGE.md](IMMICH_SCRIPT_USAGE.md)** - Script reference
-4. **[README.md](README.md)** - Main documentation
+2. **[IMMICH.md](IMMICH.md)** - Complete usage guide
+3. **[README.md](README.md)** - Main documentation
 
 ### For Developers
 1. **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Technical details
-2. **[IMMICH_INTERGRATION.md](IMMICH_INTERGRATION.md)** - Design document
+2. **[IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md)** - Design document
 3. **[DIRENV_OPTIMIZATION.md](DIRENV_OPTIMIZATION.md)** - Dev environment
 
 ## 🎯 Key Improvements

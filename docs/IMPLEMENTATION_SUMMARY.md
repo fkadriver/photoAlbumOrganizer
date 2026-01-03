@@ -17,7 +17,7 @@ Both Phase 1 and Phase 2 of the Immich integration are **fully implemented**.
    - `ImmichPhotoSource` for Immich integration
    - `PhotoCache` with LRU eviction
 
-3. **[IMMICH_USAGE.md](IMMICH_USAGE.md)** (600+ lines)
+3. **[IMMICH.md](IMMICH.md)** (700+ lines)
    - Complete usage guide
    - Multiple workflow examples
    - Troubleshooting section
@@ -34,7 +34,7 @@ Both Phase 1 and Phase 2 of the Immich integration are **fully implemented**.
 2. **[requirements.txt](requirements.txt)**
    - Added `requests>=2.31.0` for HTTP API calls
 
-3. **[IMMICH_INTERGRATION.md](IMMICH_INTERGRATION.md)**
+3. **[IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md)**
    - Updated to reflect completed implementation
    - Added implementation details
    - Updated API endpoint table
@@ -262,8 +262,8 @@ python ../src/photo_organizer.py \
 
 ## Documentation
 
-- **[IMMICH_USAGE.md](IMMICH_USAGE.md)** - Complete user guide
-- **[IMMICH_INTERGRATION.md](IMMICH_INTERGRATION.md)** - Technical design doc
+- **[IMMICH.md](IMMICH.md)** - Complete user guide
+- **[IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md)** - Technical design doc
 - **[README.md](README.md)** - Main project docs
 - Inline code documentation in all modules
 
@@ -306,7 +306,7 @@ If you encounter issues:
 
 3. Check Immich version (tested with v1.95+)
 
-4. Review [IMMICH_USAGE.md](IMMICH_USAGE.md) troubleshooting section
+4. Review [IMMICH.md](IMMICH.md) troubleshooting section
 
 ## Summary
 

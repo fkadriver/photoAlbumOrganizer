@@ -164,9 +164,9 @@ python ../src/photo_organizer.py \
 
 ## Next Steps
 
-- Read [IMMICH_USAGE.md](IMMICH_USAGE.md) for detailed usage
+- Read [IMMICH.md](IMMICH.md) for detailed usage
 - Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-- Review [IMMICH_INTERGRATION.md](IMMICH_INTERGRATION.md) for architecture
+- Review [IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md) for architecture
 
 ## Local Photos (Still Works!)
 

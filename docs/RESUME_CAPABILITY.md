@@ -279,6 +279,6 @@ Resume with: --resume --state-file .photo_organizer_state.pkl
 
 ## See Also
 
-- [IMMICH_USAGE.md](IMMICH_USAGE.md) - Immich integration guide
+- [IMMICH.md](IMMICH.md) - Immich integration guide
 - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
 - [ADVANCED_FEATURES_ROADMAP.md](ADVANCED_FEATURES_ROADMAP.md) - Future enhancements

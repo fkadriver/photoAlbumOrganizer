@@ -53,7 +53,7 @@ jobs:
     
     - name: Test imports
       run: |
-        python -c "import photo_organizer; print('Import successful')"
+        python -c "import sys; sys.path.insert(0, 'src'); import photo_organizer; print('Import successful')"
     
     # Uncomment when you add tests
     # - name: Test with pytest

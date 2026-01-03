@@ -83,7 +83,7 @@ immich:
 
 ## Usage
 
-See [IMMICH_USAGE.md](IMMICH_USAGE.md) for complete usage guide and examples.
+See [IMMICH.md](IMMICH.md) for complete usage guide and examples.
 
 ### Quick Examples
 
@@ -184,7 +184,7 @@ Default cache location: `~/.cache/photo-organizer/immich/`
 
 ## Workflow Examples
 
-See [IMMICH_USAGE.md](IMMICH_USAGE.md) for detailed workflows.
+See [IMMICH.md](IMMICH.md) for detailed workflows.
 
 ### Quick Workflow Reference
 
@@ -319,7 +319,7 @@ Potential future improvements:
 
 ## See Also
 
-- **[IMMICH_USAGE.md](IMMICH_USAGE.md)** - Complete usage guide with examples
+- **[IMMICH.md](IMMICH.md)** - Complete usage guide with examples
 - **[README.md](README.md)** - Main project documentation
 - **[Immich Documentation](https://immich.app/docs)** - Official Immich docs
 - **[Immich API](https://immich.app/docs/api)** - API reference
@@ -336,4 +336,4 @@ Both Phase 1 and Phase 2 of the Immich integration are **fully implemented** and
 ✅ **Flexible workflows** for different use cases
 ✅ **Comprehensive documentation** and examples
 
-See [IMMICH_USAGE.md](IMMICH_USAGE.md) to get started!
+See [IMMICH.md](IMMICH.md) to get started!
