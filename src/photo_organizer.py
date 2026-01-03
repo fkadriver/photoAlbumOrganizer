@@ -49,7 +49,7 @@ class PhotoOrganizer:
     def __init__(self, photo_source: PhotoSource, output_dir, similarity_threshold=5,
                  time_window=300, use_time_window=True, tag_only=False,
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
-                 resume=False, state_file=None):
+                 resume=False, state_file=None, limit=None):
         """
         Initialize the photo organizer.
 
@@ -65,6 +65,7 @@ class PhotoOrganizer:
             mark_best_favorite: Mark best photo as favorite (Immich only)
             resume: Resume from previous interrupted run
             state_file: Path to state file for resume capability
+            limit: Maximum number of photos to process (for testing, default: None for unlimited)
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -75,6 +76,7 @@ class PhotoOrganizer:
         self.create_albums = create_albums
         self.album_prefix = album_prefix
         self.mark_best_favorite = mark_best_favorite
+        self.limit = limit
 
         # Resume capability
         self.resume = resume
@@ -401,6 +403,12 @@ class PhotoOrganizer:
             photos = self.find_all_photos(album=album)
             print(f"Found {len(photos)} photos")
 
+            # Apply limit if specified (for testing)
+            if self.limit is not None and self.limit > 0:
+                original_count = len(photos)
+                photos = photos[:self.limit]
+                print(f"🔬 TEST MODE: Limited to first {len(photos)} photos (found {original_count} total)")
+
             # Track discovered photos
             for photo in photos:
                 self.state.mark_photo_discovered()
@@ -616,6 +624,8 @@ Examples:
                         help='Enable verbose output')
     parser.add_argument('--dry-run', action='store_true',
                         help='Show what would be done without actually organizing')
+    parser.add_argument('--limit', type=int, default=None,
+                        help='Limit processing to first N photos (for testing, default: unlimited)')
 
     args = parser.parse_args()
 
@@ -659,7 +669,8 @@ Examples:
         album_prefix=args.album_prefix,
         mark_best_favorite=args.mark_best_favorite,
         resume=args.resume,
-        state_file=args.state_file
+        state_file=args.state_file,
+        limit=args.limit
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)

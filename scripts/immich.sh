@@ -13,6 +13,7 @@ IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
 IGNORE_TIMESTAMP="${IGNORE_TIMESTAMP:-0}"  # Set to 1 to disable time window check
 RESUME="${RESUME:-0}"  # Set to 1 to resume from previous run
+TEST_LIMIT="${TEST_LIMIT:-}"  # Set to N to limit processing to first N photos (for testing)
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -56,6 +57,13 @@ fi
 # Add --resume flag if RESUME is set
 if [ "$RESUME" = "1" ]; then
     COMMON_ARGS+=(--resume)
+fi
+
+# Add --limit flag if TEST_LIMIT is set
+if [ -n "$TEST_LIMIT" ]; then
+    COMMON_ARGS+=(--limit "$TEST_LIMIT")
+    echo "🔬 TEST MODE: Processing limited to first $TEST_LIMIT photos"
+    echo ""
 fi
 
 # Run based on mode
@@ -225,9 +233,13 @@ OPTIONS:
   RESUME=1              Resume from previous interrupted run
                         (useful for large libraries or unstable connections)
 
+  TEST_LIMIT=N          Limit processing to first N photos (for testing)
+                        (useful for testing features on subset before full run)
+
   Examples:
     IGNORE_TIMESTAMP=1 $0 tag-only
     RESUME=1 $0 create-albums
+    TEST_LIMIT=100 $0 tag-only
 
 THRESHOLD:
   Default: 5 (burst photos)

@@ -225,9 +225,16 @@ Optional Arguments:
                            Useful for finding duplicates across different dates
   
   --verbose                Enable detailed output during processing
-  
+
   --dry-run                Show what would be done without making changes
                            Useful for testing parameters before processing
+
+  --limit N                Limit processing to first N photos (for testing)
+                           Useful for testing features on subset before full run
+
+  --resume                 Resume from previous interrupted run
+
+  --state-file PATH        Custom path for state file (for resume)
 ```
 
 ### Choosing the Right Options
@@ -493,11 +500,17 @@ These are harmless BLAS/LAPACK threading warnings. They're suppressed in the Nix
 # Verify environment
 python scripts/verify_environment.py
 
+# Test with limited photos (processes first 100 photos only)
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --limit 100
+
 # Run with verbose output to debug
 python src/photo_organizer.py -s test_photos -o output --verbose
 
 # Dry run to test without changes
 python src/photo_organizer.py -s test_photos -o output --dry-run
+
+# Combine test mode with resume capability
+python src/photo_organizer.py -s ~/Photos -o ~/Organized --limit 100 --resume
 ```
 
 ### Project Structure
