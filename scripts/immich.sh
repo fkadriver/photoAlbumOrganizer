@@ -136,7 +136,7 @@ case "$MODE" in
 
         # For HDR and face swap, we need to download photos
         if [ "$ENABLE_HDR" = "1" ] || [ "$ENABLE_FACE_SWAP" = "1" ]; then
-            OUTPUT_DIR="${1:-~/Organized/Immich}"
+            OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
             echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
             echo ""
             python src/photo_organizer.py "${COMMON_ARGS[@]}" \
@@ -153,7 +153,7 @@ case "$MODE" in
         ;;
 
     download)
-        OUTPUT_DIR="${1:-~/Organized/Immich}"
+        OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
         echo "⬇️  Downloading and organizing photos to: $OUTPUT_DIR"
         echo ""
         python src/photo_organizer.py "${COMMON_ARGS[@]}" \
@@ -181,7 +181,7 @@ case "$MODE" in
             create-albums|albums)
                 # For HDR and face swap, we need to download photos
                 if [ "$ENABLE_HDR" = "1" ] || [ "$ENABLE_FACE_SWAP" = "1" ]; then
-                    OUTPUT_DIR="${3:-~/Organized/Immich/$ALBUM_NAME}"
+                    OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
                     echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
                     echo ""
                     python src/photo_organizer.py "${COMMON_ARGS[@]}" \
@@ -197,7 +197,7 @@ case "$MODE" in
                 fi
                 ;;
             download)
-                OUTPUT_DIR="${3:-~/Organized/Immich/$ALBUM_NAME}"
+                OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
                 python src/photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --output "$OUTPUT_DIR"
