@@ -60,6 +60,26 @@ This will:
 - Create albums named "Similar-0001", "Similar-0002", etc.
 - Mark the best photo in each group as a favorite
 
+#### Cleanup Created Albums
+
+Remove albums created by the organizer (useful for testing or re-organization):
+
+```bash
+# Dry run first (safe, shows what would be deleted)
+../scripts/immich.sh cleanup "Organized-" yes
+
+# Actually delete albums with "Organized-" prefix
+../scripts/immich.sh cleanup "Organized-" no
+
+# Delete albums with custom prefix
+../scripts/immich.sh cleanup "Similar-" no
+```
+
+This will:
+- Find all albums starting with the specified prefix
+- Show what will be deleted (dry run mode)
+- Delete albums when confirmed (no dry run)
+
 #### Download and Organize Locally
 
 Download photos from Immich and organize them into local folders:
@@ -227,6 +247,49 @@ This creates:
 │   └── ...
 ```
 
+### Workflow 5: Cleanup Created Albums
+
+When testing or re-organizing, you may want to remove albums created by the organizer:
+
+**Step 1: Dry run (see what would be deleted):**
+```bash
+../scripts/immich.sh cleanup "Organized-" yes
+```
+
+Output:
+```
+🗑️  Cleaning up albums with prefix: Organized-
+
+DRY RUN MODE - No albums will be deleted
+To actually delete, run: scripts/immich.sh cleanup 'Organized-' no
+
+Found 15 album(s) with prefix 'Organized-':
+  - Organized-0001 (ID: abc123, 5 assets)
+  - Organized-0002 (ID: def456, 3 assets)
+  ...
+
+DRY RUN: Would delete 15 album(s)
+Run with dry_run=False to actually delete these albums
+```
+
+**Step 2: Actually delete if satisfied:**
+```bash
+../scripts/immich.sh cleanup "Organized-" no
+```
+
+**Cleanup albums with different prefix:**
+```bash
+# If you used --album-prefix "Similar-"
+../scripts/immich.sh cleanup "Similar-" no
+```
+
+**Important Notes:**
+- Always run dry run first to verify what will be deleted
+- This only deletes the albums, not the photos themselves
+- Photos remain in your Immich library
+- Default prefix is "Organized-" if not specified
+- The cleanup command is in `scripts/immich.sh`
+
 ## Configuration with Environment Variables
 
 You can set environment variables to avoid typing credentials repeatedly:
@@ -254,6 +317,80 @@ Usage:
 ```bash
 chmod +x immich-organize.sh
 ./immich-organize.sh --tag-only --threshold 5
+```
+
+## Using the Immich Wrapper Script
+
+The `scripts/immich.sh` wrapper provides convenient commands for common Immich operations.
+
+### Available Modes
+
+**Tag Mode (Safest):**
+```bash
+../scripts/immich.sh tag-only
+```
+Tags duplicate photos without downloading or modifying.
+
+**Create Albums:**
+```bash
+../scripts/immich.sh create-albums
+```
+Creates albums for similar photo groups and marks best photos as favorites.
+
+**Download Mode:**
+```bash
+../scripts/immich.sh download [OUTPUT_DIR]
+```
+Downloads and organizes photos locally (default: `~/Organized/Immich`).
+
+**Process Specific Album:**
+```bash
+../scripts/immich.sh album "Album Name" [mode]
+```
+Modes: `tag`, `create-albums`, or `download`.
+
+Example:
+```bash
+../scripts/immich.sh album "Vacation 2024" create-albums
+```
+
+**Cleanup Created Albums:**
+```bash
+# Dry run (shows what would be deleted)
+../scripts/immich.sh cleanup "Organized-" yes
+
+# Actually delete
+../scripts/immich.sh cleanup "Organized-" no
+```
+
+**Test Connection:**
+```bash
+../scripts/immich.sh test
+```
+
+**Show Help:**
+```bash
+../scripts/immich.sh help
+```
+
+### Environment Variables
+
+The wrapper script supports these environment variables:
+
+- `IGNORE_TIMESTAMP=1` - Disable time window check, group by visual similarity only
+- `RESUME=1` - Resume from previous interrupted run
+- `TEST_LIMIT=N` - Limit processing to first N photos (for testing)
+
+Examples:
+```bash
+# Test with 100 photos
+TEST_LIMIT=100 ../scripts/immich.sh tag-only
+
+# Resume previous run
+RESUME=1 ../scripts/immich.sh create-albums
+
+# Combine options
+IGNORE_TIMESTAMP=1 TEST_LIMIT=50 ../scripts/immich.sh tag-only
 ```
 
 ## Performance Considerations

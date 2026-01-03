@@ -38,6 +38,21 @@ This creates albums "Organized-0001", "Organized-0002", etc. with similar photos
 
 Downloads photos from Immich and creates local organized folders.
 
+### Cleanup Created Albums
+
+```bash
+# Dry run first (safe - shows what would be deleted)
+../scripts/immich.sh cleanup
+
+# Actually delete albums with "Organized-" prefix
+../scripts/immich.sh cleanup "Organized-" no
+
+# Delete albums with custom prefix
+../scripts/immich.sh cleanup "MyPrefix-" no
+```
+
+Removes albums created by the organizer. Always run dry run first!
+
 ## All Modes
 
 ### Basic Modes
@@ -53,6 +68,10 @@ Downloads photos from Immich and creates local organized folders.
 
 # Download and organize locally
 ../scripts/immich.sh download [OUTPUT_DIR]
+
+# Cleanup created albums
+../scripts/immich.sh cleanup [PREFIX] [yes|no]
+# Default: cleanup "Organized-" yes (dry run)
 
 # Test connection
 ../scripts/immich.sh test
