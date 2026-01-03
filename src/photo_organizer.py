@@ -50,7 +50,8 @@ class PhotoOrganizer:
                  time_window=300, use_time_window=True, tag_only=False,
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
                  resume=False, state_file=None, limit=None,
-                 enable_hdr=False, hdr_gamma=2.2):
+                 enable_hdr=False, hdr_gamma=2.2,
+                 enable_face_swap=False, swap_closed_eyes=True):
         """
         Initialize the photo organizer.
 
@@ -69,6 +70,8 @@ class PhotoOrganizer:
             limit: Maximum number of photos to process (for testing, default: None for unlimited)
             enable_hdr: Enable HDR merging for bracketed shots (default: False)
             hdr_gamma: HDR tone mapping gamma value (default: 2.2)
+            enable_face_swap: Enable automatic face swapping to fix closed eyes/bad expressions (default: False)
+            swap_closed_eyes: Swap faces with closed eyes when face swapping is enabled (default: True)
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -82,6 +85,8 @@ class PhotoOrganizer:
         self.limit = limit
         self.enable_hdr = enable_hdr
         self.hdr_gamma = hdr_gamma
+        self.enable_face_swap = enable_face_swap
+        self.swap_closed_eyes = swap_closed_eyes
 
         # Resume capability
         self.resume = resume
@@ -516,6 +521,293 @@ class PhotoOrganizer:
             print(f"  HDR: Merge failed: {e}")
             return None
 
+    def calculate_eye_aspect_ratio(self, eye_landmarks):
+        """
+        Calculate eye aspect ratio (EAR) to determine if eye is open or closed.
+        EAR is based on the ratio of eye height to eye width.
+
+        Args:
+            eye_landmarks: List of (x, y) tuples for eye landmarks
+
+        Returns:
+            float: Eye aspect ratio (lower values indicate closed eyes, typically < 0.2)
+        """
+        if len(eye_landmarks) < 6:
+            return 1.0  # Assume open if not enough landmarks
+
+        # Calculate euclidean distances
+        def distance(p1, p2):
+            return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+
+        # Vertical eye distances
+        v1 = distance(eye_landmarks[1], eye_landmarks[5])
+        v2 = distance(eye_landmarks[2], eye_landmarks[4])
+
+        # Horizontal eye distance
+        h = distance(eye_landmarks[0], eye_landmarks[3])
+
+        # Eye aspect ratio
+        ear = (v1 + v2) / (2.0 * h) if h > 0 else 1.0
+        return ear
+
+    def detect_closed_eyes(self, image_path):
+        """
+        Detect faces with closed eyes in an image.
+
+        Args:
+            image_path: Path to image file
+
+        Returns:
+            List of face indices with closed eyes, or empty list if face detection disabled
+        """
+        if not FACE_DETECTION_ENABLED:
+            return []
+
+        try:
+            # Load image
+            image = face_recognition.load_image_file(str(image_path))
+
+            # Get face landmarks
+            face_landmarks_list = face_recognition.face_landmarks(image)
+
+            closed_eye_faces = []
+            for i, face_landmarks in enumerate(face_landmarks_list):
+                # Get eye landmarks
+                left_eye = face_landmarks.get('left_eye', [])
+                right_eye = face_landmarks.get('right_eye', [])
+
+                if left_eye and right_eye:
+                    # Calculate eye aspect ratios
+                    left_ear = self.calculate_eye_aspect_ratio(left_eye)
+                    right_ear = self.calculate_eye_aspect_ratio(right_eye)
+
+                    # Average EAR for both eyes
+                    avg_ear = (left_ear + right_ear) / 2.0
+
+                    # Threshold for closed eyes (typically < 0.2)
+                    if avg_ear < 0.2:
+                        closed_eye_faces.append(i)
+                        print(f"    Face {i}: Closed eyes detected (EAR={avg_ear:.3f})")
+
+            return closed_eye_faces
+
+        except Exception as e:
+            print(f"    Error detecting closed eyes: {e}")
+            return []
+
+    def find_best_replacement_face(self, base_image_path, source_image_paths, face_index=0):
+        """
+        Find the best replacement face from source images for a face with closed eyes.
+
+        Args:
+            base_image_path: Path to image with closed eyes
+            source_image_paths: List of paths to images with potential replacements
+            face_index: Index of face to replace in base image
+
+        Returns:
+            Tuple of (best_source_path, best_source_face_index) or (None, None) if no good replacement found
+        """
+        if not FACE_DETECTION_ENABLED:
+            return None, None
+
+        try:
+            # Load base image and get face encodings
+            base_image = face_recognition.load_image_file(str(base_image_path))
+            base_encodings = face_recognition.face_encodings(base_image)
+
+            if face_index >= len(base_encodings):
+                return None, None
+
+            base_encoding = base_encodings[face_index]
+
+            best_source = None
+            best_face_idx = None
+            best_score = -1
+
+            # Search through source images
+            for source_path in source_image_paths:
+                if source_path == base_image_path:
+                    continue  # Skip same image
+
+                source_image = face_recognition.load_image_file(str(source_path))
+                source_encodings = face_recognition.face_encodings(source_image)
+                source_landmarks = face_recognition.face_landmarks(source_image)
+
+                # Find matching face in source image
+                for i, source_encoding in enumerate(source_encodings):
+                    # Check if this is the same person (face match)
+                    face_distance = face_recognition.face_distance([base_encoding], source_encoding)[0]
+
+                    if face_distance < 0.6:  # Same person threshold
+                        # Check if eyes are open
+                        if i < len(source_landmarks):
+                            landmarks = source_landmarks[i]
+                            left_eye = landmarks.get('left_eye', [])
+                            right_eye = landmarks.get('right_eye', [])
+
+                            if left_eye and right_eye:
+                                left_ear = self.calculate_eye_aspect_ratio(left_eye)
+                                right_ear = self.calculate_eye_aspect_ratio(right_eye)
+                                avg_ear = (left_ear + right_ear) / 2.0
+
+                                # Score based on eye openness and face match quality
+                                score = avg_ear * (1 - face_distance)
+
+                                if score > best_score and avg_ear > 0.2:  # Eyes must be open
+                                    best_score = score
+                                    best_source = source_path
+                                    best_face_idx = i
+
+            if best_source:
+                print(f"    Found replacement face in {Path(best_source).name} (score={best_score:.3f})")
+
+            return best_source, best_face_idx
+
+        except Exception as e:
+            print(f"    Error finding replacement face: {e}")
+            return None, None
+
+    def swap_face(self, base_image_path, source_image_path, base_face_idx, source_face_idx):
+        """
+        Swap a face from source image into base image using seamless cloning.
+
+        Args:
+            base_image_path: Path to base image
+            source_image_path: Path to source image with replacement face
+            base_face_idx: Face index in base image to replace
+            source_face_idx: Face index in source image to use
+
+        Returns:
+            numpy.ndarray: Image with swapped face, or None if swap fails
+        """
+        if not FACE_DETECTION_ENABLED:
+            return None
+
+        try:
+            # Load images
+            base_image_rgb = face_recognition.load_image_file(str(base_image_path))
+            source_image_rgb = face_recognition.load_image_file(str(source_image_path))
+
+            # Convert to BGR for OpenCV
+            base_image = cv2.cvtColor(base_image_rgb, cv2.COLOR_RGB2BGR)
+            source_image = cv2.cvtColor(source_image_rgb, cv2.COLOR_RGB2BGR)
+
+            # Get face locations
+            base_locations = face_recognition.face_locations(base_image_rgb)
+            source_locations = face_recognition.face_locations(source_image_rgb)
+
+            if base_face_idx >= len(base_locations) or source_face_idx >= len(source_locations):
+                return None
+
+            # Get face landmarks for alignment
+            base_landmarks = face_recognition.face_landmarks(base_image_rgb)[base_face_idx]
+            source_landmarks = face_recognition.face_landmarks(source_image_rgb)[source_face_idx]
+
+            # Extract face regions
+            base_top, base_right, base_bottom, base_left = base_locations[base_face_idx]
+            source_top, source_right, source_bottom, source_left = source_locations[source_face_idx]
+
+            # Expand face region slightly for better blending
+            margin = 20
+            source_top = max(0, source_top - margin)
+            source_bottom = min(source_image.shape[0], source_bottom + margin)
+            source_left = max(0, source_left - margin)
+            source_right = min(source_image.shape[1], source_right + margin)
+
+            # Extract and resize source face to match base face size
+            source_face = source_image[source_top:source_bottom, source_left:source_right]
+            target_height = base_bottom - base_top + 2 * margin
+            target_width = base_right - base_left + 2 * margin
+
+            source_face_resized = cv2.resize(source_face, (target_width, target_height))
+
+            # Create mask for seamless cloning
+            mask = np.full(source_face_resized.shape[:2], 255, dtype=np.uint8)
+
+            # Calculate center point for seamless clone
+            center_x = (base_left + base_right) // 2
+            center_y = (base_top + base_bottom) // 2
+
+            # Seamless clone the face
+            result = cv2.seamlessClone(
+                source_face_resized,
+                base_image,
+                mask,
+                (center_x, center_y),
+                cv2.NORMAL_CLONE
+            )
+
+            print(f"    Face swap successful")
+            return result
+
+        except Exception as e:
+            print(f"    Face swap failed: {e}")
+            return None
+
+    def create_face_swapped_image(self, group, best_photo_path):
+        """
+        Create a version of the best photo with closed eyes replaced.
+
+        Args:
+            group: List of photo_data dictionaries
+            best_photo_path: Path to the best photo in the group
+
+        Returns:
+            numpy.ndarray: Face-swapped image or None if no swaps needed/possible
+        """
+        if not self.enable_face_swap or not FACE_DETECTION_ENABLED:
+            return None
+
+        try:
+            # Detect closed eyes in best photo
+            closed_eye_faces = self.detect_closed_eyes(best_photo_path)
+
+            if not closed_eye_faces:
+                print(f"  Face swap: No closed eyes detected")
+                return None
+
+            print(f"  Face swap: Found {len(closed_eye_faces)} face(s) with closed eyes")
+
+            # Get paths of other photos in group
+            source_paths = []
+            for photo_data in group:
+                photo = photo_data['photo']
+                if photo.cached_path and photo.cached_path != best_photo_path:
+                    source_paths.append(photo.cached_path)
+
+            if not source_paths:
+                print(f"  Face swap: No alternative photos available")
+                return None
+
+            # Start with the best photo
+            result = cv2.imread(str(best_photo_path))
+
+            # Swap each closed-eye face
+            swaps_made = 0
+            for face_idx in closed_eye_faces:
+                # Find best replacement
+                source_path, source_face_idx = self.find_best_replacement_face(
+                    best_photo_path, source_paths, face_idx
+                )
+
+                if source_path and source_face_idx is not None:
+                    # Swap the face
+                    swapped = self.swap_face(best_photo_path, source_path, face_idx, source_face_idx)
+                    if swapped is not None:
+                        result = swapped
+                        swaps_made += 1
+
+            if swaps_made > 0:
+                print(f"  Face swap: Successfully swapped {swaps_made} face(s)")
+                return result
+            else:
+                print(f"  Face swap: No suitable replacements found")
+                return None
+
+        except Exception as e:
+            print(f"  Face swap: Failed - {e}")
+            return None
+
     def organize_photos(self, album: str = None):
         """Main method to organize photos into groups."""
         try:
@@ -640,6 +932,15 @@ class PhotoOrganizer:
                             cv2.imwrite(str(hdr_dst), hdr_image)
                             print(f"  HDR: Saved merged image: {hdr_dst.name}")
 
+                    # Face swapping if enabled and face detection is available
+                    if self.enable_face_swap and FACE_DETECTION_ENABLED:
+                        face_swapped = self.create_face_swapped_image(group, best_dst)
+                        if face_swapped is not None:
+                            # Save face-swapped image
+                            swap_dst = group_dir / "face_swapped.jpg"
+                            cv2.imwrite(str(swap_dst), face_swapped)
+                            print(f"  Face swap: Saved improved image: {swap_dst.name}")
+
                     print(f"Group {i} complete: {group_dir}")
 
                 # Mark group as completed
@@ -699,6 +1000,14 @@ Examples:
   # HDR merging for bracketed exposures
   python photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --hdr-gamma 2.2
+
+  # Face swapping to fix closed eyes
+  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+    --enable-face-swap
+
+  # Both HDR and face swapping
+  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+    --enable-hdr --enable-face-swap
         """
     )
 
@@ -755,6 +1064,10 @@ Examples:
                         help='Enable HDR merging for bracketed exposure shots')
     parser.add_argument('--hdr-gamma', type=float, default=2.2,
                         help='HDR tone mapping gamma value (default: 2.2)')
+    parser.add_argument('--enable-face-swap', action='store_true',
+                        help='Enable automatic face swapping to fix closed eyes/bad expressions')
+    parser.add_argument('--swap-closed-eyes', action='store_true', default=True,
+                        help='Swap faces with closed eyes (default: True, use --no-swap-closed-eyes to disable)')
 
     # Other arguments
     parser.add_argument('--verbose', action='store_true',
@@ -809,7 +1122,9 @@ Examples:
         state_file=args.state_file,
         limit=args.limit,
         enable_hdr=args.enable_hdr,
-        hdr_gamma=args.hdr_gamma
+        hdr_gamma=args.hdr_gamma,
+        enable_face_swap=args.enable_face_swap,
+        swap_closed_eyes=args.swap_closed_eyes
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
