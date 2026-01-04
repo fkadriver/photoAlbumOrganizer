@@ -9,6 +9,13 @@ import hashlib
 import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import warnings
+
+# Suppress LAPACK/BLAS warnings from numpy/scipy/opencv
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 # Image processing
 from PIL import Image
@@ -16,6 +23,20 @@ from PIL.ExifTags import TAGS
 import imagehash
 import cv2
 import numpy as np
+
+# Suppress numpy errors that show in stderr
+np.seterr(all='ignore')
+
+# Context manager to suppress stderr (for LAPACK/BLAS warnings)
+class SuppressStderr:
+    def __enter__(self):
+        self._original_stderr = sys.stderr
+        sys.stderr = open(os.devnull, 'w')
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stderr.close()
+        sys.stderr = self._original_stderr
 
 # Photo source abstraction
 from photo_sources import PhotoSource, LocalPhotoSource, ImmichPhotoSource, Photo
@@ -327,9 +348,10 @@ class PhotoOrganizer:
                     tmp.write(data)
                     image_path = tmp.name
 
-            # Load image
-            image = face_recognition.load_image_file(image_path)
-            face_locations = face_recognition.face_locations(image)
+            # Load image (suppress LAPACK warnings)
+            with SuppressStderr():
+                image = face_recognition.load_image_file(image_path)
+                face_locations = face_recognition.face_locations(image)
 
             if not face_locations:
                 return []
@@ -520,20 +542,21 @@ class PhotoOrganizer:
             # Create exposure times array (use equal weighting if actual times unavailable)
             times = np.array([1.0] * len(images), dtype=np.float32)
 
-            # Estimate camera response function
-            calibrate = cv2.createCalibrateDebevec()
-            response = calibrate.process(images, times)
+            # Estimate camera response function (suppress LAPACK warnings)
+            with SuppressStderr():
+                calibrate = cv2.createCalibrateDebevec()
+                response = calibrate.process(images, times)
 
-            # Merge exposures to HDR
-            merge = cv2.createMergeDebevec()
-            hdr = merge.process(images, times, response)
+                # Merge exposures to HDR
+                merge = cv2.createMergeDebevec()
+                hdr = merge.process(images, times, response)
 
-            # Tone mapping using Drago algorithm
-            tonemap = cv2.createTonemapDrago(gamma=self.hdr_gamma)
-            ldr = tonemap.process(hdr)
+                # Tone mapping using Drago algorithm
+                tonemap = cv2.createTonemapDrago(gamma=self.hdr_gamma)
+                ldr = tonemap.process(hdr)
 
-            # Convert to 8-bit
-            ldr = np.clip(ldr * 255, 0, 255).astype('uint8')
+                # Convert to 8-bit
+                ldr = np.clip(ldr * 255, 0, 255).astype('uint8')
 
             print(f"  HDR: Merge successful (gamma={self.hdr_gamma})")
             return ldr
@@ -585,11 +608,12 @@ class PhotoOrganizer:
             return []
 
         try:
-            # Load image
-            image = face_recognition.load_image_file(str(image_path))
+            # Load image (suppress LAPACK warnings)
+            with SuppressStderr():
+                image = face_recognition.load_image_file(str(image_path))
 
-            # Get face landmarks
-            face_landmarks_list = face_recognition.face_landmarks(image)
+                # Get face landmarks
+                face_landmarks_list = face_recognition.face_landmarks(image)
 
             closed_eye_faces = []
             for i, face_landmarks in enumerate(face_landmarks_list):
@@ -632,9 +656,10 @@ class PhotoOrganizer:
             return None, None
 
         try:
-            # Load base image and get face encodings
-            base_image = face_recognition.load_image_file(str(base_image_path))
-            base_encodings = face_recognition.face_encodings(base_image)
+            # Load base image and get face encodings (suppress LAPACK warnings)
+            with SuppressStderr():
+                base_image = face_recognition.load_image_file(str(base_image_path))
+                base_encodings = face_recognition.face_encodings(base_image)
 
             if face_index >= len(base_encodings):
                 return None, None
@@ -650,14 +675,16 @@ class PhotoOrganizer:
                 if source_path == base_image_path:
                     continue  # Skip same image
 
-                source_image = face_recognition.load_image_file(str(source_path))
-                source_encodings = face_recognition.face_encodings(source_image)
-                source_landmarks = face_recognition.face_landmarks(source_image)
+                with SuppressStderr():
+                    source_image = face_recognition.load_image_file(str(source_path))
+                    source_encodings = face_recognition.face_encodings(source_image)
+                    source_landmarks = face_recognition.face_landmarks(source_image)
 
                 # Find matching face in source image
                 for i, source_encoding in enumerate(source_encodings):
                     # Check if this is the same person (face match)
-                    face_distance = face_recognition.face_distance([base_encoding], source_encoding)[0]
+                    with SuppressStderr():
+                        face_distance = face_recognition.face_distance([base_encoding], source_encoding)[0]
 
                     if face_distance < 0.6:  # Same person threshold
                         # Check if eyes are open
@@ -705,24 +732,27 @@ class PhotoOrganizer:
             return None
 
         try:
-            # Load images
-            base_image_rgb = face_recognition.load_image_file(str(base_image_path))
-            source_image_rgb = face_recognition.load_image_file(str(source_image_path))
+            # Load images (suppress LAPACK warnings)
+            with SuppressStderr():
+                base_image_rgb = face_recognition.load_image_file(str(base_image_path))
+                source_image_rgb = face_recognition.load_image_file(str(source_image_path))
 
             # Convert to BGR for OpenCV
             base_image = cv2.cvtColor(base_image_rgb, cv2.COLOR_RGB2BGR)
             source_image = cv2.cvtColor(source_image_rgb, cv2.COLOR_RGB2BGR)
 
-            # Get face locations
-            base_locations = face_recognition.face_locations(base_image_rgb)
-            source_locations = face_recognition.face_locations(source_image_rgb)
+            # Get face locations (suppress LAPACK warnings)
+            with SuppressStderr():
+                base_locations = face_recognition.face_locations(base_image_rgb)
+                source_locations = face_recognition.face_locations(source_image_rgb)
 
             if base_face_idx >= len(base_locations) or source_face_idx >= len(source_locations):
                 return None
 
-            # Get face landmarks for alignment
-            base_landmarks = face_recognition.face_landmarks(base_image_rgb)[base_face_idx]
-            source_landmarks = face_recognition.face_landmarks(source_image_rgb)[source_face_idx]
+            # Get face landmarks for alignment (suppress LAPACK warnings)
+            with SuppressStderr():
+                base_landmarks = face_recognition.face_landmarks(base_image_rgb)[base_face_idx]
+                source_landmarks = face_recognition.face_landmarks(source_image_rgb)[source_face_idx]
 
             # Extract face regions
             base_top, base_right, base_bottom, base_left = base_locations[base_face_idx]
