@@ -17,6 +17,7 @@ IGNORE_TIMESTAMP=0
 ENABLE_HDR=0
 ENABLE_FACE_SWAP=0
 RESUME=0
+FORCE_FRESH=0
 TEST_LIMIT=""
 
 # Load API key from config file if exists and not already set
@@ -61,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             RESUME=1
             shift
             ;;
+        --force-fresh)
+            FORCE_FRESH=1
+            shift
+            ;;
         --limit)
             TEST_LIMIT="$2"
             shift 2
@@ -101,6 +106,11 @@ fi
 # Add --resume flag if requested
 if [ "$RESUME" = "1" ]; then
     COMMON_ARGS+=(--resume)
+fi
+
+# Add --force-fresh flag if requested
+if [ "$FORCE_FRESH" = "1" ]; then
+    COMMON_ARGS+=(--force-fresh)
 fi
 
 # Add --limit flag if set
@@ -265,7 +275,8 @@ OPTIONS:
   --ignore-timestamp     Group by visual similarity only (ignore time window)
   --enable-hdr          Enable HDR merging for bracketed exposures
   --enable-face-swap    Enable face swapping to fix closed eyes
-  --resume              Resume from previous interrupted run
+  --resume              Resume from previous interrupted run (auto-detected by default)
+  --force-fresh         Force fresh start, delete any existing progress without prompting
   --limit N             Limit processing to first N photos (for testing)
 
 MODES:
@@ -307,8 +318,14 @@ EXAMPLES:
   # Test with limited photos first
   $0 --limit 50 tag-only
 
-  # Resume interrupted run
+  # Resume interrupted run (will auto-detect and prompt if progress exists)
+  $0 create-albums
+
+  # Force resume without prompting
   $0 --resume create-albums
+
+  # Force fresh start without prompting
+  $0 --force-fresh create-albums
 
   # Clean up created albums (dry run first)
   $0 cleanup
@@ -338,6 +355,9 @@ FEATURES:
                         - Creates face_swapped.jpg in group directory
                         - Requires download mode and face_recognition library
   --resume              Resume from previous interrupted run
+                        - Auto-detected: if progress file exists, you'll be prompted
+                        - Use --resume to skip prompt and auto-resume
+                        - Use --force-fresh to skip prompt and start fresh
                         - Useful for large libraries or unstable connections
                         - Saves progress every 50 photos
   --limit N             Process only first N photos (for testing)

@@ -1055,7 +1055,9 @@ Examples:
 
     # Resume capability
     parser.add_argument('--resume', action='store_true',
-                        help='Resume from previous interrupted run')
+                        help='Resume from previous interrupted run (auto-detected by default)')
+    parser.add_argument('--force-fresh', action='store_true',
+                        help='Force fresh start, delete any existing progress without prompting')
     parser.add_argument('--state-file',
                         help='Path to state file for resume capability')
 
@@ -1078,6 +1080,56 @@ Examples:
                         help='Limit processing to first N photos (for testing, default: unlimited)')
 
     args = parser.parse_args()
+
+    # Auto-detect existing state file and prompt for resume
+    if not args.resume and not args.force_fresh:
+        # Determine where the state file would be
+        if args.state_file:
+            potential_state_file = Path(args.state_file)
+        elif args.output:
+            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+        else:
+            potential_state_file = Path('.photo_organizer_state.pkl')
+
+        # Check if state file exists
+        if potential_state_file.exists():
+            print("\n" + "="*60)
+            print("PREVIOUS RUN DETECTED")
+            print("="*60)
+            print(f"Found existing progress file: {potential_state_file}")
+            print("\nOptions:")
+            print("  [r] Resume the previous run")
+            print("  [f] Start fresh (delete previous progress)")
+            print("  [e] Exit")
+            print("="*60)
+
+            while True:
+                choice = input("\nYour choice [r/f/e]: ").strip().lower()
+                if choice in ['r', 'resume']:
+                    args.resume = True
+                    print("Resuming previous run...\n")
+                    break
+                elif choice in ['f', 'fresh']:
+                    potential_state_file.unlink()
+                    print("Starting fresh (previous progress deleted)...\n")
+                    break
+                elif choice in ['e', 'exit']:
+                    print("Exiting...")
+                    sys.exit(0)
+                else:
+                    print("Invalid choice. Please enter 'r', 'f', or 'e'")
+    elif args.force_fresh:
+        # Force fresh start - delete state file if it exists
+        if args.state_file:
+            potential_state_file = Path(args.state_file)
+        elif args.output:
+            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+        else:
+            potential_state_file = Path('.photo_organizer_state.pkl')
+
+        if potential_state_file.exists():
+            potential_state_file.unlink()
+            print("Starting fresh (previous progress deleted)...")
 
     # Validate arguments
     if args.source_type == 'local':
