@@ -158,28 +158,45 @@ Verifies connection to Immich server and API key validity.
 scripts/immich.sh help
 ```
 
-### Environment Variables
+### Advanced Options
 
-The wrapper script supports these environment variables for advanced usage:
+The wrapper script supports command-line options for advanced usage:
 
 ```bash
 # Disable time window check, group by visual similarity only
-IGNORE_TIMESTAMP=1 scripts/immich.sh tag-only
+scripts/immich.sh --ignore-timestamp tag-only
 
-# Resume from previous interrupted run
-RESUME=1 scripts/immich.sh create-albums
+# Enable HDR merging for bracketed exposures
+scripts/immich.sh --enable-hdr create-albums
+
+# Enable automatic face swapping to fix closed eyes
+scripts/immich.sh --enable-face-swap create-albums
+
+# Combine all advanced features
+scripts/immich.sh --ignore-timestamp --enable-hdr --enable-face-swap create-albums
+
+# Resume from previous interrupted run (auto-detected if progress file exists)
+scripts/immich.sh --resume create-albums
+
+# Force fresh start without prompting
+scripts/immich.sh --force-fresh create-albums
 
 # Limit processing to first N photos (for testing)
-TEST_LIMIT=100 scripts/immich.sh tag-only
+scripts/immich.sh --limit 100 tag-only
 
 # Combine options
-IGNORE_TIMESTAMP=1 TEST_LIMIT=50 scripts/immich.sh tag-only
+scripts/immich.sh --ignore-timestamp --limit 50 tag-only
 ```
 
-**Environment Variables:**
-- `IGNORE_TIMESTAMP=1` - Disable time window check, group by visual similarity only
-- `RESUME=1` - Resume from previous interrupted run
-- `TEST_LIMIT=N` - Limit processing to first N photos (for testing)
+**Command-Line Options:**
+- `--ignore-timestamp` - Disable time window check, group by visual similarity only
+- `--enable-hdr` - Merge bracketed exposures into HDR images (requires download mode)
+- `--enable-face-swap` - Fix closed eyes by swapping faces from other photos (requires download mode)
+- `--resume` - Resume from previous interrupted run (auto-detected by default)
+- `--force-fresh` - Force fresh start, delete any existing progress without prompting
+- `--limit N` - Limit processing to first N photos (for testing)
+
+**Environment Variables (for overriding defaults):**
 - `IMMICH_URL` - Override Immich server URL
 - `IMMICH_API_KEY` - Override API key from config file
 
@@ -399,16 +416,16 @@ python src/photo_organizer.py \
     - 7-10: Similar compositions
 
 --time-window SECONDS
-    Time window for grouping (default: 300 seconds)
-
---no-time-window
-    Group by visual similarity only, ignore timestamps
+    Time window for grouping (default: 300 seconds, use 0 to disable)
 
 --limit N
     Limit processing to first N photos (for testing)
 
 --resume
-    Resume from previous interrupted run
+    Resume from previous interrupted run (auto-detected by default)
+
+--force-fresh
+    Force fresh start, delete any existing progress without prompting
 
 --state-file PATH
     Custom state file location for resume capability
@@ -428,6 +445,29 @@ python src/photo_organizer.py \
 
 --mark-best-favorite
     Mark the best photo in each group as favorite
+```
+
+#### Advanced Image Processing
+
+```
+--enable-hdr
+    Enable HDR merging for bracketed exposure shots
+    - Automatically detects exposure brackets from EXIF
+    - Creates hdr_merged.jpg in group directory
+    - Requires download mode (automatically enabled)
+
+--hdr-gamma FLOAT
+    HDR tone mapping gamma value (default: 2.2)
+
+--enable-face-swap
+    Enable automatic face swapping to fix closed eyes
+    - Detects faces with closed eyes using Eye Aspect Ratio
+    - Swaps with same person from other photos in the group
+    - Creates face_swapped.jpg in group directory
+    - Requires download mode and face_recognition library
+
+--swap-closed-eyes
+    Swap faces with closed eyes (default: True)
 ```
 
 ### Advanced Python Examples
@@ -453,7 +493,7 @@ python src/photo_organizer.py \
   --immich-api-key "$IMMICH_API_KEY" \
   --tag-only \
   --threshold 3 \
-  --no-time-window
+  --time-window 0
 ```
 
 #### Test with Limited Photos
@@ -563,7 +603,7 @@ For libraries with thousands of photos:
 
 ```bash
 # Test with 100 photos first
-TEST_LIMIT=100 scripts/immich.sh tag-only
+scripts/immich.sh --limit 100 tag-only
 
 # Then process by year
 for year in 2020 2021 2022 2023 2024; do
@@ -664,6 +704,8 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 |---------|-----------|-------------|
 | Group similar photos | ✅ | ✅ |
 | Face quality detection | ✅ | ✅ |
+| HDR merging | ✅ | ✅ |
+| Face swapping | ✅ | ✅ |
 | Download photos | N/A | ✅ |
 | Tag photos | ❌ | ✅ |
 | Create albums | ❌ | ✅ |
@@ -671,6 +713,7 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 | Preserve originals | ✅ | ✅ |
 | Metadata extraction | ✅ | ✅ |
 | Resume capability | ✅ | ✅ |
+| Auto-resume detection | ✅ | ✅ |
 | Cleanup albums | ❌ | ✅ |
 
 ## See Also

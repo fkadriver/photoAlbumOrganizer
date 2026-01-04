@@ -19,6 +19,7 @@ ENABLE_FACE_SWAP=0
 RESUME=0
 FORCE_FRESH=0
 TEST_LIMIT=""
+THREADS=2
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -70,6 +71,10 @@ while [[ $# -gt 0 ]]; do
             TEST_LIMIT="$2"
             shift 2
             ;;
+        --threads)
+            THREADS="$2"
+            shift 2
+            ;;
         *)
             break
             ;;
@@ -88,9 +93,9 @@ COMMON_ARGS=(
     --threshold 5
 )
 
-# Add --no-time-window flag if requested
+# Add --time-window 0 flag if requested (ignore timestamp)
 if [ "$IGNORE_TIMESTAMP" = "1" ]; then
-    COMMON_ARGS+=(--no-time-window)
+    COMMON_ARGS+=(--time-window 0)
 fi
 
 # Add --enable-hdr flag if requested
@@ -119,6 +124,9 @@ if [ -n "$TEST_LIMIT" ]; then
     echo "🔬 TEST MODE: Processing limited to first $TEST_LIMIT photos"
     echo ""
 fi
+
+# Add --threads flag
+COMMON_ARGS+=(--threads "$THREADS")
 
 # Print active features
 FEATURES=()
@@ -278,6 +286,7 @@ OPTIONS:
   --resume              Resume from previous interrupted run (auto-detected by default)
   --force-fresh         Force fresh start, delete any existing progress without prompting
   --limit N             Limit processing to first N photos (for testing)
+  --threads N           Number of threads for parallel processing (default: 2)
 
 MODES:
   tag-only, tag          Tag duplicate photos in Immich (default, safest)
@@ -362,6 +371,10 @@ FEATURES:
                         - Saves progress every 50 photos
   --limit N             Process only first N photos (for testing)
                         - Quick way to test features on subset before full run
+  --threads N           Number of threads for parallel processing (default: 2)
+                        - Speeds up hash computation for large libraries
+                        - Set to 1 for serial processing (lowest memory)
+                        - Set to 4-8 for faster processing (more memory/CPU)
 
 THRESHOLD:
   Default: 5 (burst photos)

@@ -8,6 +8,7 @@ import json
 import hashlib
 import signal
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Image processing
 from PIL import Image
@@ -51,7 +52,7 @@ class PhotoOrganizer:
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
-                 enable_face_swap=False, swap_closed_eyes=True):
+                 enable_face_swap=False, swap_closed_eyes=True, threads=2):
         """
         Initialize the photo organizer.
 
@@ -72,6 +73,7 @@ class PhotoOrganizer:
             hdr_gamma: HDR tone mapping gamma value (default: 2.2)
             enable_face_swap: Enable automatic face swapping to fix closed eyes/bad expressions (default: False)
             swap_closed_eyes: Swap faces with closed eyes when face swapping is enabled (default: True)
+            threads: Number of threads for parallel processing (default: 2)
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -87,6 +89,7 @@ class PhotoOrganizer:
         self.hdr_gamma = hdr_gamma
         self.enable_face_swap = enable_face_swap
         self.swap_closed_eyes = swap_closed_eyes
+        self.threads = threads
 
         # Resume capability
         self.resume = resume
@@ -207,39 +210,57 @@ class PhotoOrganizer:
             print(f"Error hashing {photo.id}: {e}")
             return None
     
+    def _process_photo_hash(self, photo: Photo):
+        """Process a single photo's hash and metadata (for parallel processing)."""
+        # Check if we have cached hash
+        cached_hash = self.state.get_cached_hash(photo.id)
+        if cached_hash:
+            hash_val = imagehash.hex_to_hash(cached_hash)
+        else:
+            hash_val = self.compute_hash(photo)
+            if hash_val is None:
+                return None
+            # Cache the computed hash
+            self.state.mark_hash_computed(photo.id, hash_val)
+
+        metadata = self.extract_metadata(photo)
+        dt = self.get_datetime_from_metadata(metadata)
+
+        return {
+            'photo': photo,
+            'hash': hash_val,
+            'metadata': metadata,
+            'datetime': dt
+        }
+
     def group_similar_photos(self, photos: List[Photo]):
         """Group photos by perceptual similarity."""
-        print(f"Computing hashes for {len(photos)} photos...")
+        print(f"Computing hashes for {len(photos)} photos using {self.threads} thread(s)...")
 
-        # Compute hashes and metadata
+        # Compute hashes and metadata in parallel
         photo_data = []
-        for i, photo in enumerate(photos):
-            if self._interrupted:
-                break
+        processed_count = 0
 
-            if i % 100 == 0:
-                print(f"Processing {i}/{len(photos)}...")
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            # Submit all photo processing tasks
+            future_to_photo = {executor.submit(self._process_photo_hash, photo): photo for photo in photos}
 
-            # Check if we have cached hash
-            cached_hash = self.state.get_cached_hash(photo.id)
-            if cached_hash:
-                hash_val = imagehash.hex_to_hash(cached_hash)
-            else:
-                hash_val = self.compute_hash(photo)
-                if hash_val is None:
-                    continue
-                # Cache the computed hash
-                self.state.mark_hash_computed(photo.id, hash_val)
+            # Process completed tasks
+            for future in as_completed(future_to_photo):
+                if self._interrupted:
+                    break
 
-            metadata = self.extract_metadata(photo)
-            dt = self.get_datetime_from_metadata(metadata)
+                processed_count += 1
+                if processed_count % 100 == 0:
+                    print(f"Processing {processed_count}/{len(photos)}...")
 
-            photo_data.append({
-                'photo': photo,
-                'hash': hash_val,
-                'metadata': metadata,
-                'datetime': dt
-            })
+                try:
+                    result = future.result()
+                    if result is not None:
+                        photo_data.append(result)
+                except Exception as e:
+                    photo = future_to_photo[future]
+                    print(f"Error processing photo {photo.id}: {e}")
 
         print(f"Grouping {len(photo_data)} photos by similarity...")
 
@@ -1039,9 +1060,7 @@ Examples:
     parser.add_argument('-t', '--threshold', type=int, default=5,
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
-                        help='Time window in seconds for grouping (default=300)')
-    parser.add_argument('--no-time-window', action='store_true',
-                        help='Disable time window check, group by visual similarity only')
+                        help='Time window in seconds for grouping (default=300, use 0 to disable time window)')
 
     # Immich action arguments
     parser.add_argument('--tag-only', action='store_true',
@@ -1078,6 +1097,8 @@ Examples:
                         help='Show what would be done without actually organizing')
     parser.add_argument('--limit', type=int, default=None,
                         help='Limit processing to first N photos (for testing, default: unlimited)')
+    parser.add_argument('--threads', type=int, default=2,
+                        help='Number of threads for parallel processing (default: 2)')
 
     args = parser.parse_args()
 
@@ -1165,7 +1186,7 @@ Examples:
         output_dir=args.output,
         similarity_threshold=args.threshold,
         time_window=args.time_window,
-        use_time_window=not args.no_time_window,
+        use_time_window=(args.time_window > 0),
         tag_only=args.tag_only,
         create_albums=args.create_albums,
         album_prefix=args.album_prefix,
@@ -1176,7 +1197,8 @@ Examples:
         enable_hdr=args.enable_hdr,
         hdr_gamma=args.hdr_gamma,
         enable_face_swap=args.enable_face_swap,
-        swap_closed_eyes=args.swap_closed_eyes
+        swap_closed_eyes=args.swap_closed_eyes,
+        threads=args.threads
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
