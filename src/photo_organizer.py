@@ -10,6 +10,7 @@ import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import warnings
+import logging
 
 # Suppress LAPACK/BLAS warnings from numpy/scipy/opencv
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -66,6 +67,59 @@ except Exception as e:
     print("\nContinuing without face detection...\n")
     FACE_DETECTION_ENABLED = False
     face_recognition = None
+
+def setup_logging(output_dir=None, verbose=False):
+    """
+    Setup logging to both file and console.
+
+    Args:
+        output_dir: Directory for log file (default: ~/.cache/photo-organizer/logs)
+        verbose: Enable verbose debug logging
+    """
+    # Determine log directory
+    if output_dir:
+        log_dir = Path(output_dir)
+    else:
+        log_dir = Path.home() / '.cache' / 'photo-organizer' / 'logs'
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create log filename with timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = log_dir / f'photo_organizer_{timestamp}.log'
+
+    # Configure logging
+    log_level = logging.DEBUG if verbose else logging.INFO
+
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # File handler - always detailed
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    # Console handler - only warnings and errors by default
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(formatter)
+
+    # Root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    # Log startup
+    logging.info("="*60)
+    logging.info("Photo Organizer Started")
+    logging.info(f"Log file: {log_file}")
+    logging.info("="*60)
+
+    return log_file
 
 class PhotoOrganizer:
     def __init__(self, photo_source: PhotoSource, output_dir, similarity_threshold=5,
@@ -168,6 +222,22 @@ class PhotoOrganizer:
         if self.output_dir:
             self.output_dir.mkdir(exist_ok=True)
 
+        # Log initialization parameters
+        logging.info("PhotoOrganizer initialized with:")
+        logging.info(f"  Source: {photo_source.__class__.__name__}")
+        logging.info(f"  Output directory: {self.output_dir}")
+        logging.info(f"  Similarity threshold: {self.similarity_threshold}")
+        logging.info(f"  Time window: {self.time_window}s (enabled: {self.use_time_window})")
+        logging.info(f"  Tag only: {self.tag_only}")
+        logging.info(f"  Create albums: {self.create_albums}")
+        logging.info(f"  Album prefix: {self.album_prefix}")
+        logging.info(f"  Mark best favorite: {self.mark_best_favorite}")
+        logging.info(f"  Resume: {self.resume}")
+        logging.info(f"  Limit: {self.limit}")
+        logging.info(f"  HDR enabled: {self.enable_hdr}")
+        logging.info(f"  Face swap enabled: {self.enable_face_swap}")
+        logging.info(f"  Threads: {self.threads}")
+
         # Setup signal handlers for graceful interruption
         self._interrupted = False
         self._setup_signal_handlers()
@@ -228,7 +298,9 @@ class PhotoOrganizer:
                         img = img.convert('RGB')
                     return imagehash.dhash(img)
         except Exception as e:
-            print(f"Error hashing {photo.id}: {e}")
+            error_msg = f"Error hashing {photo.id}: {e}"
+            print(error_msg)
+            logging.error(error_msg)
             return None
     
     def _process_photo_hash(self, photo: Photo):
@@ -256,7 +328,9 @@ class PhotoOrganizer:
 
     def group_similar_photos(self, photos: List[Photo]):
         """Group photos by perceptual similarity."""
-        print(f"Computing hashes for {len(photos)} photos using {self.threads} thread(s)...")
+        msg = f"Computing hashes for {len(photos)} photos using {self.threads} thread(s)..."
+        print(msg)
+        logging.info(msg)
 
         # Compute hashes and metadata in parallel
         photo_data = []
@@ -273,7 +347,9 @@ class PhotoOrganizer:
 
                 processed_count += 1
                 if processed_count % 100 == 0:
-                    print(f"Processing {processed_count}/{len(photos)}...")
+                    progress_msg = f"Processing {processed_count}/{len(photos)}..."
+                    print(progress_msg)
+                    logging.info(progress_msg)
 
                 try:
                     result = future.result()
@@ -281,9 +357,13 @@ class PhotoOrganizer:
                         photo_data.append(result)
                 except Exception as e:
                     photo = future_to_photo[future]
-                    print(f"Error processing photo {photo.id}: {e}")
+                    error_msg = f"Error processing photo {photo.id}: {e}"
+                    print(error_msg)
+                    logging.error(error_msg)
 
-        print(f"Grouping {len(photo_data)} photos by similarity...")
+        grouping_msg = f"Grouping {len(photo_data)} photos by similarity..."
+        print(grouping_msg)
+        logging.info(grouping_msg)
 
         # Group by similarity
         groups = []
@@ -862,13 +942,21 @@ class PhotoOrganizer:
     def organize_photos(self, album: str = None):
         """Main method to organize photos into groups."""
         try:
+            logging.info("="*60)
+            logging.info(f"Starting organize_photos (album={album})")
+            logging.info("="*60)
+
             # Find all photos (limit is applied at source level for efficiency)
             photos = self.find_all_photos(album=album)
 
             if self.limit is not None and self.limit > 0:
-                print(f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})")
+                msg = f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})"
+                print(msg)
+                logging.info(msg)
             else:
-                print(f"Found {len(photos)} photos")
+                msg = f"Found {len(photos)} photos"
+                print(msg)
+                logging.info(msg)
 
             # Track discovered photos
             for photo in photos:
@@ -878,12 +966,15 @@ class PhotoOrganizer:
             groups = self.group_similar_photos(photos)
 
             if not groups:
-                print("No similar photo groups found.")
+                msg = "No similar photo groups found."
+                print(msg)
+                logging.info(msg)
                 self.state.cleanup()
                 return
 
             # Record total groups found
             self.state.set_groups_found(len(groups))
+            logging.info(f"Found {len(groups)} groups to process")
 
             # Process each group
             for i, group in enumerate(groups, 1):
@@ -892,10 +983,14 @@ class PhotoOrganizer:
 
                 # Skip already completed groups
                 if self.state.is_group_completed(i):
-                    print(f"\nSkipping group {i}/{len(groups)} (already completed)")
+                    msg = f"\nSkipping group {i}/{len(groups)} (already completed)"
+                    print(msg)
+                    logging.info(msg)
                     continue
 
-                print(f"\nProcessing group {i}/{len(groups)} ({len(group)} photos)...")
+                msg = f"\nProcessing group {i}/{len(groups)} ({len(group)} photos)..."
+                print(msg)
+                logging.info(msg)
 
                 # Find best photo
                 best_photo_data = self.find_best_photo(group)
@@ -999,20 +1094,36 @@ class PhotoOrganizer:
 
             # If we completed all groups successfully, cleanup state file
             if not self._interrupted and self.state.state['groups_processed'] == len(groups):
-                print("\nAll groups processed successfully!")
+                msg = "\nAll groups processed successfully!"
+                print(msg)
+                logging.info(msg)
                 self.state.cleanup()
 
             if self.output_dir and not self.tag_only:
-                print(f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}")
+                msg = f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}"
+                print(msg)
+                logging.info(msg)
             else:
-                print(f"\nProcessed {len(groups)} groups")
+                msg = f"\nProcessed {len(groups)} groups"
+                print(msg)
+                logging.info(msg)
+
+            logging.info("="*60)
+            logging.info("Photo organization completed")
+            logging.info("="*60)
 
         except Exception as e:
             # Save state on unexpected error
-            print(f"\nError during processing: {e}")
+            error_msg = f"\nError during processing: {e}"
+            print(error_msg)
+            logging.error(error_msg, exc_info=True)
             self.state.save()
-            print(f"State saved to: {self.state_file}")
-            print(f"Resume with: --resume --state-file {self.state_file}")
+            state_msg = f"State saved to: {self.state_file}"
+            print(state_msg)
+            logging.info(state_msg)
+            resume_msg = f"Resume with: --resume --state-file {self.state_file}"
+            print(resume_msg)
+            logging.info(resume_msg)
             raise
 
 
@@ -1196,6 +1307,20 @@ Examples:
             parser.error("--immich-api-key is required for immich source type")
         if not args.output and not args.tag_only and not args.create_albums:
             parser.error("--output, --tag-only, or --create-albums is required for immich source type")
+
+    # Setup logging
+    log_dir = Path(args.output) if args.output else None
+    log_file = setup_logging(output_dir=log_dir, verbose=args.verbose)
+    print(f"📝 Logging to: {log_file}\n")
+
+    # Log command-line arguments
+    logging.info("Command-line arguments:")
+    for arg, value in vars(args).items():
+        # Don't log sensitive information
+        if 'api_key' in arg.lower():
+            logging.info(f"  {arg}: ***REDACTED***")
+        else:
+            logging.info(f"  {arg}: {value}")
 
     # Create photo source
     if args.source_type == 'local':
