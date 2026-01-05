@@ -188,12 +188,13 @@ class ImmichClient:
 
                         # Stop if we've reached the limit
                         if limit is not None and len(assets) >= limit:
-                            print(f"Fetched page {page}: {len(items)} items ({images_this_page} images)")
-                            print(f"✓ Reached limit of {limit} images")
+                            print(f"\r📥 Page {page}: {len(assets)} images fetched (limit reached)        ")
+                            print()  # New line after progress
                             return assets
 
                 total_fetched += len(items)
-                print(f"Fetched page {page}: {len(items)} items ({images_this_page} images, {total_fetched} total assets)")
+                # Update progress in place
+                print(f"\r📥 Page {page}: {len(assets)} images, {total_fetched} total assets", end='', flush=True)
 
                 # If we got fewer items than requested, we've reached the end
                 if len(items) < page_size:
@@ -201,7 +202,8 @@ class ImmichClient:
 
                 page += 1
 
-            print(f"Total assets fetched: {len(assets)} images out of {total_fetched} total assets")
+            print()  # New line after progress
+            print(f"✓ Fetched {len(assets)} images from {total_fetched} total assets")
             return assets
 
         except Exception as e:
