@@ -20,6 +20,8 @@ RESUME=0
 FORCE_FRESH=0
 TEST_LIMIT=""
 THREADS=2
+THRESHOLD=5
+VERBOSE=0
 
 # Load API key from config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
@@ -75,6 +77,14 @@ while [[ $# -gt 0 ]]; do
             THREADS="$2"
             shift 2
             ;;
+        --threshold|-t)
+            THRESHOLD="$2"
+            shift 2
+            ;;
+        --verbose)
+            VERBOSE=1
+            shift
+            ;;
         *)
             break
             ;;
@@ -90,7 +100,7 @@ COMMON_ARGS=(
     --source-type immich
     --immich-url "$IMMICH_URL"
     --immich-api-key "$IMMICH_API_KEY"
-    --threshold 5
+    --threshold "$THRESHOLD"
 )
 
 # Add --time-window 0 flag if requested (ignore timestamp)
@@ -127,6 +137,11 @@ fi
 
 # Add --threads flag
 COMMON_ARGS+=(--threads "$THREADS")
+
+# Add --verbose flag if requested
+if [ "$VERBOSE" = "1" ]; then
+    COMMON_ARGS+=(--verbose)
+fi
 
 # Print active features
 FEATURES=()
@@ -287,6 +302,8 @@ OPTIONS:
   --force-fresh         Force fresh start, delete any existing progress without prompting
   --limit N             Limit processing to first N photos (for testing)
   --threads N           Number of threads for parallel processing (default: 2)
+  --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
+  --verbose             Show detailed error messages on console
 
 MODES:
   tag-only, tag          Tag duplicate photos in Immich (default, safest)
@@ -375,14 +392,23 @@ FEATURES:
                         - Speeds up hash computation for large libraries
                         - Set to 1 for serial processing (lowest memory)
                         - Set to 4-8 for faster processing (more memory/CPU)
+  --threshold N, -t N   Similarity threshold (default: 5)
+                        - 0-3: Very strict (only near-duplicates)
+                        - 4-6: Burst photos (recommended)
+                        - 7-10: Similar compositions (loose)
+                        - Use --threshold 3 for strict duplicate detection
+                        - Use --threshold 8 for grouping similar scenes
+  --verbose             Show detailed error messages on console
+                        - By default, errors are only logged to file
+                        - Enable this to see errors during processing
+                        - Useful for debugging issues
 
 THRESHOLD:
   Default: 5 (burst photos)
   Lower (3): Stricter (only near-duplicates)
   Higher (8): Looser (similar compositions)
 
-  To customize threshold, edit this script and change:
-  --threshold 5
+  Customize with: --threshold N or -t N
 
 NOTE: HDR and face-swap require downloading photos, so they automatically
       enable download mode when used with 'create-albums' mode.

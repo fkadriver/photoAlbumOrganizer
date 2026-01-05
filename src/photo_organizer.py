@@ -127,7 +127,7 @@ class PhotoOrganizer:
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
-                 enable_face_swap=False, swap_closed_eyes=True, threads=2):
+                 enable_face_swap=False, swap_closed_eyes=True, threads=2, verbose=False):
         """
         Initialize the photo organizer.
 
@@ -165,6 +165,7 @@ class PhotoOrganizer:
         self.enable_face_swap = enable_face_swap
         self.swap_closed_eyes = swap_closed_eyes
         self.threads = threads
+        self.verbose = verbose
 
         # Resume capability
         self.resume = resume
@@ -299,7 +300,8 @@ class PhotoOrganizer:
                     return imagehash.dhash(img)
         except Exception as e:
             error_msg = f"Error hashing {photo.id}: {e}"
-            print(error_msg)
+            if self.verbose:
+                print(error_msg)
             logging.error(error_msg)
             return None
     
@@ -346,10 +348,17 @@ class PhotoOrganizer:
                     break
 
                 processed_count += 1
+
+                # Update progress bar
+                percentage = (processed_count / len(photos)) * 100
+                bar_length = 40
+                filled = int(bar_length * processed_count / len(photos))
+                bar = '█' * filled + '░' * (bar_length - filled)
+                print(f'\r[{bar}] {percentage:.1f}% ({processed_count}/{len(photos)})', end='', flush=True)
+
+                # Log every 100 photos
                 if processed_count % 100 == 0:
-                    progress_msg = f"Processing {processed_count}/{len(photos)}..."
-                    print(progress_msg)
-                    logging.info(progress_msg)
+                    logging.info(f"Processing {processed_count}/{len(photos)} ({percentage:.1f}%)")
 
                 try:
                     result = future.result()
@@ -358,8 +367,12 @@ class PhotoOrganizer:
                 except Exception as e:
                     photo = future_to_photo[future]
                     error_msg = f"Error processing photo {photo.id}: {e}"
-                    print(error_msg)
+                    if self.verbose:
+                        print(f'\n{error_msg}')  # New line to not interfere with progress bar
                     logging.error(error_msg)
+
+        # Complete progress bar
+        print()  # New line after progress bar
 
         grouping_msg = f"Grouping {len(photo_data)} photos by similarity..."
         print(grouping_msg)
@@ -1353,7 +1366,8 @@ Examples:
         hdr_gamma=args.hdr_gamma,
         enable_face_swap=args.enable_face_swap,
         swap_closed_eyes=args.swap_closed_eyes,
-        threads=args.threads
+        threads=args.threads,
+        verbose=args.verbose
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
