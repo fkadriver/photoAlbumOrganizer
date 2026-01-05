@@ -28,14 +28,26 @@ import numpy as np
 # Suppress numpy errors that show in stderr
 np.seterr(all='ignore')
 
-# Context manager to suppress stderr (for LAPACK/BLAS warnings)
+# Context manager to suppress stderr at OS level (for LAPACK/BLAS warnings)
 class SuppressStderr:
     def __enter__(self):
+        # Save the original stderr file descriptor
+        self._original_stderr_fd = os.dup(2)
+        # Open /dev/null
+        self._devnull = os.open(os.devnull, os.O_WRONLY)
+        # Redirect stderr (fd 2) to /dev/null
+        os.dup2(self._devnull, 2)
+        # Also redirect Python's sys.stderr
         self._original_stderr = sys.stderr
         sys.stderr = open(os.devnull, 'w')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # Restore stderr file descriptor
+        os.dup2(self._original_stderr_fd, 2)
+        os.close(self._original_stderr_fd)
+        os.close(self._devnull)
+        # Restore Python's sys.stderr
         sys.stderr.close()
         sys.stderr = self._original_stderr
 
@@ -49,13 +61,18 @@ from processing_state import ProcessingState
 FACE_DETECTION_ENABLED = True
 try:
     # Fix for face_recognition_models import issue in Python 3.12
-    import pkg_resources
-    try:
-        pkg_resources.require("face_recognition_models")
-    except:
-        pass
-    
-    import face_recognition
+    # Suppress warnings during import
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=DeprecationWarning)
+        import pkg_resources
+        try:
+            pkg_resources.require("face_recognition_models")
+        except:
+            pass
+
+    # Import face_recognition with suppressed stderr
+    with SuppressStderr():
+        import face_recognition
 except Exception as e:
     print("Warning: Could not import face_recognition")
     print(f"  {e}")
