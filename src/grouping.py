@@ -26,20 +26,24 @@ def compute_hash(photo: Photo, photo_source: PhotoSource, verbose: bool = False)
         Perceptual hash or None if error
     """
     try:
-        # Get photo data
+        # Try to use cached file first if available
         if photo.cached_path and photo.cached_path.exists():
-            # Use cached path if available and file exists
-            with Image.open(photo.cached_path) as img:
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                return imagehash.dhash(img)
-        else:
-            # Load from bytes (re-download if cache missing)
-            data = photo_source.get_photo_data(photo)
-            with Image.open(BytesIO(data)) as img:
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                return imagehash.dhash(img)
+            try:
+                with Image.open(photo.cached_path) as img:
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    return imagehash.dhash(img)
+            except FileNotFoundError:
+                # File was deleted between exists() check and open() - race condition
+                # Fall through to re-download
+                pass
+
+        # Load from bytes (re-download if cache missing or deleted)
+        data = photo_source.get_photo_data(photo)
+        with Image.open(BytesIO(data)) as img:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            return imagehash.dhash(img)
     except Exception as e:
         error_msg = f"Error hashing {photo.id}: {e}"
         if verbose:
