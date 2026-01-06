@@ -160,7 +160,7 @@ case "$MODE" in
     tag-only|tag|"")
         echo "🏷️  Tagging potential duplicates in Immich..."
         echo ""
-        python src/photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
+        python photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
         ;;
 
     albums|create-albums)
@@ -172,13 +172,13 @@ case "$MODE" in
             OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
             echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
             echo ""
-            python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+            python photo_organizer.py "${COMMON_ARGS[@]}" \
                 --create-albums \
                 --mark-best-favorite \
                 --album-prefix "Organized-" \
                 --output "$OUTPUT_DIR"
         else
-            python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+            python photo_organizer.py "${COMMON_ARGS[@]}" \
                 --create-albums \
                 --mark-best-favorite \
                 --album-prefix "Organized-"
@@ -189,7 +189,7 @@ case "$MODE" in
         OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
         echo "⬇️  Downloading and organizing photos to: $OUTPUT_DIR"
         echo ""
-        python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+        python photo_organizer.py "${COMMON_ARGS[@]}" \
             --output "$OUTPUT_DIR"
         ;;
 
@@ -207,7 +207,7 @@ case "$MODE" in
 
         case "$ALBUM_MODE" in
             tag)
-                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                python photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --tag-only
                 ;;
@@ -217,13 +217,13 @@ case "$MODE" in
                     OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
                     echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
                     echo ""
-                    python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                    python photo_organizer.py "${COMMON_ARGS[@]}" \
                         --immich-album "$ALBUM_NAME" \
                         --create-albums \
                         --mark-best-favorite \
                         --output "$OUTPUT_DIR"
                 else
-                    python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                    python photo_organizer.py "${COMMON_ARGS[@]}" \
                         --immich-album "$ALBUM_NAME" \
                         --create-albums \
                         --mark-best-favorite
@@ -231,7 +231,7 @@ case "$MODE" in
                 ;;
             download)
                 OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
-                python src/photo_organizer.py "${COMMON_ARGS[@]}" \
+                python photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --output "$OUTPUT_DIR"
                 ;;
@@ -413,7 +413,7 @@ THRESHOLD:
 NOTE: HDR and face-swap require downloading photos, so they automatically
       enable download mode when used with 'create-albums' mode.
 
-For more options, see: python src/photo_organizer.py --help
+For more options, see: python photo_organizer.py --help
 EOF
         ;;
 
