@@ -423,7 +423,11 @@ class ImmichPhotoSource(PhotoSource):
         # Check cache first
         cached_path = self.cache.get_cached_photo(photo.id)
         if cached_path:
-            return cached_path.read_bytes()
+            try:
+                return cached_path.read_bytes()
+            except FileNotFoundError:
+                # File was deleted after cache check (race condition), re-download
+                pass
 
         # Download from Immich
         asset_id = photo.metadata.get('asset_id', photo.id)
