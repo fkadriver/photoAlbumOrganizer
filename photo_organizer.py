@@ -125,6 +125,9 @@ Examples:
                         help='Enable HDR merging for bracketed exposure shots')
     parser.add_argument('--hdr-gamma', type=float, default=2.2,
                         help='HDR tone mapping gamma value (default: 2.2)')
+    parser.add_argument('--face-backend', choices=['auto', 'face_recognition', 'mediapipe'],
+                        default='auto',
+                        help='Face detection backend (default: auto)')
     parser.add_argument('--enable-face-swap', action='store_true',
                         help='Enable automatic face swapping to fix closed eyes/bad expressions')
     parser.add_argument('--swap-closed-eyes', action='store_true', default=True,
@@ -252,6 +255,7 @@ Examples:
         hdr_gamma=args.hdr_gamma,
         enable_face_swap=args.enable_face_swap,
         swap_closed_eyes=args.swap_closed_eyes,
+        face_backend=args.face_backend,
         threads=args.threads,
         verbose=args.verbose
     )

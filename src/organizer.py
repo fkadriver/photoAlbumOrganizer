@@ -15,9 +15,10 @@ from typing import Optional
 from photo_sources import PhotoSource, Photo
 from processing_state import ProcessingState
 from grouping import group_similar_photos
+import image_processing
 from image_processing import (
     find_best_photo, should_merge_hdr, merge_exposures_hdr,
-    create_face_swapped_image, FACE_DETECTION_ENABLED
+    create_face_swapped_image, set_face_backend
 )
 
 
@@ -29,7 +30,8 @@ class PhotoOrganizer:
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
-                 enable_face_swap=False, swap_closed_eyes=True, threads=2, verbose=False):
+                 enable_face_swap=False, swap_closed_eyes=True,
+                 face_backend='auto', threads=2, verbose=False):
         """
         Initialize the photo organizer.
 
@@ -50,6 +52,7 @@ class PhotoOrganizer:
             hdr_gamma: HDR tone mapping gamma value (default: 2.2)
             enable_face_swap: Enable automatic face swapping to fix closed eyes/bad expressions (default: False)
             swap_closed_eyes: Swap faces with closed eyes when face swapping is enabled (default: True)
+            face_backend: Face detection backend to use ('auto', 'face_recognition', 'mediapipe')
             threads: Number of threads for parallel processing (default: 2)
             verbose: Show verbose error output
         """
@@ -69,6 +72,10 @@ class PhotoOrganizer:
         self.swap_closed_eyes = swap_closed_eyes
         self.threads = threads
         self.verbose = verbose
+
+        # Configure face detection backend
+        if face_backend != 'auto':
+            set_face_backend(face_backend)
 
         # Resume capability
         self.resume = resume
@@ -352,7 +359,7 @@ class PhotoOrganizer:
                             print(f"  HDR: Saved merged image: {hdr_dst.name}")
 
                     # Face swapping if enabled and face detection is available
-                    if self.enable_face_swap and FACE_DETECTION_ENABLED:
+                    if self.enable_face_swap and image_processing.FACE_DETECTION_ENABLED:
                         face_swapped = create_face_swapped_image(group, best_dst, self.enable_face_swap)
                         if face_swapped is not None:
                             # Save face-swapped image

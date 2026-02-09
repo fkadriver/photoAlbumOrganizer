@@ -12,30 +12,18 @@ from typing import List, Optional, Tuple
 
 from photo_sources import Photo, PhotoSource
 from utils import SuppressStderr
+from face_backend import get_face_backend, FaceBackend
 
-# Face detection availability
-FACE_DETECTION_ENABLED = True
-try:
-    # Suppress warnings during import
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=DeprecationWarning)
-        import pkg_resources
-        try:
-            pkg_resources.require("face_recognition_models")
-        except:
-            pass
+# Initialize face detection backend
+_face_backend: Optional[FaceBackend] = get_face_backend("auto")
+FACE_DETECTION_ENABLED = _face_backend is not None
 
-    # Import face_recognition with suppressed stderr
-    with SuppressStderr():
-        import face_recognition
-except Exception as e:
-    print("Warning: Could not import face_recognition")
-    print(f"  {e}")
-    print("\nFace detection will be DISABLED.")
-    print("Photos will be grouped, but best photo selection will be random.")
-    FACE_DETECTION_ENABLED = False
-    face_recognition = None
+
+def set_face_backend(backend_name: str):
+    """Set the face detection backend. Call before using any face functions."""
+    global _face_backend, FACE_DETECTION_ENABLED
+    _face_backend = get_face_backend(backend_name)
+    FACE_DETECTION_ENABLED = _face_backend is not None
 
 
 def score_face_quality(photo: Photo, photo_source: PhotoSource):
@@ -59,15 +47,14 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
         else:
             # Download and cache
             data = photo_source.get_photo_data(photo)
-            # Save to temp file for face_recognition
+            # Save to temp file for face detection
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
                 tmp.write(data)
                 image_path = tmp.name
 
-        # Load image (suppress LAPACK warnings)
-        with SuppressStderr():
-            image = face_recognition.load_image_file(image_path)
-            face_locations = face_recognition.face_locations(image)
+        # Load image and detect faces
+        image = _face_backend.load_image(image_path)
+        face_locations = _face_backend.detect_faces(image)
 
         if not face_locations:
             return []
@@ -301,16 +288,15 @@ def detect_closed_eyes(image_path):
         return []
 
     try:
-        # Load image (suppress LAPACK warnings)
-        with SuppressStderr():
-            image = face_recognition.load_image_file(str(image_path))
-            face_landmarks_list = face_recognition.face_landmarks(image)
+        # Load image and get landmarks
+        image = _face_backend.load_image(str(image_path))
+        face_landmarks_list = _face_backend.get_landmarks(image)
 
         closed_eye_faces = []
-        for i, face_landmarks in enumerate(face_landmarks_list):
+        for i, face_lm in enumerate(face_landmarks_list):
             # Get eye landmarks
-            left_eye = face_landmarks.get('left_eye', [])
-            right_eye = face_landmarks.get('right_eye', [])
+            left_eye = face_lm.left_eye
+            right_eye = face_lm.right_eye
 
             if left_eye and right_eye:
                 # Calculate eye aspect ratios
@@ -348,11 +334,15 @@ def find_best_replacement_face(base_image_path, source_image_paths, face_index=0
     if not FACE_DETECTION_ENABLED:
         return None, None
 
+    if not _face_backend.supports_encoding:
+        logging.info("Face encoding not supported by current backend; "
+                     "face swap same-person matching unavailable.")
+        return None, None
+
     try:
-        # Load base image and get face encodings (suppress LAPACK warnings)
-        with SuppressStderr():
-            base_image = face_recognition.load_image_file(str(base_image_path))
-            base_encodings = face_recognition.face_encodings(base_image)
+        # Load base image and get face encodings
+        base_image = _face_backend.load_image(str(base_image_path))
+        base_encodings = _face_backend.encode_faces(base_image)
 
         if face_index >= len(base_encodings):
             return None, None
@@ -368,23 +358,21 @@ def find_best_replacement_face(base_image_path, source_image_paths, face_index=0
             if source_path == base_image_path:
                 continue  # Skip same image
 
-            with SuppressStderr():
-                source_image = face_recognition.load_image_file(str(source_path))
-                source_encodings = face_recognition.face_encodings(source_image)
-                source_landmarks = face_recognition.face_landmarks(source_image)
+            source_image = _face_backend.load_image(str(source_path))
+            source_encodings = _face_backend.encode_faces(source_image)
+            source_landmarks = _face_backend.get_landmarks(source_image)
 
             # Find matching face in source image
             for i, source_encoding in enumerate(source_encodings):
                 # Check if this is the same person (face match)
-                with SuppressStderr():
-                    face_distance = face_recognition.face_distance([base_encoding], source_encoding)[0]
+                dist = _face_backend.face_distance(base_encoding, source_encoding)
 
-                if face_distance < 0.6:  # Same person threshold
+                if dist < 0.6:  # Same person threshold
                     # Check if eyes are open
                     if i < len(source_landmarks):
-                        landmarks = source_landmarks[i]
-                        left_eye = landmarks.get('left_eye', [])
-                        right_eye = landmarks.get('right_eye', [])
+                        face_lm = source_landmarks[i]
+                        left_eye = face_lm.left_eye
+                        right_eye = face_lm.right_eye
 
                         if left_eye and right_eye:
                             left_ear = calculate_eye_aspect_ratio(left_eye)
@@ -392,7 +380,7 @@ def find_best_replacement_face(base_image_path, source_image_paths, face_index=0
                             avg_ear = (left_ear + right_ear) / 2.0
 
                             # Score based on eye openness and face match quality
-                            score = avg_ear * (1 - face_distance)
+                            score = avg_ear * (1 - dist)
 
                             if score > best_score and avg_ear > 0.2:  # Eyes must be open
                                 best_score = score
@@ -427,31 +415,34 @@ def swap_face(base_image_path, source_image_path, base_face_idx, source_face_idx
         return None
 
     try:
-        # Load images (suppress LAPACK warnings)
-        with SuppressStderr():
-            base_image_rgb = face_recognition.load_image_file(str(base_image_path))
-            source_image_rgb = face_recognition.load_image_file(str(source_image_path))
+        # Load images (backend returns RGB)
+        base_image_rgb = _face_backend.load_image(str(base_image_path))
+        source_image_rgb = _face_backend.load_image(str(source_image_path))
 
         # Convert to BGR for OpenCV
         base_image = cv2.cvtColor(base_image_rgb, cv2.COLOR_RGB2BGR)
         source_image = cv2.cvtColor(source_image_rgb, cv2.COLOR_RGB2BGR)
 
-        # Get face locations (suppress LAPACK warnings)
-        with SuppressStderr():
-            base_locations = face_recognition.face_locations(base_image_rgb)
-            source_locations = face_recognition.face_locations(source_image_rgb)
+        # Get face locations
+        base_locations = _face_backend.detect_faces(base_image_rgb)
+        source_locations = _face_backend.detect_faces(source_image_rgb)
 
         if base_face_idx >= len(base_locations) or source_face_idx >= len(source_locations):
             return None
 
-        # Get face landmarks for alignment (suppress LAPACK warnings)
-        with SuppressStderr():
-            base_landmarks = face_recognition.face_landmarks(base_image_rgb)[base_face_idx]
-            source_landmarks = face_recognition.face_landmarks(source_image_rgb)[source_face_idx]
+        # Get face landmarks for alignment
+        base_landmarks = _face_backend.get_landmarks(base_image_rgb)[base_face_idx]
+        source_landmarks = _face_backend.get_landmarks(source_image_rgb)[source_face_idx]
 
         # Extract face regions
-        base_top, base_right, base_bottom, base_left = base_locations[base_face_idx]
-        source_top, source_right, source_bottom, source_left = source_locations[source_face_idx]
+        base_loc = base_locations[base_face_idx]
+        base_top, base_right, base_bottom, base_left = (
+            base_loc.top, base_loc.right, base_loc.bottom, base_loc.left
+        )
+        source_loc = source_locations[source_face_idx]
+        source_top, source_right, source_bottom, source_left = (
+            source_loc.top, source_loc.right, source_loc.bottom, source_loc.left
+        )
 
         # Expand face region slightly for better blending
         margin = 20
