@@ -570,9 +570,7 @@ Contributions welcome! Please:
 ### Known Issues
 
 - **Pickle state file** — [processing_state.py](src/processing_state.py) uses `pickle` for resume state persistence, which is vulnerable to arbitrary code execution if the state file is tampered with. A migration to JSON is planned.
-- **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. Modern alternatives (MediaPipe, YOLOv8-Face) are faster and more accurate. Works fine for now but may not receive future fixes.
-- **Time window grouping edge case** — When `--time-window` is active, photos missing datetime metadata are still grouped by visual similarity alone instead of being excluded from time-based matching.
-- **Face swap accumulation** — When face-swapping multiple faces in a single image, only the last swap is retained rather than all swaps being composited together.
+- **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. Modern alternatives (MediaPipe, YOLOv8-Face) are faster and more accurate. A pluggable backend abstraction (`--face-backend`) is in place for future migration.
 - **No threshold range validation** — The `-t` similarity threshold accepts values outside the valid 0–64 range without warning.
 - **Inconsistent logging** — [grouping.py](src/grouping.py) uses `print()` instead of the logging module used by the rest of the codebase.
 - **OMP_NUM_THREADS=1 in flake.nix** — OpenBLAS/LAPACK threading is disabled to suppress warnings, which reduces numerical performance on multi-core systems. The runtime `SuppressStderr` utility may make this unnecessary.

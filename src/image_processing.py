@@ -398,15 +398,19 @@ def find_best_replacement_face(base_image_path, source_image_paths, face_index=0
         return None, None
 
 
-def swap_face(base_image_path, source_image_path, base_face_idx, source_face_idx):
+def swap_face(base_image_path, source_image_path, base_face_idx, source_face_idx,
+              base_override=None):
     """
     Swap a face from source image into base image using seamless cloning.
 
     Args:
-        base_image_path: Path to base image
+        base_image_path: Path to base image (used for face detection)
         source_image_path: Path to source image with replacement face
         base_face_idx: Face index in base image to replace
         source_face_idx: Face index in source image to use
+        base_override: Optional BGR image to use as the clone target instead of
+            loading from base_image_path. Face detection still uses the path so
+            that face indices remain stable across multiple swaps.
 
     Returns:
         Image with swapped face, or None if swap fails
@@ -415,12 +419,15 @@ def swap_face(base_image_path, source_image_path, base_face_idx, source_face_idx
         return None
 
     try:
-        # Load images (backend returns RGB)
+        # Load images (backend returns RGB) for face detection
         base_image_rgb = _face_backend.load_image(str(base_image_path))
         source_image_rgb = _face_backend.load_image(str(source_image_path))
 
-        # Convert to BGR for OpenCV
-        base_image = cv2.cvtColor(base_image_rgb, cv2.COLOR_RGB2BGR)
+        # Use override as clone target if provided, otherwise load from path
+        if base_override is not None:
+            base_image = base_override
+        else:
+            base_image = cv2.cvtColor(base_image_rgb, cv2.COLOR_RGB2BGR)
         source_image = cv2.cvtColor(source_image_rgb, cv2.COLOR_RGB2BGR)
 
         # Get face locations
@@ -531,8 +538,12 @@ def create_face_swapped_image(group, best_photo_path, enable_face_swap: bool):
             )
 
             if source_path and source_face_idx is not None:
-                # Swap the face
-                swapped = swap_face(best_photo_path, source_path, face_idx, source_face_idx)
+                # Swap the face, using accumulated result as the clone target
+                # so previous swaps are preserved
+                swapped = swap_face(
+                    best_photo_path, source_path, face_idx, source_face_idx,
+                    base_override=result
+                )
                 if swapped is not None:
                     result = swapped
                     swaps_made += 1
