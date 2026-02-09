@@ -16,7 +16,6 @@ dlib>=19.24.0
 # Utilities
 numpy>=1.24.0
 scipy>=1.10.0
-click>=8.1.0
 
 # Immich integration
 requests>=2.31.0
