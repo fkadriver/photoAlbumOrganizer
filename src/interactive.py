@@ -12,9 +12,23 @@ import os
 import sys
 
 _DEFAULT_SETTINGS_FILE = ".photo_organizer_settings.json"
+_IMMICH_CONFIG_FILE = os.path.expanduser("~/.config/photo-organizer/immich.conf")
 
 # Keys that contain secrets and should never be saved to disk.
 _SECRET_KEYS = {"immich_api_key"}
+
+
+def _load_immich_config():
+    """Load Immich defaults from the config file if it exists."""
+    config = {}
+    if os.path.isfile(_IMMICH_CONFIG_FILE):
+        with open(_IMMICH_CONFIG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    key, _, value = line.partition("=")
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    return config
 
 
 # --- Primitive helpers ---
@@ -195,6 +209,15 @@ def _load_settings(path):
 def _prompt_missing_secrets(settings):
     """Re-prompt for any secret values that were stripped during save."""
     if settings.get("source_type") == "immich" and not settings.get("immich_api_key"):
+        # Try the config file first
+        conf = _load_immich_config()
+        conf_key = conf.get("IMMICH_API_KEY", "")
+        if conf_key:
+            print(f"\n  Found API key in {_IMMICH_CONFIG_FILE}")
+            print(f"    IMMICH_API_KEY = {conf_key}")
+            if _prompt_bool("Use API key from config file?", default=True):
+                settings["immich_api_key"] = conf_key
+                return
         print()
         api_key = getpass.getpass("  Immich API key (not saved to file, hidden): ").strip()
         while not api_key:
@@ -238,13 +261,32 @@ def _prompt_local_options():
 def _prompt_immich_options():
     """Step 2b: Immich connection settings."""
     _print_section("Step 2: Immich Connection")
-    url = _prompt_text("Immich server URL (e.g. http://immich:2283)", required=True)
+
+    # Load defaults from config file
+    conf = _load_immich_config()
+    if conf:
+        print(f"  Loaded defaults from {_IMMICH_CONFIG_FILE}")
+        if conf.get("IMMICH_URL"):
+            print(f"    IMMICH_URL = {conf['IMMICH_URL']}")
+        if conf.get("IMMICH_API_KEY"):
+            print(f"    IMMICH_API_KEY = {conf['IMMICH_API_KEY']}")
+        print()
+
+    default_url = conf.get("IMMICH_URL", "")
+    default_key = conf.get("IMMICH_API_KEY", "")
+
+    url = _prompt_text("Immich server URL", default=default_url, required=True)
     print()
-    # Use getpass so the key is not echoed
-    api_key = getpass.getpass("  Immich API key (hidden): ").strip()
-    while not api_key:
-        print("  API key is required.")
+    if default_key:
+        use_default = _prompt_bool(f"Use API key from config file?", default=True)
+        api_key = default_key if use_default else ""
+    else:
+        api_key = ""
+    if not api_key:
         api_key = getpass.getpass("  Immich API key (hidden): ").strip()
+        while not api_key:
+            print("  API key is required.")
+            api_key = getpass.getpass("  Immich API key (hidden): ").strip()
     print()
     album = _prompt_text("Process specific album (leave blank for all)")
     cache_dir = _prompt_text("Cache directory (leave blank for default)")
