@@ -173,6 +173,8 @@ Examples:
     elif args.run_settings:
         from interactive import load_and_run_settings
         args = load_and_run_settings(args.run_settings)
+        # -r is non-interactive: auto-start fresh instead of prompting
+        args.force_fresh = True
 
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:
