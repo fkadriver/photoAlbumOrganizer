@@ -13,6 +13,7 @@ import warnings
 from pathlib import Path
 import argparse
 
+
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -231,8 +232,18 @@ Examples:
             parser.error("--output, --tag-only, or --create-albums is required for immich source type")
 
     # Deferred imports — these pull in cv2, face_recognition, etc.
-    from photo_sources import LocalPhotoSource, ImmichPhotoSource
-    from organizer import PhotoOrganizer
+    # and require the Nix development environment for native libraries.
+    try:
+        from photo_sources import LocalPhotoSource, ImmichPhotoSource
+        from organizer import PhotoOrganizer
+    except ImportError as e:
+        print(f"\nError: Failed to import required libraries: {e}\n")
+        print("This usually means the development environment is not active.")
+        print("Try one of:")
+        print("  direnv allow        # if using direnv (recommended)")
+        print("  nix develop         # enter Nix dev shell manually")
+        print("  source venv/bin/activate  # if not on NixOS")
+        sys.exit(1)
 
     # Setup logging
     log_dir = Path(args.output) if args.output else None
