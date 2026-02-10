@@ -5,6 +5,7 @@ Allows long-running photo organization jobs to be interrupted and resumed.
 """
 
 import pickle
+import threading
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -22,6 +23,7 @@ class ProcessingState:
             state_file: Path to state file for persistence
         """
         self.state_file = Path(state_file)
+        self._lock = threading.Lock()
         self.state = {
             'version': '1.0',
             'started_at': None,
@@ -49,7 +51,12 @@ class ProcessingState:
         }
 
     def save(self):
-        """Save current state to disk."""
+        """Save current state to disk (thread-safe)."""
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self):
+        """Save current state to disk (caller must hold self._lock)."""
         self.state['last_saved'] = datetime.now().isoformat()
 
         # Create parent directory if needed
@@ -130,16 +137,18 @@ class ProcessingState:
             photo_id: Photo identifier
             hash_value: Computed hash value
         """
-        self.state['processed_hashes'][photo_id] = str(hash_value)
-        self.state['photos_hashed'] += 1
+        with self._lock:
+            self.state['processed_hashes'][photo_id] = str(hash_value)
+            self.state['photos_hashed'] += 1
 
-        # Auto-save every 50 photos
-        if self.state['photos_hashed'] % 50 == 0:
-            self.save()
+            # Auto-save every 50 photos
+            if self.state['photos_hashed'] % 50 == 0:
+                self._save_unlocked()
 
     def get_cached_hash(self, photo_id: str) -> Optional[str]:
         """Get cached hash for a photo."""
-        return self.state['processed_hashes'].get(photo_id)
+        with self._lock:
+            return self.state['processed_hashes'].get(photo_id)
 
     def set_groups_found(self, count: int):
         """Set total number of groups found."""

@@ -11,6 +11,7 @@ import hashlib
 import io
 import time
 import os
+import threading
 from PIL import Image
 from immich_client import ImmichClient
 
@@ -220,6 +221,7 @@ class PhotoCache:
         self.cache_dir = Path(cache_dir)
         self.max_size = max_size_mb * 1024 * 1024
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
         # Create metadata file for tracking cache
         self.metadata_file = self.cache_dir / 'cache_metadata.json'
@@ -324,19 +326,20 @@ class PhotoCache:
         safe_id = hashlib.md5(photo_id.encode()).hexdigest()
         cache_file = self.cache_dir / f"{safe_id}.jpg"
 
-        # Ensure we have space
-        self._evict_old_entries(len(data))
+        with self._lock:
+            # Ensure we have space
+            self._evict_old_entries(len(data))
 
-        # Write file
-        cache_file.write_bytes(data)
+            # Write file
+            cache_file.write_bytes(data)
 
-        # Update metadata
-        self.metadata[safe_id] = {
-            'photo_id': photo_id,
-            'cached_at': datetime.now().isoformat(),
-            'size': len(data)
-        }
-        self._save_metadata()
+            # Update metadata
+            self.metadata[safe_id] = {
+                'photo_id': photo_id,
+                'cached_at': datetime.now().isoformat(),
+                'size': len(data)
+            }
+            self._save_metadata()
 
         return cache_file
 
