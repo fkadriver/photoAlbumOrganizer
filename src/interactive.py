@@ -7,8 +7,14 @@ Launched via `python photo_organizer.py -i`.
 
 import argparse
 import getpass
+import json
 import os
 import sys
+
+_DEFAULT_SETTINGS_FILE = ".photo_organizer_settings.json"
+
+# Keys that contain secrets and should never be saved to disk.
+_SECRET_KEYS = {"immich_api_key"}
 
 
 # --- Primitive helpers ---
@@ -164,6 +170,37 @@ def _prompt_bool(prompt, default=True):
         if raw in ("n", "no"):
             return False
         print("  Please enter y or n.")
+
+
+# --- Settings file save / load ---
+
+def _save_settings(settings, path):
+    """Save settings to a JSON file, excluding secrets."""
+    safe = {k: v for k, v in settings.items() if k not in _SECRET_KEYS}
+    with open(path, "w") as f:
+        json.dump(safe, f, indent=2, default=str)
+    print(f"  Settings saved to: {path}")
+
+
+def _load_settings(path):
+    """Load settings from a JSON file. Returns dict or None on failure."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"  Warning: Could not load settings file: {exc}")
+        return None
+
+
+def _prompt_missing_secrets(settings):
+    """Re-prompt for any secret values that were stripped during save."""
+    if settings.get("source_type") == "immich" and not settings.get("immich_api_key"):
+        print()
+        api_key = getpass.getpass("  Immich API key (not saved to file, hidden): ").strip()
+        while not api_key:
+            print("  API key is required.")
+            api_key = getpass.getpass("  Immich API key (hidden): ").strip()
+        settings["immich_api_key"] = api_key
 
 
 # --- Path validator ---
@@ -454,32 +491,51 @@ def run_interactive_menu():
         print("  Press Ctrl+C at any time to cancel.\n")
 
         settings = {}
+        loaded_from_file = False
 
-        # Step 1
-        settings["source_type"] = _prompt_source_type()
+        # Check for saved settings file
+        if os.path.isfile(_DEFAULT_SETTINGS_FILE):
+            print(f"  Found saved settings: {_DEFAULT_SETTINGS_FILE}")
+            if _prompt_bool("Load saved settings?", default=True):
+                loaded = _load_settings(_DEFAULT_SETTINGS_FILE)
+                if loaded:
+                    settings = loaded
+                    _prompt_missing_secrets(settings)
+                    loaded_from_file = True
+                    print("  Settings loaded. You can review and edit them below.")
 
-        # Step 2
-        _collect_source_options(settings)
+        if not loaded_from_file:
+            # Step 1
+            settings["source_type"] = _prompt_source_type()
 
-        # Step 3
-        settings.update(_prompt_processing())
+            # Step 2
+            _collect_source_options(settings)
 
-        # Step 4
-        settings.update(_prompt_advanced())
+            # Step 3
+            settings.update(_prompt_processing())
 
-        # Step 5
-        settings.update(_prompt_run_options())
+            # Step 4
+            settings.update(_prompt_advanced())
+
+            # Step 5
+            settings.update(_prompt_run_options())
 
         # Summary & confirmation loop
         while True:
             _print_summary(settings)
             print("\n  [c] Confirm and run")
+            print("  [s] Save settings and run")
             print("  [e] Edit a section")
             print("  [r] Restart from scratch")
             print("  [q] Quit")
 
             choice = input("\n  Your choice [c]: ").strip().lower()
             if choice in ("", "c", "confirm"):
+                break
+            elif choice in ("s", "save"):
+                save_path = _prompt_text(
+                    "Save to", default=_DEFAULT_SETTINGS_FILE)
+                _save_settings(settings, save_path)
                 break
             elif choice in ("r", "restart"):
                 return run_interactive_menu()
