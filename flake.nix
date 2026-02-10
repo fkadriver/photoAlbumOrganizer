@@ -39,9 +39,10 @@
             libjpeg
             libwebp
             
-            # X11 for dlib GUI support
+            # X11/XCB for dlib GUI support and OpenCV runtime
             xorg.libX11
             xorg.libXext
+            xorg.libxcb
             
             # BLAS/LAPACK for optimized operations
             openblas
@@ -53,7 +54,7 @@
 
           shellHook = ''
             # CRITICAL: Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:${pkgs.xorg.libX11}/lib:${pkgs.xorg.libXext}/lib:${pkgs.xorg.libxcb}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
             # Fix BLAS/LAPACK warnings by using single-threaded mode
             export OMP_NUM_THREADS=1
@@ -113,8 +114,9 @@
                 echo "✓ All packages installed!"
                 echo ""
                 echo "Ready to use:"
-                echo "  • Local: python src/photo_organizer.py -s <source> -o <output>"
-                echo "  • Immich: python src/photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only"
+                echo "  • Interactive: python photo_organizer.py -i"
+                echo "  • Local: python photo_organizer.py -s <source> -o <output>"
+                echo "  • Immich: python photo_organizer.py --source-type immich --immich-url <url> --immich-api-key <key> --tag-only"
                 echo "  • Immich (wrapper): ./scripts/immich.sh help"
                 echo ""
                 echo "Tip: Run 'python scripts/test_immich_connection.py' to test Immich connectivity"
