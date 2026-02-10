@@ -56,6 +56,9 @@ organized_photos/
 *.pkl
 *.tmp
 
+# Interactive menu saved settings
+.photo_organizer_settings.json
+
 # Logs and debugging
 *.log
 debug/
