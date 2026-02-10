@@ -111,8 +111,14 @@ direnv allow
 # Just cd into the project - environment loads automatically
 cd ~/photoAlbumOrganizer
 
-# Environment is active - you can use Python and all dependencies
-python ../src/photo_organizer.py -s /source -o /output
+# direnv will prompt you:
+#   [r] Run with saved settings  (if .photo_organizer_settings.json exists)
+#   [i] Interactive setup
+#   [s] Drop to shell            (default — just press Enter)
+
+# Or run directly:
+python photo_organizer.py -i                          # Interactive setup
+python photo_organizer.py -s /source -o /output       # Direct CLI
 
 # Leave the directory - environment unloads automatically
 cd ~
@@ -199,7 +205,7 @@ Plug 'direnv/direnv.vim'
 
 ## Security Note
 
-Always review `.envrc` files before running `direnv allow`, as they execute shell code. In this project, `.envrc` simply contains `use flake`, which loads the flake.nix.
+Always review `.envrc` files before running `direnv allow`, as they execute shell code. In this project, `.envrc` loads the flake.nix environment and presents a prompt to run the photo organizer or drop to a shell.
 
 ## Alternative: Using .envrc with shell.nix
 

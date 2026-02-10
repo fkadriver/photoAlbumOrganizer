@@ -26,6 +26,16 @@ When prompted, enter:
 - Your Immich URL (e.g., `http://immich:2283` or `https://immich.example.com`)
 - Your API key
 
+## Interactive Mode (Easiest)
+
+Don't want to remember flags? Use the interactive menu:
+
+```bash
+python photo_organizer.py -i
+```
+
+It walks you through every option step by step. You can save your settings to reuse next time.
+
 ## Three Ways to Use
 
 ### 1. Tag Duplicates (Fastest, Safest)

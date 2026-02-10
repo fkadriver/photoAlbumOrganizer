@@ -18,6 +18,8 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Original Preservation**: Keeps all original photos safely in organized folders
 - **Multi-Format Support**: Handles JPEG, PNG, HEIC, and RAW formats (CR2, NEF, ARW, DNG)
 - **Resume Capability**: Interrupt and resume processing without losing progress (perfect for large libraries)
+- **Interactive Setup Menu**: Guided `-i` mode walks you through all options — no need to memorize CLI flags
+- **Save/Load Settings**: Save your interactive configuration to JSON and reload it next time
 - **NixOS Optimized**: First-class NixOS support with automatic environment setup
 
 ## Table of Contents
@@ -27,6 +29,7 @@ A Python tool to organize large photo collections by automatically grouping simi
   - [Other Linux/macOS](#other-linuxmacos)
   - [Windows](#windows)
 - [Usage](#usage)
+  - [Interactive Mode](#interactive-mode)
   - [Local Photos](#basic-usage)
   - [Immich Integration](#immich-integration)
 - [Command Line Options](#command-line-options)
@@ -60,8 +63,9 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 # Verify installation
 python scripts/verify_environment.py
 
-# Ready to use!
-python photo_organizer.py -s ~/Photos -o ~/Organized
+# Ready to use! (direnv will prompt to run or drop to shell on cd)
+python photo_organizer.py -i        # Interactive guided setup
+python photo_organizer.py -s ~/Photos -o ~/Organized  # Direct CLI
 ```
 
 **Without direnv:**
@@ -138,6 +142,24 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 ```
 
 ## Usage
+
+### Interactive Mode
+
+The easiest way to get started — a guided menu walks you through every option with sensible defaults:
+
+```bash
+python photo_organizer.py -i
+```
+
+The menu covers source type, paths, processing tuning, advanced features (HDR, face-swap), and run options. Press Enter to accept defaults or change only what you need.
+
+**Saving and loading settings:**
+
+At the summary screen, press `s` to save your configuration to `.photo_organizer_settings.json`. The next time you run with `-i`, the menu detects the file and offers to load it — skipping the full walkthrough and jumping straight to review. API keys are never saved to the file; they are re-prompted on load.
+
+**direnv integration:**
+
+If you use direnv, entering the project directory will prompt you to run with saved settings, launch interactive setup, or drop to a shell. Press Enter to drop to the shell (default).
 
 ### Basic Usage (Local Photos)
 
@@ -252,6 +274,11 @@ Advanced Image Processing:
   --enable-face-swap       Enable automatic face swapping to fix closed
                            eyes/bad expressions
   --swap-closed-eyes       Swap faces with closed eyes (default: True)
+
+Interactive Mode:
+  -i, --interactive        Launch interactive setup menu (guided walkthrough)
+                           Settings can be saved/loaded from
+                           .photo_organizer_settings.json
 
 Other Arguments:
   --verbose                Enable detailed output during processing
@@ -541,6 +568,7 @@ python photo_organizer.py -s ~/Photos -o ~/Organized --limit 100 --resume
 photoAlbumOrganizer/
 ├── photo_organizer.py         # Main entry point (CLI argument parsing)
 ├── src/                       # Python source code
+│   ├── interactive.py        # Interactive setup menu and settings save/load
 │   ├── organizer.py          # Core PhotoOrganizer class
 │   ├── grouping.py           # Perceptual hashing and similarity grouping
 │   ├── image_processing.py   # Face detection, HDR, and face swapping
@@ -580,6 +608,12 @@ Contributions welcome! Please:
 5. Open a Pull Request
 
 ### Recent Enhancements
+
+- [x] **Interactive Setup Menu** - Guided `-i` mode with save/load settings
+  - Step-by-step walkthrough of all options with sensible defaults
+  - Save configuration to `.photo_organizer_settings.json` for reuse
+  - API keys excluded from saved files and re-prompted on load
+  - direnv prompt on directory entry to run or launch setup
 
 - [x] **Immich Integration** - Full integration with Immich self-hosted photo management
   - Tag duplicates directly in Immich
