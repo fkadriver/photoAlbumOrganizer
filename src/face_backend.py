@@ -187,6 +187,124 @@ class FaceRecognitionBackend(FaceBackend):
         return float(dist[0])
 
 
+class MediaPipeBackend(FaceBackend):
+    """Backend using Google MediaPipe FaceLandmarker (468-point landmarks).
+
+    Uses the MediaPipe Tasks API with a downloaded .task model file.
+    The model is expected at ``models/face_landmarker.task`` relative to the
+    repository root.
+    """
+
+    # 6-point eye contour indices into the 468 FaceMesh landmarks.
+    # Ordered to match the dlib/face_recognition 6-point convention
+    # (left corner, upper-left, upper-right, right corner, lower-right, lower-left)
+    # so that the existing EAR calculation works unchanged.
+    _RIGHT_EYE_IDX = [33, 160, 158, 133, 153, 144]
+    _LEFT_EYE_IDX = [362, 385, 387, 263, 373, 380]
+
+    _MODEL_FILENAME = "face_landmarker.task"
+
+    def __init__(self):
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions, vision
+
+        self._mp_image = mp.Image
+        self._mp_image_format = mp.ImageFormat
+
+        model_path = self._find_model()
+        if model_path is None:
+            raise FileNotFoundError(
+                f"MediaPipe model '{self._MODEL_FILENAME}' not found. "
+                "Download it with:\n  curl -sSL -o models/face_landmarker.task "
+                "https://storage.googleapis.com/mediapipe-models/"
+                "face_landmarker/face_landmarker/float16/latest/"
+                "face_landmarker.task"
+            )
+
+        base_options = BaseOptions(model_asset_path=str(model_path))
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.IMAGE,
+            num_faces=10,
+            output_face_blendshapes=False,
+        )
+        self._landmarker = vision.FaceLandmarker.create_from_options(options)
+
+    @classmethod
+    def _find_model(cls) -> Optional[str]:
+        """Locate the model file relative to the repo root."""
+        import pathlib
+        # Try models/ dir relative to the repo root (one level up from src/)
+        candidates = [
+            pathlib.Path(__file__).resolve().parent.parent / "models" / cls._MODEL_FILENAME,
+            pathlib.Path.cwd() / "models" / cls._MODEL_FILENAME,
+        ]
+        for p in candidates:
+            if p.is_file():
+                return str(p)
+        return None
+
+    @property
+    def name(self) -> str:
+        return "mediapipe"
+
+    @property
+    def supports_encoding(self) -> bool:
+        return False
+
+    def load_image(self, image_path: str) -> np.ndarray:
+        from PIL import Image
+        img = Image.open(image_path).convert("RGB")
+        return np.asarray(img)
+
+    def _detect(self, image: np.ndarray):
+        """Run the landmarker and return the raw result."""
+        mp_image = self._mp_image(
+            image_format=self._mp_image_format.SRGB, data=image)
+        return self._landmarker.detect(mp_image)
+
+    def detect_faces(self, image: np.ndarray) -> List[FaceLocation]:
+        result = self._detect(image)
+        if not result.face_landmarks:
+            return []
+
+        h, w = image.shape[:2]
+        locations = []
+        for face_lm in result.face_landmarks:
+            xs = [lm.x for lm in face_lm]
+            ys = [lm.y for lm in face_lm]
+            top = max(0, int(min(ys) * h))
+            bottom = min(h, int(max(ys) * h))
+            left = max(0, int(min(xs) * w))
+            right = min(w, int(max(xs) * w))
+            locations.append(FaceLocation(top=top, right=right,
+                                          bottom=bottom, left=left))
+        return locations
+
+    def get_landmarks(self, image: np.ndarray) -> List[FaceLandmarks]:
+        result = self._detect(image)
+        if not result.face_landmarks:
+            return []
+
+        h, w = image.shape[:2]
+        landmarks = []
+        for face_lm in result.face_landmarks:
+            def _to_points(indices):
+                return [(int(face_lm[i].x * w), int(face_lm[i].y * h))
+                        for i in indices]
+
+            left_eye = _to_points(self._LEFT_EYE_IDX)
+            right_eye = _to_points(self._RIGHT_EYE_IDX)
+
+            landmarks.append(FaceLandmarks(
+                left_eye=left_eye,
+                right_eye=right_eye,
+                raw={"all_landmarks": [(int(p.x * w), int(p.y * h))
+                                       for p in face_lm]},
+            ))
+        return landmarks
+
+
 def get_face_backend(backend_name: str = "auto") -> Optional[FaceBackend]:
     """Create and return a face detection backend.
 
@@ -205,10 +323,13 @@ def get_face_backend(backend_name: str = "auto") -> Optional[FaceBackend]:
                 print(f"Warning: Could not load face_recognition backend: {e}")
                 return None
 
-    # Future: MediaPipe backend would be tried here for "mediapipe" or "auto"
-    if backend_name == "mediapipe":
-        print("Warning: MediaPipe backend is not yet implemented.")
-        return None
+    if backend_name in ("mediapipe", "auto"):
+        try:
+            return MediaPipeBackend()
+        except (Exception, SystemExit) as e:
+            if backend_name == "mediapipe":
+                print(f"Warning: Could not load mediapipe backend: {e}")
+                return None
 
     if backend_name == "auto":
         print("Warning: No face detection backend available.")

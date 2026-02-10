@@ -6,7 +6,7 @@ A Python tool to organize large photo collections by automatically grouping simi
 
 - **Intelligent Grouping**: Uses perceptual hashing to find visually similar photos, even with timestamp errors
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
-- **Face Quality Detection**: Scores faces for smiles and open eyes using OpenCV and face_recognition
+- **Face Quality Detection**: Scores faces for smiles and open eyes using pluggable backends (face_recognition or MediaPipe)
 - **Best Photo Selection**: Automatically selects the best photo from each group
 - **Immich Integration**: Full integration with Immich self-hosted photo management
   - Tag duplicates directly in Immich
@@ -35,6 +35,7 @@ A Python tool to organize large photo collections by automatically grouping simi
 - [Command Line Options](#command-line-options)
 - [Output Structure](#output-structure)
 - [Configuration Guide](#configuration-guide)
+- [Face Detection Backends](#face-detection-backends)
 - [Performance](#performance)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -279,6 +280,8 @@ Interactive Mode:
   -i, --interactive        Launch interactive setup menu (guided walkthrough)
                            Settings can be saved/loaded from
                            .photo_organizer_settings.json
+  -r, --run-settings FILE  Run directly from a saved settings JSON file
+                           (default: .photo_organizer_settings.json)
 
 Other Arguments:
   --verbose                Enable detailed output during processing
@@ -386,6 +389,42 @@ The threshold parameter controls how similar photos must be to be grouped:
 | **600s** | Event photography, multiple compositions of scenes |
 | **--time-window 0** | Duplicate detection across entire library |
 
+## Face Detection Backends
+
+The organizer uses a pluggable face detection backend controlled by `--face-backend`:
+
+| Backend | `--face-backend` | Detection | Landmarks (EAR) | Face Encoding | Install Complexity |
+|---------|-------------------|-----------|-----------------|---------------|-------------------|
+| **face_recognition** | `face_recognition` | dlib HOG/CNN | 68-point (dlib) | Yes (128-d) | High (requires dlib compilation) |
+| **MediaPipe** | `mediapipe` | FaceLandmarker | 468-point (FaceMesh) | No | Low (`pip install mediapipe`) |
+| **Auto** (default) | `auto` | Tries face_recognition first, then MediaPipe | — | — | — |
+
+### Currently Supported
+
+**face_recognition (dlib)** — The original backend. Provides face encoding for identity matching (needed for face-swap). Requires dlib compilation (or `dlib-binary`). Can be noisy (DGESVD warnings) but works reliably.
+
+**MediaPipe** — Google's lightweight face detection. No compilation needed, just `pip install mediapipe`. Requires downloading a model file:
+
+```bash
+mkdir -p models
+curl -sSL -o models/face_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
+```
+
+MediaPipe provides 468-point landmarks (mapped to 6-point eye contours for EAR calculation) but does not support face encoding, so the face-swap feature (`--enable-face-swap`) is unavailable with this backend.
+
+### Other Alternatives (Not Yet Implemented)
+
+These backends could be added in the future via the `FaceBackend` abstraction:
+
+| Library | Strengths | Limitations |
+|---------|-----------|-------------|
+| **InsightFace** | State-of-the-art accuracy, fast GPU inference, face encoding via ArcFace | Heavy install (~1GB models), ONNX Runtime dependency |
+| **DeepFace** | Unified API for multiple models (VGGFace, ArcFace, Facenet), face encoding | Meta-library with large dependencies, slower |
+| **YOLOv8-Face** | Best detection speed, good for large libraries | Detection only (no landmarks or encoding), Ultralytics dependency |
+| **RetinaFace** | Excellent accuracy on small/occluded faces, 5-point landmarks | No encoding, moderate speed |
+| **dlib (direct)** | Fewer dependencies than face_recognition, same underlying models | Same 2015-era model limitations |
+
 ## How It Works
 
 1. **Discovery Phase**
@@ -402,7 +441,7 @@ The threshold parameter controls how similar photos must be to be grouped:
    - Optionally filters by temporal proximity
 
 4. **Analysis Phase**
-   - Detects faces in each photo using face_recognition
+   - Detects faces using pluggable backend (face_recognition or MediaPipe)
    - Scores faces for quality (open eyes, smiling)
    - Uses OpenCV for additional facial feature detection
 
@@ -589,6 +628,8 @@ photoAlbumOrganizer/
 │   ├── DIRENV_SETUP.md       # direnv configuration guide
 │   ├── QUICKSTART.md         # Quick start guide
 │   └── ...                   # Additional documentation
+├── models/                    # Downloaded model files (not tracked in git)
+│   └── face_landmarker.task  # MediaPipe face model (download separately)
 ├── requirements.txt          # Python dependencies
 ├── flake.nix                 # NixOS development environment
 ├── shell.nix                 # Alternative NixOS shell
@@ -632,11 +673,12 @@ Contributions welcome! Please:
 ### Known Issues
 
 - **Pickle state file** — [processing_state.py](src/processing_state.py) uses `pickle` for resume state persistence, which is vulnerable to arbitrary code execution if the state file is tampered with. A migration to JSON is planned.
-- **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. Modern alternatives (MediaPipe, YOLOv8-Face) are faster and more accurate. A pluggable backend abstraction (`--face-backend`) is in place for future migration.
+- **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. MediaPipe is now available as an alternative backend via `--face-backend mediapipe`. Note: MediaPipe does not support face encoding, so face-swap matching is unavailable with it.
 - **OMP_NUM_THREADS=1 in flake.nix** — OpenBLAS/LAPACK threading is disabled to suppress warnings, which reduces numerical performance on multi-core systems. The runtime `SuppressStderr` utility may make this unnecessary.
 
 ### Future Enhancements
 
+- [ ] Additional face backends (InsightFace, DeepFace, YOLOv8-Face)
 - [ ] GPU acceleration for face detection
 - [ ] Web interface for reviewing and managing groups
 - [ ] Cloud storage integration (Google Photos, iCloud)
@@ -648,6 +690,7 @@ Contributions welcome! Please:
 - [ ] Integration with Immich's ML features
 - [ ] Shared album support in Immich
 - [ ] Smart archival suggestions based on quality scores
+- [ ] Migrate pickle state file to JSON for security
 
 ## License
 
@@ -656,7 +699,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Acknowledgments
 
 - **[ImageHash](https://github.com/JohannesBuchner/imagehash)** - Perceptual hashing library
-- **[face_recognition](https://github.com/ageitgey/face_recognition)** - Face detection and recognition
+- **[face_recognition](https://github.com/ageitgey/face_recognition)** - Face detection and recognition (dlib-based)
+- **[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)** - Google's face landmarker (alternative backend)
 - **[Pillow](https://python-pillow.org/)** - Python Imaging Library
 - **[OpenCV](https://opencv.org/)** - Computer vision library
 - **[dlib](http://dlib.net/)** - Machine learning toolkit
