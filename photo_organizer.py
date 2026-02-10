@@ -28,9 +28,20 @@ from photo_sources import LocalPhotoSource, ImmichPhotoSource
 from organizer import PhotoOrganizer
 
 
+class HintingArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that appends a tip about interactive mode on error."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"\n{self.prog}: error: {message}", file=sys.stderr)
+        print("\nTip: Run with -i or --interactive for a guided setup menu.",
+              file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
     """Main entry point with argument parsing."""
-    parser = argparse.ArgumentParser(
+    parser = HintingArgumentParser(
         description='Organize photo albums by grouping similar photos',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -144,7 +155,16 @@ Examples:
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of threads for parallel processing (default: 2)')
 
+    # Interactive mode
+    parser.add_argument('-i', '--interactive', action='store_true',
+                        help='Launch interactive setup menu')
+
     args = parser.parse_args()
+
+    # Early interception: replace args with interactive menu selections
+    if args.interactive:
+        from interactive import run_interactive_menu
+        args = run_interactive_menu()
 
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:
