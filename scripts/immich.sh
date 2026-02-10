@@ -23,11 +23,14 @@ THREADS=2
 THRESHOLD=5
 VERBOSE=0
 
-# Load API key from config file if exists and not already set
+# Load config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
 if [ -z "$IMMICH_API_KEY" ] && [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
+
+# Export for Python subprocesses
+export IMMICH_URL IMMICH_API_KEY
 
 # Check if API key is set
 if [ -z "$IMMICH_API_KEY" ]; then
@@ -255,10 +258,6 @@ case "$MODE" in
             echo "To actually delete, run: $0 cleanup '$PREFIX' no"
             echo ""
         fi
-
-        # Export variables so Python subprocess can access them
-        export IMMICH_URL
-        export IMMICH_API_KEY
 
         python -c "
 import sys

@@ -10,12 +10,27 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from immich_client import ImmichClient
 
 
+def _load_config_file():
+    """Load settings from config file if it exists."""
+    config = {}
+    config_path = os.path.expanduser('~/.config/photo-organizer/immich.conf')
+    if os.path.isfile(config_path):
+        with open(config_path) as f:
+            for line in f:
+                line = line.strip()
+                if '=' in line and not line.startswith('#'):
+                    key, _, value = line.partition('=')
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    return config
+
+
 def test_connection():
     """Test Immich connection and basic API access."""
 
-    # Get credentials from environment or prompt
-    url = os.getenv('IMMICH_URL') or input("Enter Immich URL (e.g., http://immich:2283): ").strip()
-    api_key = os.getenv('IMMICH_API_KEY') or input("Enter Immich API Key: ").strip()
+    # Get credentials from environment, config file, or prompt
+    config = _load_config_file()
+    url = os.getenv('IMMICH_URL') or config.get('IMMICH_URL') or input("Enter Immich URL (e.g., http://immich:2283): ").strip()
+    api_key = os.getenv('IMMICH_API_KEY') or config.get('IMMICH_API_KEY') or input("Enter Immich API Key: ").strip()
 
     if not url or not api_key:
         print("❌ Error: URL and API key are required")
@@ -75,7 +90,7 @@ def test_connection():
         print("\n" + "=" * 60)
         print("✅ All tests passed! Immich integration is working.")
         print("\nYou can now use:")
-        print(f"  python src/photo_organizer.py \\")
+        print(f"  python photo_organizer.py \\")
         print(f"    --source-type immich \\")
         print(f"    --immich-url {url} \\")
         print(f"    --immich-api-key YOUR_KEY \\")

@@ -22,10 +22,9 @@ os.environ['MKL_NUM_THREADS'] = '1'
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# Import after path setup
+# Lightweight import only — heavy imports (cv2, face_recognition, etc.)
+# are deferred to main() so that interactive mode can run without them.
 from utils import setup_logging
-from photo_sources import LocalPhotoSource, ImmichPhotoSource
-from organizer import PhotoOrganizer
 
 
 class HintingArgumentParser(argparse.ArgumentParser):
@@ -230,6 +229,10 @@ Examples:
             parser.error("--immich-api-key is required for immich source type")
         if not args.output and not args.tag_only and not args.create_albums:
             parser.error("--output, --tag-only, or --create-albums is required for immich source type")
+
+    # Deferred imports — these pull in cv2, face_recognition, etc.
+    from photo_sources import LocalPhotoSource, ImmichPhotoSource
+    from organizer import PhotoOrganizer
 
     # Setup logging
     log_dir = Path(args.output) if args.output else None
