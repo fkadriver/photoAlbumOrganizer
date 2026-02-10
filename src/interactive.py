@@ -602,3 +602,33 @@ def run_interactive_menu():
     except KeyboardInterrupt:
         print("\n\nSetup cancelled.")
         sys.exit(0)
+
+
+def load_and_run_settings(path):
+    """Load a saved settings file and return an argparse.Namespace without prompting.
+
+    Secrets (API keys) are filled from ~/.config/photo-organizer/immich.conf
+    or the environment so that no interactive prompt is needed.
+
+    Raises SystemExit if the file can't be loaded or a required secret is missing.
+    """
+    settings = _load_settings(path)
+    if settings is None:
+        print(f"Error: Could not load settings from {path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Fill in secrets from config file / environment
+    if settings.get("source_type") == "immich" and not settings.get("immich_api_key"):
+        # Try environment first, then config file
+        api_key = os.environ.get("IMMICH_API_KEY")
+        if not api_key:
+            conf = _load_immich_config()
+            api_key = conf.get("IMMICH_API_KEY")
+        if not api_key:
+            print("Error: Immich API key not found. Set IMMICH_API_KEY in environment "
+                  f"or in {_IMMICH_CONFIG_FILE}", file=sys.stderr)
+            sys.exit(1)
+        settings["immich_api_key"] = api_key
+
+    _print_summary(settings)
+    return _build_namespace(settings)

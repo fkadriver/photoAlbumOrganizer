@@ -158,6 +158,11 @@ Examples:
     # Interactive mode
     parser.add_argument('-i', '--interactive', action='store_true',
                         help='Launch interactive setup menu')
+    parser.add_argument('-r', '--run-settings', nargs='?',
+                        const='.photo_organizer_settings.json', default=None,
+                        metavar='FILE',
+                        help='Run directly from a saved settings file '
+                             '(default: .photo_organizer_settings.json)')
 
     args = parser.parse_args()
 
@@ -165,6 +170,9 @@ Examples:
     if args.interactive:
         from interactive import run_interactive_menu
         args = run_interactive_menu()
+    elif args.run_settings:
+        from interactive import load_and_run_settings
+        args = load_and_run_settings(args.run_settings)
 
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:
