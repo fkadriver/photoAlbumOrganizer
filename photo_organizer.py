@@ -97,7 +97,8 @@ Examples:
                         help='Download full resolution (default: use thumbnails)')
 
     # Processing arguments
-    parser.add_argument('-t', '--threshold', type=int, default=5,
+    parser.add_argument('-t', '--threshold', type=int, default=5, choices=range(0, 65),
+                        metavar='N',
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
                         help='Time window in seconds for grouping (default=300, use 0 to disable time window)')

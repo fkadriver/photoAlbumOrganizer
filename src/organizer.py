@@ -241,7 +241,7 @@ class PhotoOrganizer:
                 photos, self.photo_source, self.state,
                 self.extract_metadata, self.get_datetime_from_metadata,
                 self.similarity_threshold, self.use_time_window, self.time_window,
-                self.threads, self.verbose,
+                self.threads,
                 lambda: self._interrupted
             )
 
