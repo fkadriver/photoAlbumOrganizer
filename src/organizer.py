@@ -35,7 +35,10 @@ class PhotoOrganizer:
                  enable_face_swap=False, swap_closed_eyes=True,
                  face_backend='auto', threads=2, verbose=False,
                  immich_group_by_person=False, immich_person=None,
-                 immich_use_server_faces=False):
+                 immich_use_server_faces=False,
+                 archive_non_best=False,
+                 immich_use_duplicates=False,
+                 immich_smart_search=None):
         """
         Initialize the photo organizer.
 
@@ -63,6 +66,9 @@ class PhotoOrganizer:
             immich_group_by_person: Group photos by recognized person (Immich only)
             immich_person: Filter to specific person name (Immich only)
             immich_use_server_faces: Use Immich face data for best-photo selection
+            archive_non_best: Archive non-best photos in Immich
+            immich_use_duplicates: Use Immich server-side duplicate detection
+            immich_smart_search: CLIP search query to pre-filter photos
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -84,6 +90,9 @@ class PhotoOrganizer:
         self.immich_group_by_person = immich_group_by_person
         self.immich_person = immich_person
         self.immich_use_server_faces = immich_use_server_faces
+        self.archive_non_best = archive_non_best
+        self.immich_use_duplicates = immich_use_duplicates
+        self.immich_smart_search = immich_smart_search
 
         # Configure face detection backend
         if face_backend != 'auto':
@@ -165,6 +174,9 @@ class PhotoOrganizer:
         logging.info(f"  Group by person: {self.immich_group_by_person}")
         logging.info(f"  Person filter: {self.immich_person}")
         logging.info(f"  Use server faces: {self.immich_use_server_faces}")
+        logging.info(f"  Archive non-best: {self.archive_non_best}")
+        logging.info(f"  Use server duplicates: {self.immich_use_duplicates}")
+        logging.info(f"  Smart search: {self.immich_smart_search}")
 
         # Setup signal handlers for graceful interruption
         self._interrupted = False
@@ -236,7 +248,9 @@ class PhotoOrganizer:
             logging.info(f"Starting organize_photos (album={album})")
             logging.info("="*60)
 
-            if self.immich_group_by_person:
+            if self.immich_use_duplicates:
+                groups = self._organize_by_immich_duplicates(album)
+            elif self.immich_group_by_person:
                 groups = self._organize_by_person(album)
             else:
                 groups = self._organize_by_hash(album)
@@ -276,6 +290,14 @@ class PhotoOrganizer:
         """Group photos by perceptual hash similarity (default strategy)."""
         photos = self.find_all_photos(album=album)
 
+        # Apply CLIP smart search filter if specified
+        if self.immich_smart_search and hasattr(self.photo_source, 'client'):
+            print(f"Filtering with CLIP search: '{self.immich_smart_search}'")
+            search_results = self.photo_source.client.smart_search(self.immich_smart_search, size=1000)
+            search_ids = {a.id for a in search_results}
+            photos = [p for p in photos if p.id in search_ids]
+            print(f"  {len(photos)} photos match smart search query")
+
         if self.limit is not None and self.limit > 0:
             msg = f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})"
         else:
@@ -285,6 +307,10 @@ class PhotoOrganizer:
 
         for photo in photos:
             self.state.mark_photo_discovered()
+
+        # Pre-fetch photos for Immich sources
+        if hasattr(self.photo_source, 'prefetch_photos'):
+            self.photo_source.prefetch_photos(photos, max_workers=self.threads)
 
         return group_similar_photos(
             photos, self.photo_source, self.state,
@@ -350,6 +376,107 @@ class PhotoOrganizer:
 
         return all_groups
 
+    def _organize_by_immich_duplicates(self, album: str = None):
+        """Use Immich server-side duplicate detection as grouping source."""
+        if not hasattr(self.photo_source, 'client'):
+            print("Server-side duplicates require Immich source.")
+            return []
+
+        print("Fetching server-side duplicate groups from Immich...")
+        dup_groups = self.photo_source.client.get_duplicates()
+
+        if not dup_groups:
+            print("No server-side duplicates found.")
+            return []
+
+        print(f"Found {len(dup_groups)} duplicate group(s) from Immich")
+
+        # Convert Immich duplicate groups into our group format
+        all_groups = []
+        for dup in dup_groups:
+            assets = dup.get('assets', [])
+            if len(assets) < self.min_group_size:
+                continue
+
+            group = []
+            for asset_data in assets:
+                from immich_client import ImmichAsset
+                asset = ImmichAsset(asset_data)
+                if asset.type != 'IMAGE':
+                    continue
+
+                from photo_sources import Photo
+                photo = Photo(
+                    photo_id=asset.id,
+                    source='immich',
+                    metadata={
+                        'asset_id': asset.id,
+                        'filename': asset.original_file_name,
+                        'file_created_at': asset.file_created_at,
+                        'file_modified_at': asset.file_modified_at,
+                        'is_favorite': asset.is_favorite,
+                        'exif': asset.exif_info
+                    }
+                )
+                self.state.mark_photo_discovered()
+
+                metadata = self.extract_metadata(photo)
+                dt = self.get_datetime_from_metadata(metadata)
+                group.append({
+                    'photo': photo,
+                    'hash': None,
+                    'metadata': metadata,
+                    'datetime': dt
+                })
+
+            if len(group) >= self.min_group_size:
+                all_groups.append(group)
+
+        print(f"  {len(all_groups)} group(s) meet minimum size of {self.min_group_size}")
+        return all_groups
+
+    def _apply_structured_tags(self, group, best_photo, group_index, person_name=None):
+        """Apply structured tags to a group using the Immich tag API."""
+        if not hasattr(self.photo_source, 'client'):
+            # Fall back to simple tagging for non-Immich sources
+            tag = "photo-organizer-duplicate"
+            for photo_data in group:
+                self.photo_source.tag_photo(photo_data['photo'], [tag])
+            print(f"  Tagged {len(group)} photos")
+            return
+
+        client = self.photo_source.client
+        all_ids = [pd['photo'].metadata.get('asset_id', pd['photo'].id) for pd in group]
+        best_id = best_photo.metadata.get('asset_id', best_photo.id)
+        non_best_ids = [aid for aid in all_ids if aid != best_id]
+
+        tags_applied = 0
+
+        # Group tag
+        group_tag_id = client.get_or_create_tag(f"photo-organizer/group-{group_index:04d}")
+        if group_tag_id:
+            if client.tag_assets_by_tag_id(group_tag_id, all_ids):
+                tags_applied += 1
+
+        # Best tag
+        best_tag_id = client.get_or_create_tag("photo-organizer/best")
+        if best_tag_id:
+            client.tag_assets_by_tag_id(best_tag_id, [best_id])
+
+        # Non-best tag
+        if non_best_ids:
+            non_best_tag_id = client.get_or_create_tag("photo-organizer/non-best")
+            if non_best_tag_id:
+                client.tag_assets_by_tag_id(non_best_tag_id, non_best_ids)
+
+        # Person tag if available
+        if person_name:
+            person_tag_id = client.get_or_create_tag(f"photo-organizer/person-{person_name}")
+            if person_tag_id:
+                client.tag_assets_by_tag_id(person_tag_id, all_ids)
+
+        print(f"  Tagged {len(group)} photos (best: {best_id[:8]}...)")
+
     def _process_groups(self, groups):
         """Process all groups: tag, create albums, download, HDR, face-swap."""
         for i, group in enumerate(groups, 1):
@@ -378,12 +505,10 @@ class PhotoOrganizer:
                 best_photo_data = find_best_photo(group, self.photo_source)
             best_photo = best_photo_data['photo']
 
-            # Tag-only mode (for Immich)
-            if self.tag_only:
-                tag = "photo-organizer-duplicate"
-                for photo_data in group:
-                    self.photo_source.tag_photo(photo_data['photo'], [tag])
-                print(f"Tagged {len(group)} photos as potential duplicates")
+            # Structured tagging (for Immich with tag API)
+            if self.tag_only or self.create_albums:
+                self._apply_structured_tags(group, best_photo, i,
+                                           group[0].get('person_name'))
 
             # Create albums mode (for Immich)
             if self.create_albums:
@@ -396,6 +521,26 @@ class PhotoOrganizer:
             if self.mark_best_favorite:
                 if self.photo_source.set_favorite(best_photo, True):
                     print(f"Marked best photo as favorite: {best_photo.id}")
+
+            # Archive non-best photos (for Immich)
+            if self.archive_non_best:
+                non_best = [pd['photo'] for pd in group if pd['photo'].id != best_photo.id]
+                if non_best:
+                    non_best_ids = [p.metadata.get('asset_id', p.id) for p in non_best]
+                    # Try bulk update first, fall back to individual
+                    if hasattr(self.photo_source, 'client') and \
+                       hasattr(self.photo_source.client, 'bulk_update_assets'):
+                        if self.photo_source.client.bulk_update_assets(non_best_ids, is_archived=True):
+                            print(f"  Archived {len(non_best)} non-best photo(s)")
+                        else:
+                            # Fall back to individual
+                            archived = sum(1 for p in non_best
+                                           if self.photo_source.set_archived(p, True))
+                            print(f"  Archived {archived}/{len(non_best)} non-best photo(s)")
+                    else:
+                        archived = sum(1 for p in non_best
+                                       if self.photo_source.set_archived(p, True))
+                        print(f"  Archived {archived}/{len(non_best)} non-best photo(s)")
 
             # Full organization mode (download and organize)
             if self.output_dir and not self.tag_only:

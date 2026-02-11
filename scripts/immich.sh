@@ -22,6 +22,7 @@ TEST_LIMIT=""
 THREADS=2
 THRESHOLD=5
 MIN_GROUP_SIZE=3
+ARCHIVE_NON_BEST=0
 VERBOSE=0
 
 # Load config file if exists and not already set
@@ -89,6 +90,10 @@ while [[ $# -gt 0 ]]; do
             MIN_GROUP_SIZE="$2"
             shift 2
             ;;
+        --archive-non-best)
+            ARCHIVE_NON_BEST=1
+            shift
+            ;;
         --verbose)
             VERBOSE=1
             shift
@@ -147,6 +152,11 @@ fi
 # Add --threads flag
 COMMON_ARGS+=(--threads "$THREADS")
 
+# Add --archive-non-best flag if requested
+if [ "$ARCHIVE_NON_BEST" = "1" ]; then
+    COMMON_ARGS+=(--archive-non-best)
+fi
+
 # Add --verbose flag if requested
 if [ "$VERBOSE" = "1" ]; then
     COMMON_ARGS+=(--verbose)
@@ -158,6 +168,7 @@ FEATURES=()
 [ "$ENABLE_HDR" = "1" ] && FEATURES+=("HDR")
 [ "$ENABLE_FACE_SWAP" = "1" ] && FEATURES+=("face-swap")
 [ "$RESUME" = "1" ] && FEATURES+=("resume")
+[ "$ARCHIVE_NON_BEST" = "1" ] && FEATURES+=("archive-non-best")
 
 if [ ${#FEATURES[@]} -gt 0 ]; then
     echo "✨ Active features: ${FEATURES[*]}"
@@ -367,6 +378,7 @@ OPTIONS:
   --threads N           Number of threads for parallel processing (default: 2)
   --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
   --min-group-size N    Minimum photos per group (default: 3, min: 2)
+  --archive-non-best    Archive non-best photos (hides without deleting)
   --verbose             Show detailed error messages on console
 
 MODES:

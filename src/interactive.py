@@ -323,6 +323,12 @@ def _prompt_immich_actions():
         person_filter = person_filter or None
         use_server_faces = _prompt_bool("Use Immich face data for best-photo selection?", default=True)
 
+    archive_non_best = _prompt_bool("Archive non-best photos (hides them without deleting)?", default=False)
+
+    use_duplicates = _prompt_bool("Use Immich server-side duplicate detection?", default=False)
+    smart_search = _prompt_text("CLIP smart search filter (leave blank to skip)")
+    smart_search = smart_search or None
+
     need_output = not tag_only and not create_albums
     output = None
     if need_output:
@@ -341,6 +347,9 @@ def _prompt_immich_actions():
         "immich_group_by_person": group_by_person,
         "immich_person": person_filter,
         "immich_use_server_faces": use_server_faces,
+        "archive_non_best": archive_non_best,
+        "immich_use_duplicates": use_duplicates,
+        "immich_smart_search": smart_search,
         "output": output,
     }
 
@@ -455,6 +464,9 @@ def _build_namespace(settings):
     ns.immich_group_by_person = settings.get("immich_group_by_person", False)
     ns.immich_person = settings.get("immich_person")
     ns.immich_use_server_faces = settings.get("immich_use_server_faces", False)
+    ns.archive_non_best = settings.get("archive_non_best", False)
+    ns.immich_use_duplicates = settings.get("immich_use_duplicates", False)
+    ns.immich_smart_search = settings.get("immich_smart_search")
     ns.resume = False
     ns.force_fresh = False
     ns.state_file = None
@@ -531,6 +543,9 @@ def _collect_source_options(settings):
         settings["immich_group_by_person"] = action_opts.get("immich_group_by_person", False)
         settings["immich_person"] = action_opts.get("immich_person")
         settings["immich_use_server_faces"] = action_opts.get("immich_use_server_faces", False)
+        settings["archive_non_best"] = action_opts.get("archive_non_best", False)
+        settings["immich_use_duplicates"] = action_opts.get("immich_use_duplicates", False)
+        settings["immich_smart_search"] = action_opts.get("immich_smart_search")
         # Clear local-specific keys
         settings.setdefault("source", None)
 

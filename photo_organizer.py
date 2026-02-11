@@ -131,6 +131,12 @@ Examples:
                         help='Filter to specific person name (Immich only)')
     parser.add_argument('--immich-use-server-faces', action='store_true',
                         help='Use Immich face data for best-photo selection')
+    parser.add_argument('--archive-non-best', action='store_true',
+                        help='Archive non-best photos in each group (Immich only)')
+    parser.add_argument('--immich-use-duplicates', action='store_true',
+                        help='Use Immich server-side duplicate detection for grouping')
+    parser.add_argument('--immich-smart-search',
+                        help='Pre-filter photos using CLIP semantic search query (Immich only)')
 
     # Resume capability
     parser.add_argument('--resume', action='store_true',
@@ -315,6 +321,9 @@ Examples:
         immich_group_by_person=getattr(args, 'immich_group_by_person', False),
         immich_person=getattr(args, 'immich_person', None),
         immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
+        archive_non_best=getattr(args, 'archive_non_best', False),
+        immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
+        immich_smart_search=getattr(args, 'immich_smart_search', None),
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
