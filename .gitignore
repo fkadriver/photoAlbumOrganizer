@@ -51,6 +51,7 @@ output/
 organized_photos/
 
 # Processing state files
+.photo_organizer_state.json
 .photo_organizer_state.pkl
 .photo_organizer_state.tmp
 *.pkl
