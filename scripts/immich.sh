@@ -259,25 +259,83 @@ case "$MODE" in
             echo ""
         fi
 
+        # Resolve project root from script location
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
         python -c "
-import sys
-sys.path.insert(0, 'src')
-from immich_client import ImmichClient
-import os
+import sys, os, traceback
+sys.path.insert(0, os.path.join('${PROJECT_ROOT}', 'src'))
 
-url = os.environ.get('IMMICH_URL', 'https://immich.warthog-royal.ts.net')
-api_key = os.environ.get('IMMICH_API_KEY')
+try:
+    from immich_client import ImmichClient
 
-if not api_key:
-    print('Error: IMMICH_API_KEY not set')
-    exit(1)
+    url = os.environ.get('IMMICH_URL', 'https://immich.warthog-royal.ts.net')
+    api_key = os.environ.get('IMMICH_API_KEY')
 
-client = ImmichClient(url, api_key)
-dry_run = '$DRY_RUN' == 'yes'
-matched, deleted = client.delete_albums_by_prefix('$PREFIX', dry_run=dry_run)
+    if not api_key:
+        print('Error: IMMICH_API_KEY not set')
+        sys.exit(1)
 
-if not dry_run and deleted > 0:
-    print(f'\n✓ Successfully cleaned up {deleted} album(s)')
+    client = ImmichClient(url, api_key)
+    dry_run = '$DRY_RUN' == 'yes'
+    prefix = '$PREFIX'
+
+    # Find matching albums
+    albums = client.get_albums()
+    matched_albums = [a for a in albums if a.get('albumName', '').startswith(prefix)]
+
+    if not matched_albums:
+        print(f'No albums found with prefix \"{prefix}\"')
+        sys.exit(0)
+
+    print(f'Found {len(matched_albums)} album(s) with prefix \"{prefix}\":')
+    for album in matched_albums:
+        name = album.get('albumName', 'Unknown')
+        aid = album.get('id', 'Unknown')
+        count = album.get('assetCount', 0)
+        print(f'  - {name} (ID: {aid}, {count} assets)')
+
+    if dry_run:
+        print(f'\nDRY RUN: Would delete {len(matched_albums)} album(s) and unfavorite their assets')
+        print('Run with dry_run=no to actually perform cleanup')
+        sys.exit(0)
+
+    # Unfavorite assets in matched albums
+    unfavorited = 0
+    for album in matched_albums:
+        aid = album.get('id')
+        if not aid:
+            continue
+        try:
+            assets = client.get_album_assets(aid)
+            for asset in assets:
+                if asset.is_favorite:
+                    if client.update_asset(asset.id, is_favorite=False):
+                        unfavorited += 1
+        except Exception as e:
+            print(f'  Warning: Failed to unfavorite assets in {album.get(\"albumName\")}: {e}')
+
+    if unfavorited > 0:
+        print(f'\n✓ Unfavorited {unfavorited} asset(s)')
+
+    # Delete albums
+    deleted = 0
+    for album in matched_albums:
+        name = album.get('albumName', 'Unknown')
+        aid = album.get('id')
+        if aid and client.delete_album(aid):
+            deleted += 1
+            print(f'  ✓ Deleted: {name}')
+        else:
+            print(f'  ✗ Failed to delete: {name}')
+
+    print(f'\n✓ Cleaned up {deleted} of {len(matched_albums)} album(s)')
+
+except Exception as e:
+    print(f'Error during cleanup: {e}')
+    traceback.print_exc()
+    sys.exit(1)
 "
         ;;
 
@@ -309,7 +367,7 @@ MODES:
   albums, create-albums  Create albums for similar photo groups [OUTPUT_DIR]
   download [OUTPUT_DIR]  Download and organize photos locally
   album NAME [MODE]      Process specific album
-  cleanup [PREFIX] [yes|no]  Delete albums by prefix (default: "Organized-", dry-run: yes)
+  cleanup [PREFIX] [yes|no]  Delete albums by prefix and unfavorite assets (default: "Organized-", dry-run: yes)
   test                   Test Immich connection
   help                   Show this help message
 
