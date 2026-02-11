@@ -341,8 +341,10 @@ def _prompt_processing():
     time_window = _prompt_int(
         "Time window in seconds (0 to disable)", default=300, min_val=0
     )
+    min_group_size = _prompt_int("Minimum photos per group", default=3, min_val=2)
     threads = _prompt_int("Number of threads", default=2, min_val=1)
-    return {"threshold": threshold, "time_window": time_window, "threads": threads}
+    return {"threshold": threshold, "time_window": time_window,
+            "min_group_size": min_group_size, "threads": threads}
 
 
 def _prompt_advanced():
@@ -434,6 +436,7 @@ def _build_namespace(settings):
     ns.use_full_resolution = settings.get("use_full_resolution", False)
     ns.threshold = settings.get("threshold", 5)
     ns.time_window = settings.get("time_window", 300)
+    ns.min_group_size = settings.get("min_group_size", 3)
     ns.tag_only = settings.get("tag_only", False)
     ns.create_albums = settings.get("create_albums", False)
     ns.album_prefix = settings.get("album_prefix", "Organized-")

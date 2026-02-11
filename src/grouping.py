@@ -84,7 +84,7 @@ def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: Processin
 def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: ProcessingState,
                         extract_metadata_func, get_datetime_func,
                         similarity_threshold: int, use_time_window: bool, time_window: int,
-                        threads: int, interrupted_flag):
+                        min_group_size: int, threads: int, interrupted_flag):
     """
     Group photos by perceptual similarity.
 
@@ -97,6 +97,7 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
         similarity_threshold: Maximum hash difference for similarity
         use_time_window: Whether to use time window for grouping
         time_window: Time window in seconds
+        min_group_size: Minimum number of photos to form a group
         threads: Number of threads for parallel processing
         interrupted_flag: Flag to check for interruption
 
@@ -185,7 +186,7 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                     group.append(data2)
                     used.add(j)
 
-        if len(group) > 1:  # Only create groups with multiple photos
+        if len(group) >= min_group_size:
             groups.append(group)
 
     logging.info(f"Found {len(groups)} groups of similar photos")

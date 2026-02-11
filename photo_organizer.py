@@ -113,6 +113,8 @@ Examples:
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
                         help='Time window in seconds for grouping (default=300, use 0 to disable time window)')
+    parser.add_argument('--min-group-size', type=int, default=3,
+                        help='Minimum photos per group (default: 3, min: 2)')
 
     # Immich action arguments
     parser.add_argument('--tag-only', action='store_true',
@@ -182,9 +184,9 @@ Examples:
         if args.state_file:
             potential_state_file = Path(args.state_file)
         elif args.output:
-            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+            potential_state_file = Path(args.output) / '.photo_organizer_state.json'
         else:
-            potential_state_file = Path('.photo_organizer_state.pkl')
+            potential_state_file = Path('.photo_organizer_state.json')
 
         # Check if state file exists
         if potential_state_file.exists():
@@ -218,9 +220,9 @@ Examples:
         if args.state_file:
             potential_state_file = Path(args.state_file)
         elif args.output:
-            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+            potential_state_file = Path(args.output) / '.photo_organizer_state.json'
         else:
-            potential_state_file = Path('.photo_organizer_state.pkl')
+            potential_state_file = Path('.photo_organizer_state.json')
 
         if potential_state_file.exists():
             potential_state_file.unlink()
@@ -289,6 +291,7 @@ Examples:
         similarity_threshold=args.threshold,
         time_window=args.time_window,
         use_time_window=(args.time_window > 0),
+        min_group_size=args.min_group_size,
         tag_only=args.tag_only,
         create_albums=args.create_albums,
         album_prefix=args.album_prefix,

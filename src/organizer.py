@@ -26,7 +26,8 @@ class PhotoOrganizer:
     """Main class for organizing photos by similarity."""
 
     def __init__(self, photo_source: PhotoSource, output_dir, similarity_threshold=5,
-                 time_window=300, use_time_window=True, tag_only=False,
+                 time_window=300, use_time_window=True, min_group_size=3,
+                 tag_only=False,
                  create_albums=False, album_prefix="Organized-", mark_best_favorite=False,
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
@@ -41,6 +42,7 @@ class PhotoOrganizer:
             similarity_threshold: Hamming distance threshold for image similarity (lower = more similar)
             time_window: Time window in seconds for grouping photos (default: 300)
             use_time_window: Whether to use time window for grouping (default: True)
+            min_group_size: Minimum photos per group (default: 3, min: 2)
             tag_only: Only tag photos, don't download/organize (Immich only)
             create_albums: Create albums for each group (Immich only)
             album_prefix: Prefix for created albums
@@ -61,6 +63,7 @@ class PhotoOrganizer:
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
         self.use_time_window = use_time_window
+        self.min_group_size = max(min_group_size, 2)
         self.tag_only = tag_only
         self.create_albums = create_albums
         self.album_prefix = album_prefix
@@ -84,9 +87,9 @@ class PhotoOrganizer:
         else:
             # Default state file in output directory or current directory
             if self.output_dir:
-                self.state_file = self.output_dir / '.photo_organizer_state.pkl'
+                self.state_file = self.output_dir / '.photo_organizer_state.json'
             else:
-                self.state_file = Path('.photo_organizer_state.pkl')
+                self.state_file = Path('.photo_organizer_state.json')
 
         self.state = ProcessingState(self.state_file)
 
@@ -139,6 +142,7 @@ class PhotoOrganizer:
         logging.info(f"  Output directory: {self.output_dir}")
         logging.info(f"  Similarity threshold: {self.similarity_threshold}")
         logging.info(f"  Time window: {self.time_window}s (enabled: {self.use_time_window})")
+        logging.info(f"  Min group size: {self.min_group_size}")
         logging.info(f"  Tag only: {self.tag_only}")
         logging.info(f"  Create albums: {self.create_albums}")
         logging.info(f"  Album prefix: {self.album_prefix}")
@@ -241,7 +245,7 @@ class PhotoOrganizer:
                 photos, self.photo_source, self.state,
                 self.extract_metadata, self.get_datetime_from_metadata,
                 self.similarity_threshold, self.use_time_window, self.time_window,
-                self.threads,
+                self.min_group_size, self.threads,
                 lambda: self._interrupted
             )
 

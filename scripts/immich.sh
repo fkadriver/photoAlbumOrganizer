@@ -21,6 +21,7 @@ FORCE_FRESH=0
 TEST_LIMIT=""
 THREADS=2
 THRESHOLD=5
+MIN_GROUP_SIZE=3
 VERBOSE=0
 
 # Load config file if exists and not already set
@@ -84,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             THRESHOLD="$2"
             shift 2
             ;;
+        --min-group-size)
+            MIN_GROUP_SIZE="$2"
+            shift 2
+            ;;
         --verbose)
             VERBOSE=1
             shift
@@ -104,6 +109,7 @@ COMMON_ARGS=(
     --immich-url "$IMMICH_URL"
     --immich-api-key "$IMMICH_API_KEY"
     --threshold "$THRESHOLD"
+    --min-group-size "$MIN_GROUP_SIZE"
 )
 
 # Add --time-window 0 flag if requested (ignore timestamp)
@@ -360,6 +366,7 @@ OPTIONS:
   --limit N             Limit processing to first N photos (for testing)
   --threads N           Number of threads for parallel processing (default: 2)
   --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
+  --min-group-size N    Minimum photos per group (default: 3, min: 2)
   --verbose             Show detailed error messages on console
 
 MODES:

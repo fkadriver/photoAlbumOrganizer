@@ -4,6 +4,7 @@ Processing state management for resume capability.
 Allows long-running photo organization jobs to be interrupted and resumed.
 """
 
+import json
 import pickle
 import threading
 from pathlib import Path
@@ -25,7 +26,7 @@ class ProcessingState:
         self.state_file = Path(state_file)
         self._lock = threading.Lock()
         self.state = {
-            'version': '1.0',
+            'version': '2.0',
             'started_at': None,
             'last_saved': None,
             'source_type': None,
@@ -65,8 +66,8 @@ class ProcessingState:
         # Save with atomic write (write to temp, then rename)
         temp_file = self.state_file.with_suffix('.tmp')
         try:
-            with open(temp_file, 'wb') as f:
-                pickle.dump(self.state, f)
+            with open(temp_file, 'w') as f:
+                json.dump(self.state, f, indent=2)
             temp_file.replace(self.state_file)
         except Exception as e:
             print(f"Warning: Failed to save state: {e}")
@@ -77,6 +78,9 @@ class ProcessingState:
         """
         Load state from disk.
 
+        Supports both JSON (v2.0) and legacy pickle (v1.0) formats.
+        Legacy pickle files are automatically migrated to JSON on load.
+
         Returns:
             True if state was loaded successfully, False otherwise
         """
@@ -84,20 +88,34 @@ class ProcessingState:
             return False
 
         try:
-            with open(self.state_file, 'rb') as f:
-                loaded_state = pickle.load(f)
-
-            # Verify version compatibility
-            if loaded_state.get('version') != '1.0':
-                print(f"Warning: State file version mismatch")
+            # Try JSON first
+            with open(self.state_file, 'r') as f:
+                loaded_state = json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Fall back to legacy pickle format
+            try:
+                with open(self.state_file, 'rb') as f:
+                    loaded_state = pickle.load(f)
+                print("Migrating state file from pickle to JSON format...")
+            except Exception as e:
+                print(f"Warning: Failed to load state: {e}")
                 return False
 
-            self.state = loaded_state
-            return True
-
-        except Exception as e:
-            print(f"Warning: Failed to load state: {e}")
+        # Verify version compatibility
+        version = loaded_state.get('version')
+        if version not in ('1.0', '2.0'):
+            print(f"Warning: State file version mismatch (got {version})")
             return False
+
+        self.state = loaded_state
+        self.state['version'] = '2.0'
+
+        # Re-save as JSON if migrated from pickle
+        if version == '1.0':
+            self.save()
+            print("State file migrated to JSON format.")
+
+        return True
 
     def initialize(self, source_type: str, source_path: Optional[str],
                    output_path: Optional[str], threshold: int,
