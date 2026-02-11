@@ -8,10 +8,17 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
 - **Face Quality Detection**: Scores faces for smiles and open eyes using pluggable backends (face_recognition or MediaPipe)
 - **Best Photo Selection**: Automatically selects the best photo from each group
+- **Configurable Group Size**: Set minimum photos per group (default 3, min 2)
 - **Immich Integration**: Full integration with Immich self-hosted photo management
-  - Tag duplicates directly in Immich
+  - Tag duplicates with structured tags (best/non-best/group/person)
   - Create organized albums automatically
   - Mark best photos as favorites
+  - Archive non-best photos (hides without deleting)
+  - Group by recognized person (Immich face detection)
+  - Use Immich server-side duplicate detection
+  - CLIP semantic search to pre-filter photos
+  - Concurrent photo prefetching for faster processing
+  - Bulk API operations for efficiency
   - Process photos without downloading (tag-only mode)
   - Smart caching for performance
 - **Metadata Preservation**: Extracts and saves all EXIF and file metadata to text files
@@ -40,6 +47,7 @@ A Python tool to organize large photo collections by automatically grouping simi
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Immich Integration Guide](docs/IMMICH.md)
+- [Cloud Integration Design](docs/CLOUD_INTEGRATION_DESIGN.md)
 
 ## Installation
 
@@ -245,6 +253,7 @@ Processing Arguments:
                            Only applies when timestamps are available
                            Use 0 to disable and group purely by visual similarity
 
+  --min-group-size N       Minimum photos per group (default: 3, min: 2)
   --threads N              Number of threads for parallel processing (default: 2)
 
 Immich Arguments:
@@ -261,6 +270,12 @@ Immich Actions:
   --create-albums          Create Immich albums for each group
   --album-prefix PREFIX    Prefix for created albums (default: Organized-)
   --mark-best-favorite     Mark best photo in each group as favorite (Immich only)
+  --archive-non-best       Archive non-best photos (hides without deleting, Immich only)
+  --immich-group-by-person Group photos by recognized person (Immich only)
+  --immich-person NAME     Filter to specific person name (Immich only)
+  --immich-use-server-faces Use Immich face data for best-photo selection
+  --immich-use-duplicates  Use Immich server-side duplicate detection for grouping
+  --immich-smart-search Q  Pre-filter photos using CLIP semantic search query
 
 Resume Capability:
   --resume                 Resume from previous interrupted run
@@ -412,6 +427,8 @@ curl -sSL -o models/face_landmarker.task \
 ```
 
 MediaPipe provides 468-point landmarks (mapped to 6-point eye contours for EAR calculation) but does not support face encoding, so the face-swap feature (`--enable-face-swap`) is unavailable with this backend.
+
+**Immich Server-Side Faces** — When using `--immich-use-server-faces`, the organizer uses Immich's built-in face detection data (bounding boxes, person recognition) for best-photo selection. This avoids downloading photos for face analysis and scores by face area (larger faces = clearer shots). Combine with `--immich-group-by-person` to organize by person.
 
 ### Other Alternatives (Not Yet Implemented)
 
@@ -624,6 +641,7 @@ photoAlbumOrganizer/
 │   ├── IMMICH.md             # Immich integration guide
 │   ├── IMMICH_INTEGRATION.md # Immich integration details
 │   ├── RESUME_CAPABILITY.md  # Resume feature guide
+│   ├── CLOUD_INTEGRATION_DESIGN.md  # Apple/Google Photos design
 │   ├── NIXOS_SETUP.md        # NixOS setup guide
 │   ├── DIRENV_SETUP.md       # direnv configuration guide
 │   ├── QUICKSTART.md         # Quick start guide
@@ -650,6 +668,24 @@ Contributions welcome! Please:
 
 ### Recent Enhancements
 
+- [x] **Enhanced Immich Actions** - Archive non-best, structured tags, CLIP search, server-side duplicates
+  - `--archive-non-best` to hide non-best photos without deleting
+  - Structured tags via Immich tag API (best/non-best/group/person)
+  - `--immich-use-duplicates` to use Immich server-side duplicate detection
+  - `--immich-smart-search` for CLIP semantic search pre-filtering
+  - Concurrent photo prefetching for faster processing
+  - Bulk API operations for efficiency
+
+- [x] **Group by Person** - Organize photos by recognized person using Immich face detection
+  - `--immich-group-by-person` to group by person
+  - `--immich-person` to filter to specific person
+  - `--immich-use-server-faces` for server-side face quality scoring
+
+- [x] **Configurable Group Size** - `--min-group-size N` (default 3, min 2)
+
+- [x] **JSON State Files** - Migrated from pickle to JSON for security and portability
+  - Automatic migration from old `.pkl` files on resume
+
 - [x] **Interactive Setup Menu** - Guided `-i` mode with save/load settings
   - Step-by-step walkthrough of all options with sensible defaults
   - Save configuration to `.photo_organizer_settings.json` for reuse
@@ -672,7 +708,6 @@ Contributions welcome! Please:
 
 ### Known Issues
 
-- **Pickle state file** — [processing_state.py](src/processing_state.py) uses `pickle` for resume state persistence, which is vulnerable to arbitrary code execution if the state file is tampered with. A migration to JSON is planned.
 - **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. MediaPipe is now available as an alternative backend via `--face-backend mediapipe`. Note: MediaPipe does not support face encoding, so face-swap matching is unavailable with it.
 - **OMP_NUM_THREADS=1 in flake.nix** — OpenBLAS/LAPACK threading is disabled to suppress warnings, which reduces numerical performance on multi-core systems. The runtime `SuppressStderr` utility may make this unnecessary.
 
@@ -681,16 +716,11 @@ Contributions welcome! Please:
 - [ ] Additional face backends (InsightFace, DeepFace, YOLOv8-Face)
 - [ ] GPU acceleration for face detection
 - [ ] Web interface for reviewing and managing groups
-- [ ] Cloud storage integration (Google Photos, iCloud)
-- [ ] Machine learning for better "best photo" selection
-- [ ] Duplicate detection mode (find exact duplicates)
+- [ ] Apple Photos integration (macOS only, via `osxphotos`) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
+- [ ] Google Photos integration (OAuth2, read-only) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
 - [ ] Video support for organizing video clips
-- [ ] Async/parallel downloads for Immich (using aiohttp)
-- [ ] Batch API operations for better Immich performance
-- [ ] Integration with Immich's ML features
 - [ ] Shared album support in Immich
-- [ ] Smart archival suggestions based on quality scores
-- [ ] Migrate pickle state file to JSON for security
+- [ ] Async/parallel downloads for Immich (using aiohttp)
 
 ## License
 
