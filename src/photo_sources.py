@@ -122,6 +122,26 @@ class PhotoSource(ABC):
         """
         pass
 
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Mark a photo as archived. Override in subclasses that support it."""
+        return False
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people. Override in subclasses that support it."""
+        return []
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None) -> List[Photo]:
+        """List photos of a specific person. Override in subclasses that support it."""
+        return []
+
+    def get_asset_face_data(self, photo: Photo) -> List[Dict]:
+        """Get face bounding boxes for a photo. Override in subclasses that support it."""
+        return []
+
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 4) -> int:
+        """Pre-download and cache photos concurrently. Override in subclasses that support it."""
+        return 0
+
 
 class LocalPhotoSource(PhotoSource):
     """Photo source for local filesystem."""
@@ -483,3 +503,67 @@ class ImmichPhotoSource(PhotoSource):
         """Mark photo as favorite in Immich."""
         asset_id = photo.metadata.get('asset_id', photo.id)
         return self.client.update_asset(asset_id, is_favorite=favorite)
+
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Mark photo as archived in Immich."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.update_asset(asset_id, is_archived=archived)
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people from Immich."""
+        return self.client.get_people()
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None) -> List[Photo]:
+        """List photos of a specific person from Immich."""
+        assets = self.client.get_person_assets(person_id, limit=limit)
+        photos = []
+        for asset in assets:
+            photo = Photo(
+                photo_id=asset.id,
+                source='immich',
+                metadata={
+                    'asset_id': asset.id,
+                    'filename': asset.original_file_name,
+                    'file_created_at': asset.file_created_at,
+                    'file_modified_at': asset.file_modified_at,
+                    'is_favorite': asset.is_favorite,
+                    'exif': asset.exif_info
+                }
+            )
+            photos.append(photo)
+        return photos
+
+    def get_asset_face_data(self, photo: Photo) -> List[Dict]:
+        """Get face bounding boxes for a photo from Immich."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.get_asset_faces(asset_id)
+
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 4) -> int:
+        """Pre-download and cache photos concurrently."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        downloaded = 0
+        to_download = [p for p in photos if not self.cache.get_cached_photo(p.id)]
+
+        if not to_download:
+            return 0
+
+        print(f"Pre-fetching {len(to_download)} photos...")
+
+        def _fetch(photo):
+            try:
+                self.get_photo_data(photo)
+                return True
+            except Exception:
+                return False
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_fetch, p): p for p in to_download}
+            for future in as_completed(futures):
+                if future.result():
+                    downloaded += 1
+                pct = (downloaded / len(to_download)) * 100
+                print(f"\r  Prefetch: {downloaded}/{len(to_download)} ({pct:.0f}%)", end='', flush=True)
+
+        print()
+        return downloaded

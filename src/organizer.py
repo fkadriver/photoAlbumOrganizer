@@ -17,7 +17,8 @@ from processing_state import ProcessingState
 from grouping import group_similar_photos
 import image_processing
 from image_processing import (
-    find_best_photo, should_merge_hdr, merge_exposures_hdr,
+    find_best_photo, find_best_photo_immich_faces,
+    should_merge_hdr, merge_exposures_hdr,
     create_face_swapped_image, set_face_backend
 )
 
@@ -32,7 +33,9 @@ class PhotoOrganizer:
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
                  enable_face_swap=False, swap_closed_eyes=True,
-                 face_backend='auto', threads=2, verbose=False):
+                 face_backend='auto', threads=2, verbose=False,
+                 immich_group_by_person=False, immich_person=None,
+                 immich_use_server_faces=False):
         """
         Initialize the photo organizer.
 
@@ -57,6 +60,9 @@ class PhotoOrganizer:
             face_backend: Face detection backend to use ('auto', 'face_recognition', 'mediapipe')
             threads: Number of threads for parallel processing (default: 2)
             verbose: Show verbose error output
+            immich_group_by_person: Group photos by recognized person (Immich only)
+            immich_person: Filter to specific person name (Immich only)
+            immich_use_server_faces: Use Immich face data for best-photo selection
         """
         self.photo_source = photo_source
         self.output_dir = Path(output_dir) if output_dir else None
@@ -75,6 +81,9 @@ class PhotoOrganizer:
         self.swap_closed_eyes = swap_closed_eyes
         self.threads = threads
         self.verbose = verbose
+        self.immich_group_by_person = immich_group_by_person
+        self.immich_person = immich_person
+        self.immich_use_server_faces = immich_use_server_faces
 
         # Configure face detection backend
         if face_backend != 'auto':
@@ -153,6 +162,9 @@ class PhotoOrganizer:
         logging.info(f"  Face swap enabled: {self.enable_face_swap}")
         logging.info(f"  Threads: {self.threads}")
         logging.info(f"  Verbose: {self.verbose}")
+        logging.info(f"  Group by person: {self.immich_group_by_person}")
+        logging.info(f"  Person filter: {self.immich_person}")
+        logging.info(f"  Use server faces: {self.immich_use_server_faces}")
 
         # Setup signal handlers for graceful interruption
         self._interrupted = False
@@ -218,36 +230,16 @@ class PhotoOrganizer:
                 f.write("\n")
 
     def organize_photos(self, album: str = None):
-        """Main method to organize photos into groups."""
+        """Main method — dispatches to the appropriate strategy."""
         try:
             logging.info("="*60)
             logging.info(f"Starting organize_photos (album={album})")
             logging.info("="*60)
 
-            # Find all photos (limit is applied at source level for efficiency)
-            photos = self.find_all_photos(album=album)
-
-            if self.limit is not None and self.limit > 0:
-                msg = f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})"
-                print(msg)
-                logging.info(msg)
+            if self.immich_group_by_person:
+                groups = self._organize_by_person(album)
             else:
-                msg = f"Found {len(photos)} photos"
-                print(msg)
-                logging.info(msg)
-
-            # Track discovered photos
-            for photo in photos:
-                self.state.mark_photo_discovered()
-
-            # Group similar photos using the grouping module
-            groups = group_similar_photos(
-                photos, self.photo_source, self.state,
-                self.extract_metadata, self.get_datetime_from_metadata,
-                self.similarity_threshold, self.use_time_window, self.time_window,
-                self.min_group_size, self.threads,
-                lambda: self._interrupted
-            )
+                groups = self._organize_by_hash(album)
 
             if not groups:
                 msg = "No similar photo groups found."
@@ -260,137 +252,7 @@ class PhotoOrganizer:
             self.state.set_groups_found(len(groups))
             logging.info(f"Found {len(groups)} groups to process")
 
-            # Process each group
-            for i, group in enumerate(groups, 1):
-                if self._interrupted:
-                    break
-
-                # Skip already completed groups
-                if self.state.is_group_completed(i):
-                    msg = f"\nSkipping group {i}/{len(groups)} (already completed)"
-                    print(msg)
-                    logging.info(msg)
-                    continue
-
-                msg = f"\nProcessing group {i}/{len(groups)} ({len(group)} photos)..."
-                print(msg)
-                logging.info(msg)
-
-                # Find best photo using image_processing module
-                best_photo_data = find_best_photo(group, self.photo_source)
-                best_photo = best_photo_data['photo']
-
-                # Tag-only mode (for Immich)
-                if self.tag_only:
-                    # Tag all photos in group as potential duplicates
-                    tag = "photo-organizer-duplicate"
-                    for photo_data in group:
-                        self.photo_source.tag_photo(photo_data['photo'], [tag])
-                    print(f"Tagged {len(group)} photos as potential duplicates")
-
-                # Create albums mode (for Immich)
-                if self.create_albums:
-                    album_name = f"{self.album_prefix}{i:04d}"
-                    photos_in_group = [pd['photo'] for pd in group]
-                    if self.photo_source.create_album(album_name, photos_in_group):
-                        print(f"Created album: {album_name}")
-
-                # Mark best as favorite (for Immich)
-                if self.mark_best_favorite:
-                    if self.photo_source.set_favorite(best_photo, True):
-                        print(f"Marked best photo as favorite: {best_photo.id}")
-
-                # Full organization mode (download and organize)
-                if self.output_dir and not self.tag_only:
-                    # Create group directory
-                    group_dir = self.output_dir / f"group_{i:04d}"
-                    group_dir.mkdir(exist_ok=True)
-
-                    # Copy original photos
-                    originals_dir = group_dir / 'originals'
-                    originals_dir.mkdir(exist_ok=True)
-
-                    for photo_data in group:
-                        photo = photo_data['photo']
-
-                        # Get photo data
-                        if photo.cached_path:
-                            src = photo.cached_path
-                            dst = originals_dir / src.name
-                        else:
-                            # Download photo
-                            data = self.photo_source.get_photo_data(photo)
-                            filename = photo.metadata.get('filename', f"{photo.id}.jpg")
-                            dst = originals_dir / filename
-
-                        # Handle name collisions
-                        counter = 1
-                        original_dst = dst
-                        while dst.exists():
-                            dst = original_dst.parent / f"{original_dst.stem}_{counter}{original_dst.suffix}"
-                            counter += 1
-
-                        if photo.cached_path:
-                            shutil.copy2(src, dst)
-                        else:
-                            dst.write_bytes(data)
-
-                    # Save metadata
-                    self.save_metadata(group, group_dir)
-
-                    # Copy best photo
-                    best = best_photo_data['photo']
-                    if best.cached_path:
-                        src = best.cached_path
-                        filename = src.name
-                    else:
-                        data = self.photo_source.get_photo_data(best)
-                        filename = best.metadata.get('filename', f"{best.id}.jpg")
-
-                    best_dst = group_dir / f"best_{filename}"
-                    if best.cached_path:
-                        shutil.copy2(src, best_dst)
-                    else:
-                        best_dst.write_bytes(data)
-
-                    # HDR merging if enabled and appropriate
-                    if should_merge_hdr(group, self.enable_hdr):
-                        hdr_image = merge_exposures_hdr(group, self.photo_source, self.hdr_gamma)
-                        if hdr_image is not None:
-                            # Save HDR merged image
-                            hdr_dst = group_dir / "hdr_merged.jpg"
-                            cv2.imwrite(str(hdr_dst), hdr_image)
-                            print(f"  HDR: Saved merged image: {hdr_dst.name}")
-
-                    # Face swapping if enabled and face detection is available
-                    if self.enable_face_swap and image_processing.FACE_DETECTION_ENABLED:
-                        face_swapped = create_face_swapped_image(group, best_dst, self.enable_face_swap)
-                        if face_swapped is not None:
-                            # Save face-swapped image
-                            swap_dst = group_dir / "face_swapped.jpg"
-                            cv2.imwrite(str(swap_dst), face_swapped)
-                            print(f"  Face swap: Saved improved image: {swap_dst.name}")
-
-                    print(f"Group {i} complete: {group_dir}")
-
-                # Mark group as completed
-                self.state.mark_group_completed(i)
-
-            # If we completed all groups successfully, cleanup state file
-            if not self._interrupted and self.state.state['groups_processed'] == len(groups):
-                msg = "\nAll groups processed successfully!"
-                print(msg)
-                logging.info(msg)
-                self.state.cleanup()
-
-            if self.output_dir and not self.tag_only:
-                msg = f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}"
-                print(msg)
-                logging.info(msg)
-            else:
-                msg = f"\nProcessed {len(groups)} groups"
-                print(msg)
-                logging.info(msg)
+            self._process_groups(groups)
 
             logging.info("="*60)
             logging.info("Photo organization completed")
@@ -409,3 +271,209 @@ class PhotoOrganizer:
             print(resume_msg)
             logging.info(resume_msg)
             raise
+
+    def _organize_by_hash(self, album: str = None):
+        """Group photos by perceptual hash similarity (default strategy)."""
+        photos = self.find_all_photos(album=album)
+
+        if self.limit is not None and self.limit > 0:
+            msg = f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})"
+        else:
+            msg = f"Found {len(photos)} photos"
+        print(msg)
+        logging.info(msg)
+
+        for photo in photos:
+            self.state.mark_photo_discovered()
+
+        return group_similar_photos(
+            photos, self.photo_source, self.state,
+            self.extract_metadata, self.get_datetime_from_metadata,
+            self.similarity_threshold, self.use_time_window, self.time_window,
+            self.min_group_size, self.threads,
+            lambda: self._interrupted
+        )
+
+    def _organize_by_person(self, album: str = None):
+        """Group photos by recognized person, then by similarity within each person."""
+        people = self.photo_source.list_people()
+        if not people:
+            print("No recognized people found in Immich.")
+            return []
+
+        # Filter to specific person if requested
+        if self.immich_person:
+            people = [p for p in people
+                      if p.get('name', '').lower() == self.immich_person.lower()]
+            if not people:
+                print(f"Person '{self.immich_person}' not found.")
+                return []
+
+        # Filter to people with names (skip unnamed faces)
+        named_people = [p for p in people if p.get('name')]
+        print(f"Found {len(named_people)} named people (of {len(people)} total)")
+
+        all_groups = []
+        for person in named_people:
+            if self._interrupted:
+                break
+
+            person_name = person.get('name', 'Unknown')
+            person_id = person.get('id')
+            if not person_id:
+                continue
+
+            photos = self.photo_source.list_photos_by_person(person_id, limit=self.limit)
+            if len(photos) < self.min_group_size:
+                continue
+
+            print(f"\nProcessing person: {person_name} ({len(photos)} photos)")
+
+            for photo in photos:
+                self.state.mark_photo_discovered()
+
+            groups = group_similar_photos(
+                photos, self.photo_source, self.state,
+                self.extract_metadata, self.get_datetime_from_metadata,
+                self.similarity_threshold, self.use_time_window, self.time_window,
+                self.min_group_size, self.threads,
+                lambda: self._interrupted
+            )
+
+            if groups:
+                # Tag groups with person name for context
+                for group in groups:
+                    for photo_data in group:
+                        photo_data['person_name'] = person_name
+                all_groups.extend(groups)
+                print(f"  Found {len(groups)} group(s) for {person_name}")
+
+        return all_groups
+
+    def _process_groups(self, groups):
+        """Process all groups: tag, create albums, download, HDR, face-swap."""
+        for i, group in enumerate(groups, 1):
+            if self._interrupted:
+                break
+
+            # Skip already completed groups
+            if self.state.is_group_completed(i):
+                msg = f"\nSkipping group {i}/{len(groups)} (already completed)"
+                print(msg)
+                logging.info(msg)
+                continue
+
+            person_label = ""
+            if group[0].get('person_name'):
+                person_label = f" [{group[0]['person_name']}]"
+
+            msg = f"\nProcessing group {i}/{len(groups)} ({len(group)} photos){person_label}..."
+            print(msg)
+            logging.info(msg)
+
+            # Find best photo
+            if self.immich_use_server_faces:
+                best_photo_data = find_best_photo_immich_faces(group, self.photo_source)
+            else:
+                best_photo_data = find_best_photo(group, self.photo_source)
+            best_photo = best_photo_data['photo']
+
+            # Tag-only mode (for Immich)
+            if self.tag_only:
+                tag = "photo-organizer-duplicate"
+                for photo_data in group:
+                    self.photo_source.tag_photo(photo_data['photo'], [tag])
+                print(f"Tagged {len(group)} photos as potential duplicates")
+
+            # Create albums mode (for Immich)
+            if self.create_albums:
+                album_name = f"{self.album_prefix}{i:04d}"
+                photos_in_group = [pd['photo'] for pd in group]
+                if self.photo_source.create_album(album_name, photos_in_group):
+                    print(f"Created album: {album_name}")
+
+            # Mark best as favorite (for Immich)
+            if self.mark_best_favorite:
+                if self.photo_source.set_favorite(best_photo, True):
+                    print(f"Marked best photo as favorite: {best_photo.id}")
+
+            # Full organization mode (download and organize)
+            if self.output_dir and not self.tag_only:
+                group_dir = self.output_dir / f"group_{i:04d}"
+                group_dir.mkdir(exist_ok=True)
+
+                originals_dir = group_dir / 'originals'
+                originals_dir.mkdir(exist_ok=True)
+
+                for photo_data in group:
+                    photo = photo_data['photo']
+
+                    if photo.cached_path:
+                        src = photo.cached_path
+                        dst = originals_dir / src.name
+                    else:
+                        data = self.photo_source.get_photo_data(photo)
+                        filename = photo.metadata.get('filename', f"{photo.id}.jpg")
+                        dst = originals_dir / filename
+
+                    counter = 1
+                    original_dst = dst
+                    while dst.exists():
+                        dst = original_dst.parent / f"{original_dst.stem}_{counter}{original_dst.suffix}"
+                        counter += 1
+
+                    if photo.cached_path:
+                        shutil.copy2(src, dst)
+                    else:
+                        dst.write_bytes(data)
+
+                self.save_metadata(group, group_dir)
+
+                best = best_photo_data['photo']
+                if best.cached_path:
+                    src = best.cached_path
+                    filename = src.name
+                else:
+                    data = self.photo_source.get_photo_data(best)
+                    filename = best.metadata.get('filename', f"{best.id}.jpg")
+
+                best_dst = group_dir / f"best_{filename}"
+                if best.cached_path:
+                    shutil.copy2(src, best_dst)
+                else:
+                    best_dst.write_bytes(data)
+
+                if should_merge_hdr(group, self.enable_hdr):
+                    hdr_image = merge_exposures_hdr(group, self.photo_source, self.hdr_gamma)
+                    if hdr_image is not None:
+                        hdr_dst = group_dir / "hdr_merged.jpg"
+                        cv2.imwrite(str(hdr_dst), hdr_image)
+                        print(f"  HDR: Saved merged image: {hdr_dst.name}")
+
+                if self.enable_face_swap and image_processing.FACE_DETECTION_ENABLED:
+                    face_swapped = create_face_swapped_image(group, best_dst, self.enable_face_swap)
+                    if face_swapped is not None:
+                        swap_dst = group_dir / "face_swapped.jpg"
+                        cv2.imwrite(str(swap_dst), face_swapped)
+                        print(f"  Face swap: Saved improved image: {swap_dst.name}")
+
+                print(f"Group {i} complete: {group_dir}")
+
+            # Mark group as completed
+            self.state.mark_group_completed(i)
+
+        # If we completed all groups successfully, cleanup state file
+        if not self._interrupted and self.state.state['groups_processed'] == len(groups):
+            msg = "\nAll groups processed successfully!"
+            print(msg)
+            logging.info(msg)
+            self.state.cleanup()
+
+        if self.output_dir and not self.tag_only:
+            msg = f"\nOrganization complete! Created {len(groups)} groups in {self.output_dir}"
+            print(msg)
+            logging.info(msg)
+        else:
+            msg = f"\nProcessed {len(groups)} groups"
+            print(msg)
+            logging.info(msg)

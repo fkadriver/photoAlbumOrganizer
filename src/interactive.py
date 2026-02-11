@@ -315,6 +315,14 @@ def _prompt_immich_actions():
         album_prefix = _prompt_text("Album prefix", default="Organized-")
     mark_fav = _prompt_bool("Mark best photo as favorite?", default=False)
 
+    group_by_person = _prompt_bool("Group by recognized person (Immich face detection)?", default=False)
+    person_filter = None
+    use_server_faces = False
+    if group_by_person:
+        person_filter = _prompt_text("Filter to specific person name (leave blank for all)")
+        person_filter = person_filter or None
+        use_server_faces = _prompt_bool("Use Immich face data for best-photo selection?", default=True)
+
     need_output = not tag_only and not create_albums
     output = None
     if need_output:
@@ -330,6 +338,9 @@ def _prompt_immich_actions():
         "create_albums": create_albums,
         "album_prefix": album_prefix,
         "mark_best_favorite": mark_fav,
+        "immich_group_by_person": group_by_person,
+        "immich_person": person_filter,
+        "immich_use_server_faces": use_server_faces,
         "output": output,
     }
 
@@ -441,6 +452,9 @@ def _build_namespace(settings):
     ns.create_albums = settings.get("create_albums", False)
     ns.album_prefix = settings.get("album_prefix", "Organized-")
     ns.mark_best_favorite = settings.get("mark_best_favorite", False)
+    ns.immich_group_by_person = settings.get("immich_group_by_person", False)
+    ns.immich_person = settings.get("immich_person")
+    ns.immich_use_server_faces = settings.get("immich_use_server_faces", False)
     ns.resume = False
     ns.force_fresh = False
     ns.state_file = None
@@ -514,6 +528,9 @@ def _collect_source_options(settings):
         settings["create_albums"] = action_opts["create_albums"]
         settings["album_prefix"] = action_opts["album_prefix"]
         settings["mark_best_favorite"] = action_opts["mark_best_favorite"]
+        settings["immich_group_by_person"] = action_opts.get("immich_group_by_person", False)
+        settings["immich_person"] = action_opts.get("immich_person")
+        settings["immich_use_server_faces"] = action_opts.get("immich_use_server_faces", False)
         # Clear local-specific keys
         settings.setdefault("source", None)
 

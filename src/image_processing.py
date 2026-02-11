@@ -126,6 +126,50 @@ def find_best_photo(group, photo_source: PhotoSource):
     return best_photo if best_photo else group[0]
 
 
+def find_best_photo_immich_faces(group, photo_source):
+    """
+    Find the best photo using Immich server-side face bounding boxes.
+
+    Scores photos by total face area (larger faces = clearer, closer shots).
+    Falls back to find_best_photo() if no face data is available.
+
+    Args:
+        group: List of photo_data dictionaries
+        photo_source: PhotoSource with get_asset_face_data() support
+
+    Returns:
+        Best photo_data dictionary from the group
+    """
+    best_photo = None
+    best_score = -1
+    any_faces = False
+
+    for photo_data in group:
+        faces = photo_source.get_asset_face_data(photo_data['photo'])
+        if not faces:
+            continue
+
+        any_faces = True
+        total_area = 0
+        for face in faces:
+            # Immich face data includes bounding box coordinates
+            bbox = face.get('boundingBoxX1', 0), face.get('boundingBoxY1', 0), \
+                   face.get('boundingBoxX2', 0), face.get('boundingBoxY2', 0)
+            w = abs(bbox[2] - bbox[0])
+            h = abs(bbox[3] - bbox[1])
+            total_area += w * h
+
+        if total_area > best_score:
+            best_score = total_area
+            best_photo = photo_data
+
+    if any_faces and best_photo:
+        return best_photo
+
+    # Fall back to local face scoring
+    return find_best_photo(group, photo_source)
+
+
 def should_merge_hdr(group, enable_hdr: bool) -> bool:
     """
     Determine if group should be merged using HDR.

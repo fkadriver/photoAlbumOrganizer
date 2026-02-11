@@ -125,6 +125,12 @@ Examples:
                         help='Prefix for created albums (default: Organized-)')
     parser.add_argument('--mark-best-favorite', action='store_true',
                         help='Mark best photo in each group as favorite (Immich only)')
+    parser.add_argument('--immich-group-by-person', action='store_true',
+                        help='Group photos by recognized person (Immich only)')
+    parser.add_argument('--immich-person',
+                        help='Filter to specific person name (Immich only)')
+    parser.add_argument('--immich-use-server-faces', action='store_true',
+                        help='Use Immich face data for best-photo selection')
 
     # Resume capability
     parser.add_argument('--resume', action='store_true',
@@ -305,7 +311,10 @@ Examples:
         swap_closed_eyes=args.swap_closed_eyes,
         face_backend=args.face_backend,
         threads=args.threads,
-        verbose=args.verbose
+        verbose=args.verbose,
+        immich_group_by_person=getattr(args, 'immich_group_by_person', False),
+        immich_person=getattr(args, 'immich_person', None),
+        immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
     )
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
