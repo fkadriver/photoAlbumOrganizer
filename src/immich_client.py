@@ -46,6 +46,17 @@ class ImmichAsset:
 class ImmichClient:
     """Client for Immich API."""
 
+    # Maps endpoint prefixes to required API key permission scopes.
+    # Used to give actionable 403 error messages.
+    _PERMISSION_HINTS = {
+        '/api/duplicates': 'duplicate.read',
+        '/api/people': 'people.read',
+        '/api/faces': 'people.read',
+        '/api/search/smart': 'asset.read',
+        '/api/search/metadata': 'asset.read',
+        '/api/tags': 'tag.read, tag.create, or tag.update',
+    }
+
     def __init__(self, url: str, api_key: str, verify_ssl: bool = True):
         """
         Initialize Immich client.
@@ -66,39 +77,58 @@ class ImmichClient:
         })
         self.session.verify = verify_ssl
 
+    def _permission_hint(self, endpoint: str) -> str:
+        """Return a permission hint string for the given endpoint, or empty."""
+        for prefix, scope in self._PERMISSION_HINTS.items():
+            if endpoint.startswith(prefix):
+                return (f"\n  Hint: Your API key may need the '{scope}' permission. "
+                        f"Regenerate it in Immich → Administration → API Keys "
+                        f"with the required scope (or use 'All').")
+        return ""
+
+    def _raise_with_hint(self, response: requests.Response, endpoint: str):
+        """Raise for HTTP errors, adding permission hints for 403."""
+        if response.status_code == 403:
+            hint = self._permission_hint(endpoint)
+            raise requests.HTTPError(
+                f"403 Forbidden for {endpoint}{hint}",
+                response=response,
+            )
+        response.raise_for_status()
+
     def _get(self, endpoint: str, **kwargs) -> requests.Response:
         """Make GET request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.get(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _post(self, endpoint: str, **kwargs) -> requests.Response:
         """Make POST request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.post(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _put(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PUT request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.put(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _patch(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PATCH request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.patch(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _delete(self, endpoint: str, **kwargs) -> requests.Response:
         """Make DELETE request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.delete(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def ping(self) -> bool:

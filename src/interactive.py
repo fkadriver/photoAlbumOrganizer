@@ -424,21 +424,76 @@ def _prompt_run_options():
 
 # --- Summary / confirmation ---
 
+# Settings grouped by section for display.  Each entry is
+# (section_number, section_label, list_of_keys).
+# Keys not listed here are collected into an "Other" bucket.
+_SECTION_LAYOUT = [
+    (1, "Source Type", [
+        "source_type",
+    ]),
+    (2, "Source Options", [
+        # local
+        "source", "output",
+        # immich connection
+        "immich_url", "immich_api_key", "immich_album",
+        "immich_cache_dir", "immich_cache_size",
+        "no_verify_ssl", "use_full_resolution",
+        # immich actions
+        "tag_only", "create_albums", "album_prefix",
+        "mark_best_favorite", "immich_group_by_person",
+        "immich_person", "immich_use_server_faces",
+        "archive_non_best", "immich_use_duplicates",
+        "immich_smart_search",
+    ]),
+    (3, "Processing", [
+        "threshold", "time_window", "min_group_size", "threads",
+    ]),
+    (4, "Advanced", [
+        "enable_hdr", "hdr_gamma",
+        "enable_face_swap", "swap_closed_eyes", "face_backend",
+    ]),
+    (5, "Run Options", [
+        "dry_run", "verbose", "limit",
+    ]),
+]
+
+
+def _format_value(key, value):
+    """Format a single setting value for display."""
+    if "api_key" in key and value:
+        return value[:4] + "****" + value[-4:] if len(str(value)) > 8 else "****"
+    if value is None or value == "":
+        return "(not set)"
+    return value
+
+
 def _print_summary(settings):
-    """Print a formatted summary of all settings."""
+    """Print a formatted summary of all settings, grouped by section."""
     _print_header("Configuration Summary")
-    for key, value in sorted(settings.items()):
-        display = value
-        # Mask sensitive values
-        if "api_key" in key and value:
-            display = value[:4] + "****" + value[-4:] if len(str(value)) > 8 else "****"
-        # Pretty-print None
-        if value is None:
-            display = "(not set)"
-        if value == "":
-            display = "(not set)"
-        print(f"  {key:.<30s} {display}")
-    print("=" * 60)
+    shown_keys = set()
+
+    for section_num, section_label, keys in _SECTION_LAYOUT:
+        # Only show keys that are actually in settings
+        section_items = [(k, settings[k]) for k in keys if k in settings]
+        if not section_items:
+            continue
+        print(f"\n  [{section_num}] {section_label}")
+        print(f"  {'-' * 40}")
+        for key, value in section_items:
+            display = _format_value(key, value)
+            print(f"      {key:.<28s} {display}")
+            shown_keys.add(key)
+
+    # Show any remaining keys not captured by sections
+    remaining = {k: v for k, v in settings.items() if k not in shown_keys}
+    if remaining:
+        print(f"\n  [?] Other")
+        print(f"  {'-' * 40}")
+        for key in sorted(remaining):
+            display = _format_value(key, remaining[key])
+            print(f"      {key:.<28s} {display}")
+
+    print("\n" + "=" * 60)
 
 
 def _build_namespace(settings):
@@ -484,15 +539,6 @@ def _build_namespace(settings):
 
 
 # --- Section re-edit helpers ---
-
-_SECTION_NAMES = [
-    "source type",
-    "source options",
-    "processing",
-    "advanced",
-    "run options",
-]
-
 
 def _edit_section(section_num, settings):
     """Re-run a single section and merge results into settings."""
@@ -621,10 +667,10 @@ def run_interactive_menu():
                 sys.exit(0)
             elif choice in ("e", "edit"):
                 print("\n  Which section to edit?")
-                for i, name in enumerate(_SECTION_NAMES, 1):
-                    print(f"    {i}) {name}")
+                for sec_num, sec_label, _ in _SECTION_LAYOUT:
+                    print(f"    {sec_num}) {sec_label}")
                 sec = input("  Section number: ").strip()
-                if sec.isdigit() and 1 <= int(sec) <= len(_SECTION_NAMES):
+                if sec.isdigit() and 1 <= int(sec) <= len(_SECTION_LAYOUT):
                     _edit_section(int(sec), settings)
                 else:
                     print("  Invalid section number.")
