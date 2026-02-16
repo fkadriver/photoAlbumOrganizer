@@ -666,13 +666,12 @@ class PhotoOrganizer:
                     "is_best": p.id == best_photo.id,
                     "hash": str(pd.get('hash')) if pd.get('hash') else None,
                 }
-                # Include select metadata keys
+                # Include all exif_* keys and select other metadata
                 meta = pd.get('metadata', {})
-                for key in ('exif_Make', 'exif_Model', 'exif_DateTimeOriginal',
-                            'exif_FNumber', 'exif_ExposureTime', 'exif_ISOSpeedRatings',
-                            'dimensions', 'filesize'):
-                    if key in meta:
-                        photo_entry[key] = str(meta[key])
+                for key, value in meta.items():
+                    if key.startswith('exif_') or key in ('dimensions', 'filesize'):
+                        if value is not None and str(value) not in ('', 'None', '0'):
+                            photo_entry[key] = str(value)
                 group_report["photos"].append(photo_entry)
 
             self.report["groups"].append(group_report)

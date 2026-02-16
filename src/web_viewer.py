@@ -27,6 +27,15 @@ def _load_report():
         return {"error": str(e), "groups": [], "metadata": {}}
 
 
+def _save_report(report):
+    """Save updated report back to disk."""
+    try:
+        with open(_report_path, "w") as f:
+            json.dump(report, f, indent=2, default=str)
+    except Exception as e:
+        logging.warning(f"Failed to update report: {e}")
+
+
 # ---------- Embedded HTML/JS frontend ----------
 
 _FRONTEND_HTML = r"""<!DOCTYPE html>
@@ -36,7 +45,8 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Photo Organizer Viewer</title>
 <style>
-  :root { --accent: #4a90d9; --bg: #1a1a2e; --card: #16213e; --text: #e0e0e0; --best: #27ae60; }
+  :root { --accent: #4a90d9; --bg: #1a1a2e; --card: #16213e; --text: #e0e0e0; --best: #27ae60;
+          --danger: #e74c3c; --warn: #e67e22; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
          background: var(--bg); color: var(--text); }
@@ -45,7 +55,7 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   header h1 { font-size: 1.3rem; }
   .stats { font-size: 0.85rem; opacity: 0.7; }
   .controls { padding: 0.8rem 2rem; display: flex; gap: 1rem; align-items: center;
-              background: var(--card); border-bottom: 1px solid #333; }
+              background: var(--card); border-bottom: 1px solid #333; flex-wrap: wrap; }
   .controls input[type=text] { padding: 0.4rem 0.8rem; border-radius: 4px; border: 1px solid #555;
                                 background: #222; color: var(--text); width: 260px; }
   .controls label { font-size: 0.85rem; cursor: pointer; }
@@ -54,7 +64,7 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   .group-card { background: var(--card); border-radius: 8px; overflow: hidden;
                 cursor: pointer; transition: transform 0.15s; border: 2px solid transparent; }
   .group-card:hover { transform: translateY(-2px); border-color: var(--accent); }
-  .group-card.selected { border-color: #e67e22; }
+  .group-card.selected { border-color: var(--warn); }
   .group-header { padding: 0.6rem 0.8rem; font-size: 0.85rem; display: flex;
                   justify-content: space-between; align-items: center; }
   .group-header .label { font-weight: 600; }
@@ -70,37 +80,65 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
              z-index: 100; overflow-y: auto; }
   .overlay.show { display: block; }
-  .detail { max-width: 1000px; margin: 2rem auto; background: var(--card);
+  .detail { max-width: 1100px; margin: 2rem auto; background: var(--card);
             border-radius: 8px; padding: 1.5rem; }
   .detail h2 { margin-bottom: 1rem; }
   .detail-photos { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1rem; }
-  .detail-photo { text-align: center; cursor: pointer; position: relative; }
-  .detail-photo img { height: 180px; border-radius: 4px; object-fit: cover; }
+  .detail-photo { text-align: center; position: relative; }
+  .detail-photo img { height: 180px; border-radius: 4px; object-fit: cover; cursor: pointer; }
   .detail-photo.is-best img { outline: 4px solid var(--best); }
   .detail-photo .badge { position: absolute; top: 4px; right: 4px; background: var(--best);
                          color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
-  .detail-photo:hover .set-best-btn { display: block; }
-  .set-best-btn { display: none; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
-                  background: var(--accent); color: #fff; border: none; padding: 4px 10px;
-                  border-radius: 3px; cursor: pointer; font-size: 0.75rem; white-space: nowrap; }
-  .meta-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem; }
-  .meta-table th, .meta-table td { padding: 4px 8px; text-align: left; border-bottom: 1px solid #333; }
-  .meta-table th { color: var(--accent); }
+  .detail-photo .photo-actions { display: none; position: absolute; bottom: 24px; left: 50%;
+                                 transform: translateX(-50%); display: flex; gap: 4px;
+                                 opacity: 0; transition: opacity 0.15s; }
+  .detail-photo:hover .photo-actions { opacity: 1; }
+  .photo-actions button, .photo-actions a { background: var(--accent); color: #fff; border: none;
+                padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem;
+                text-decoration: none; white-space: nowrap; }
+  .photo-actions a { background: #555; }
+  .meta-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem;
+                overflow-x: auto; display: block; }
+  .meta-table th, .meta-table td { padding: 4px 8px; text-align: left; border-bottom: 1px solid #333;
+                                    white-space: nowrap; }
+  .meta-table th { color: var(--accent); position: sticky; top: 0; background: var(--card); }
   .actions-list { margin-top: 0.5rem; }
   .actions-list span { background: var(--best); color: #fff; padding: 2px 8px;
                        border-radius: 3px; font-size: 0.75rem; margin-right: 4px; }
   .close-btn { position: fixed; top: 1rem; right: 1.5rem; z-index: 110;
-               background: #e74c3c; color: #fff; border: none; width: 36px; height: 36px;
+               background: var(--danger); color: #fff; border: none; width: 36px; height: 36px;
                border-radius: 50%; cursor: pointer; font-size: 1.2rem; }
+
+  /* Full-size photo lightbox */
+  .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95);
+              z-index: 200; justify-content: center; align-items: center; cursor: zoom-out; }
+  .lightbox.show { display: flex; }
+  .lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+  .lightbox .lb-close { position: fixed; top: 1rem; right: 1.5rem; background: var(--danger);
+                        color: #fff; border: none; width: 36px; height: 36px; border-radius: 50%;
+                        cursor: pointer; font-size: 1.2rem; z-index: 210; }
+  .lightbox .lb-download { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--accent);
+                           color: #fff; border: none; padding: 8px 16px; border-radius: 4px;
+                           cursor: pointer; font-size: 0.85rem; text-decoration: none; z-index: 210; }
 
   /* Bulk bar */
   .bulk-bar { display: none; position: fixed; bottom: 0; left: 0; right: 0;
               background: var(--card); border-top: 2px solid var(--accent); padding: 0.8rem 2rem;
               z-index: 50; }
-  .bulk-bar.show { display: flex; align-items: center; gap: 1rem; }
-  .bulk-bar button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
-  .btn-cleanup { background: #e74c3c; color: #fff; }
+  .bulk-bar.show { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+  .bulk-bar button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer;
+                     font-size: 0.85rem; }
+  .btn-archive { background: var(--warn); color: #fff; }
+  .btn-delete { background: var(--danger); color: #fff; }
+  .btn-discard { background: #8e44ad; color: #fff; }
   .btn-cancel { background: #555; color: #fff; }
+  .bulk-bar .sep { border-left: 1px solid #555; height: 24px; }
+
+  /* Toast notification */
+  .toast { position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%);
+           background: var(--card); border: 1px solid var(--accent); padding: 0.6rem 1.2rem;
+           border-radius: 6px; font-size: 0.85rem; z-index: 300; display: none; }
+  .toast.show { display: block; }
 </style>
 </head>
 <body>
@@ -122,15 +160,34 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   <div class="detail" id="detail"></div>
 </div>
 
+<div class="lightbox" id="lightbox">
+  <button class="lb-close" id="lbClose">&times;</button>
+  <img id="lbImg" src="">
+  <a class="lb-download" id="lbDownload" href="#" download>Download Full</a>
+</div>
+
 <div class="bulk-bar" id="bulkBar">
   <span id="bulkCount">0 selected</span>
-  <button class="btn-cleanup" id="bulkCleanup">Cleanup Selected</button>
+  <div class="sep"></div>
+  <button class="btn-archive" id="bulkArchive">Archive non-best</button>
+  <button class="btn-delete" id="bulkDelete">Delete non-best</button>
+  <button class="btn-discard" id="bulkDiscard">Discard changes</button>
+  <div class="sep"></div>
   <button class="btn-cancel" id="bulkCancel">Cancel</button>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 let report = null;
 let selectedGroups = new Set();
+
+function toast(msg, ms) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms || 3000);
+}
 
 async function load() {
   const resp = await fetch('/api/report');
@@ -159,7 +216,6 @@ function render() {
     card.className = 'group-card' + (selectedGroups.has(g.group_index) ? ' selected' : '');
     card.onclick = (e) => handleCardClick(e, g);
 
-    const best = g.best_photo || {};
     card.innerHTML = `
       <div class="group-header">
         <span class="label">Group ${g.group_index} (${g.photo_count} photos)</span>
@@ -195,35 +251,90 @@ function handleCardClick(e, group) {
 
 function showDetail(g) {
   const detail = document.getElementById('detail');
-  const best = g.best_photo || {};
-  const metaKeys = ['exif_Make','exif_Model','exif_DateTimeOriginal','exif_FNumber',
-                     'exif_ExposureTime','exif_ISOSpeedRatings','dimensions','filesize'];
+
+  // Dynamically discover metadata columns from the photos
+  const skipKeys = new Set(['id','asset_id','filename','is_best','hash']);
+  const metaKeysSet = new Set();
+  g.photos.forEach(p => {
+    Object.keys(p).forEach(k => { if (!skipKeys.has(k)) metaKeysSet.add(k); });
+  });
+  // Sort: exif fields first (alphabetical), then others
+  const metaKeys = Array.from(metaKeysSet).sort((a,b) => {
+    const ae = a.startsWith('exif_'), be = b.startsWith('exif_');
+    if (ae && !be) return -1;
+    if (!ae && be) return 1;
+    return a.localeCompare(b);
+  });
+
+  // Nice display names for common keys
+  const labels = {
+    'exif_make': 'Make', 'exif_model': 'Model', 'exif_dateTimeOriginal': 'Date/Time',
+    'exif_fNumber': 'f/', 'exif_exposureTime': 'Shutter', 'exif_iso': 'ISO',
+    'exif_focalLength': 'Focal', 'exif_lensModel': 'Lens',
+    'exif_exifImageWidth': 'Width', 'exif_exifImageHeight': 'Height',
+    'exif_fileSizeInByte': 'Size (bytes)', 'filesize': 'File Size',
+    'dimensions': 'Dimensions',
+  };
 
   let photosHtml = g.photos.map(p => `
     <div class="detail-photo ${p.is_best ? 'is-best' : ''}">
-      <img src="/api/preview/${p.asset_id}" alt="${p.filename}">
+      <img src="/api/preview/${p.asset_id}" alt="${p.filename}"
+           onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}')">
       ${p.is_best ? '<span class="badge">BEST</span>' : ''}
-      ${!p.is_best ? `<button class="set-best-btn" onclick="setBest(event, ${g.group_index}, '${p.asset_id}')">Set as Best</button>` : ''}
+      <div class="photo-actions">
+        ${!p.is_best ? `<button onclick="setBest(event, ${g.group_index}, '${p.asset_id}')">Set Best</button>` : ''}
+        <a href="/api/full/${p.asset_id}" target="_blank" onclick="event.stopPropagation()">Full</a>
+      </div>
       <div style="font-size:0.75rem;margin-top:4px">${p.filename || p.id}</div>
     </div>`).join('');
 
-  let metaRows = '';
-  const headers = ['Photo', ...metaKeys];
-  metaRows += '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  let metaRows = '<tr><th>Photo</th>' + metaKeys.map(h =>
+    `<th>${labels[h] || h.replace('exif_','')}</th>`).join('') + '</tr>';
   g.photos.forEach(p => {
     metaRows += '<tr><td>' + (p.filename || p.id) + (p.is_best ? ' *' : '') + '</td>';
-    metaKeys.forEach(k => { metaRows += `<td>${p[k] || '-'}</td>`; });
+    metaKeys.forEach(k => {
+      let v = p[k];
+      if (v !== undefined && v !== null && v !== '') {
+        // Format file sizes
+        if ((k === 'filesize' || k === 'exif_fileSizeInByte') && !isNaN(v)) {
+          v = (Number(v) / 1024 / 1024).toFixed(1) + ' MB';
+        }
+        metaRows += `<td>${v}</td>`;
+      } else {
+        metaRows += '<td>-</td>';
+      }
+    });
     metaRows += '</tr>';
   });
 
   detail.innerHTML = `
-    <h2>Group ${g.group_index}${g.person_name ? ' — ' + g.person_name : ''}</h2>
+    <h2>Group ${g.group_index}${g.person_name ? ' &mdash; ' + g.person_name : ''}</h2>
     <div class="detail-photos">${photosHtml}</div>
     <div class="actions-list">Actions: ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
   document.getElementById('overlay').classList.add('show');
 }
+
+/* Lightbox for full-resolution photo viewing */
+function openLightbox(assetId, filename) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lbImg');
+  const dl = document.getElementById('lbDownload');
+  img.src = '/api/full/' + assetId;
+  dl.href = '/api/full/' + assetId;
+  dl.download = filename || 'photo.jpg';
+  lb.classList.add('show');
+}
+
+document.getElementById('lbClose').onclick = (e) => {
+  e.stopPropagation();
+  document.getElementById('lightbox').classList.remove('show');
+};
+document.getElementById('lightbox').onclick = (e) => {
+  if (e.target === document.getElementById('lightbox'))
+    document.getElementById('lightbox').classList.remove('show');
+};
 
 document.getElementById('closeBtn').onclick = () => {
   document.getElementById('overlay').classList.remove('show');
@@ -233,12 +344,15 @@ document.getElementById('overlay').onclick = (e) => {
     document.getElementById('overlay').classList.remove('show');
 };
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') document.getElementById('overlay').classList.remove('show');
+  if (e.key === 'Escape') {
+    document.getElementById('lightbox').classList.remove('show');
+    document.getElementById('overlay').classList.remove('show');
+  }
 });
 
 async function setBest(event, groupIndex, assetId) {
   event.stopPropagation();
-  if (!confirm('Set this photo as the new best for the group? This will update tags and favorites in Immich.')) return;
+  if (!confirm('Set this photo as the new best? This updates tags and favorites in Immich.')) return;
   try {
     const resp = await fetch('/api/actions/set-best', {
       method: 'POST',
@@ -248,29 +362,39 @@ async function setBest(event, groupIndex, assetId) {
     const result = await resp.json();
     if (result.ok) {
       await load();
-      alert('Best photo updated!');
+      toast('Best photo updated');
     } else {
       alert('Error: ' + (result.error || 'Unknown error'));
     }
   } catch(e) { alert('Request failed: ' + e); }
 }
 
-document.getElementById('bulkCleanup').onclick = async () => {
+/* Bulk actions */
+async function bulkAction(action) {
   const indices = Array.from(selectedGroups);
-  if (!confirm(`Run cleanup on ${indices.length} selected group(s)?`)) return;
+  const labels = {
+    'archive-non-best': `Archive non-best photos in ${indices.length} group(s)?`,
+    'delete-non-best': `PERMANENTLY DELETE non-best photos in ${indices.length} group(s)? This cannot be undone!`,
+    'discard': `Discard organizer changes for ${indices.length} group(s)? This will unfavorite, unarchive, and remove tags.`,
+  };
+  if (!confirm(labels[action] || `Run ${action} on ${indices.length} group(s)?`)) return;
   try {
-    const resp = await fetch('/api/actions/bulk-cleanup', {
+    const resp = await fetch('/api/actions/bulk', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({group_indices: indices})
+      body: JSON.stringify({action: action, group_indices: indices})
     });
     const result = await resp.json();
-    alert(result.message || 'Cleanup complete');
+    toast(result.message || 'Done');
     selectedGroups.clear();
     document.getElementById('bulkBar').classList.remove('show');
     await load();
   } catch(e) { alert('Request failed: ' + e); }
-};
+}
+
+document.getElementById('bulkArchive').onclick = () => bulkAction('archive-non-best');
+document.getElementById('bulkDelete').onclick = () => bulkAction('delete-non-best');
+document.getElementById('bulkDiscard').onclick = () => bulkAction('discard');
 
 document.getElementById('bulkCancel').onclick = () => {
   selectedGroups.clear();
@@ -342,6 +466,10 @@ class ViewerHandler(BaseHTTPRequestHandler):
             asset_id = path[len("/api/preview/"):]
             self._proxy_image(asset_id, "preview")
 
+        elif path.startswith("/api/full/"):
+            asset_id = path[len("/api/full/"):]
+            self._proxy_full(asset_id)
+
         else:
             self.send_error(404)
 
@@ -356,6 +484,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Thumbnail not found")
 
+    def _proxy_full(self, asset_id):
+        """Proxy full-resolution download from Immich."""
+        if not _immich_client:
+            self.send_error(503, "No Immich client configured")
+            return
+        data = _immich_client.download_asset(asset_id)
+        if data:
+            self._send_image(data, content_type="image/jpeg")
+        else:
+            self.send_error(404, "Asset not found")
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -365,8 +504,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
         if path == "/api/actions/set-best":
             self._handle_set_best(body)
-        elif path == "/api/actions/bulk-cleanup":
-            self._handle_bulk_cleanup(body)
+        elif path == "/api/actions/bulk":
+            self._handle_bulk(body)
         else:
             self.send_error(404)
 
@@ -392,7 +531,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
         old_best_id = group["best_photo"]["asset_id"]
 
-        # Update tags: remove best from old, add to new; reverse for non-best
+        # Update tags: add best to new, add non-best to old
         best_tag_id = _immich_client.get_or_create_tag("photo-organizer/best")
         non_best_tag_id = _immich_client.get_or_create_tag("photo-organizer/non-best")
 
@@ -414,32 +553,60 @@ class ViewerHandler(BaseHTTPRequestHandler):
         for p in group["photos"]:
             p["is_best"] = (p["asset_id"] == new_best_id)
 
-        try:
-            with open(_report_path, "w") as f:
-                json.dump(report, f, indent=2, default=str)
-        except Exception as e:
-            logging.warning(f"Failed to update report: {e}")
-
+        _save_report(report)
         self._send_json({"ok": True})
 
-    def _handle_bulk_cleanup(self, body):
-        """Cleanup selected groups: unfavorite, unarchive, remove tags."""
+    def _handle_bulk(self, body):
+        """Handle bulk actions: archive-non-best, delete-non-best, discard."""
+        action = body.get("action")
         indices = body.get("group_indices", [])
+
         if not _immich_client:
             self._send_json({"ok": False, "error": "No Immich client"}, 503)
             return
 
         report = _load_report()
-        cleaned = 0
+        affected = 0
+        asset_count = 0
+
         for g in report.get("groups", []):
             if g["group_index"] not in indices:
                 continue
-            asset_ids = [p["asset_id"] for p in g["photos"]]
-            # Unfavorite all, unarchive all
-            _immich_client.bulk_update_assets(asset_ids, is_favorite=False, is_archived=False)
-            cleaned += 1
+            affected += 1
 
-        self._send_json({"ok": True, "message": f"Cleaned up {cleaned} group(s)"})
+            best_id = g["best_photo"]["asset_id"]
+            all_ids = [p["asset_id"] for p in g["photos"]]
+            non_best_ids = [aid for aid in all_ids if aid != best_id]
+
+            if action == "archive-non-best":
+                if non_best_ids:
+                    _immich_client.bulk_update_assets(non_best_ids, is_archived=True)
+                    asset_count += len(non_best_ids)
+
+            elif action == "delete-non-best":
+                if non_best_ids:
+                    _immich_client.bulk_delete_assets(non_best_ids, force=False)
+                    asset_count += len(non_best_ids)
+
+            elif action == "discard":
+                # Unfavorite all, unarchive all
+                _immich_client.bulk_update_assets(all_ids, is_favorite=False, is_archived=False)
+                asset_count += len(all_ids)
+                # Remove tags for this group
+                group_tag_name = f"photo-organizer/group-{g['group_index']:04d}"
+                for tag_name in [group_tag_name]:
+                    tags = _immich_client.get_tags()
+                    for t in tags:
+                        if (t.get('name') or t.get('value', '')) == tag_name:
+                            _immich_client.delete_tag(t['id'])
+                            break
+
+        messages = {
+            "archive-non-best": f"Archived {asset_count} non-best photo(s) in {affected} group(s)",
+            "delete-non-best": f"Trashed {asset_count} non-best photo(s) in {affected} group(s)",
+            "discard": f"Discarded changes for {affected} group(s) ({asset_count} assets unfavorited/unarchived)",
+        }
+        self._send_json({"ok": True, "message": messages.get(action, "Done")})
 
 
 def start_viewer(report_path, port=8080, immich_client=None):
@@ -464,7 +631,7 @@ def start_viewer(report_path, port=8080, immich_client=None):
     print(f"\nPhoto Organizer Viewer running at http://localhost:{port}")
     print(f"Report: {_report_path}")
     if _immich_client:
-        print(f"Immich: {_immich_client.url} (thumbnails enabled)")
+        print(f"Immich: {_immich_client.url} (thumbnails + full photos enabled)")
     else:
         print("Note: No Immich client — thumbnails will not load")
     print("Press Ctrl+C to stop\n")
