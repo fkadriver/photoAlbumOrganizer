@@ -783,3 +783,120 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to tag assets with tag {tag_id}: {e}")
             return False
+
+    def delete_tag(self, tag_id: str) -> bool:
+        """
+        Delete a tag by ID.
+
+        Args:
+            tag_id: Tag ID to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            self._delete(f'/api/tags/{tag_id}')
+            return True
+        except Exception as e:
+            print(f"Failed to delete tag {tag_id}: {e}")
+            return False
+
+    def delete_tags_by_prefix(self, prefix: str, dry_run: bool = True) -> tuple:
+        """
+        Delete all tags matching a prefix.
+
+        Args:
+            prefix: Tag name prefix to match (e.g., "photo-organizer/")
+            dry_run: If True, only show what would be deleted
+
+        Returns:
+            Tuple of (matched_count, deleted_count)
+        """
+        try:
+            tags = self.get_tags()
+            matched = [
+                t for t in tags
+                if (t.get('name') or t.get('value', '')).startswith(prefix)
+            ]
+
+            if not matched:
+                print(f"No tags found with prefix '{prefix}'")
+                return (0, 0)
+
+            print(f"\nFound {len(matched)} tag(s) with prefix '{prefix}':")
+            for tag in matched:
+                name = tag.get('name') or tag.get('value', 'Unknown')
+                print(f"  - {name} (ID: {tag.get('id', '?')})")
+
+            if dry_run:
+                print(f"\nDRY RUN: Would delete {len(matched)} tag(s)")
+                return (len(matched), 0)
+
+            deleted = 0
+            for tag in matched:
+                tag_id = tag.get('id')
+                name = tag.get('name') or tag.get('value', 'Unknown')
+                if tag_id and self.delete_tag(tag_id):
+                    deleted += 1
+                    print(f"  Deleted: {name}")
+                else:
+                    print(f"  Failed to delete: {name}")
+
+            print(f"\nDeleted {deleted} of {len(matched)} tag(s)")
+            return (len(matched), deleted)
+        except Exception as e:
+            print(f"Failed to delete tags by prefix: {e}")
+            return (0, 0)
+
+    def search_assets_by_tag(self, tag_name: str) -> List[str]:
+        """
+        Find all asset IDs that have a specific tag.
+
+        Args:
+            tag_name: Tag name to search for
+
+        Returns:
+            List of asset IDs
+        """
+        try:
+            # Find the tag ID
+            tags = self.get_tags()
+            tag_id = None
+            for tag in tags:
+                if (tag.get('name') or tag.get('value', '')) == tag_name:
+                    tag_id = tag.get('id')
+                    break
+
+            if not tag_id:
+                return []
+
+            # Search for assets with this tag
+            asset_ids = []
+            page = 1
+            while True:
+                response = self._post('/api/search/metadata', json={
+                    'tagIds': [tag_id],
+                    'page': page,
+                    'size': 1000
+                })
+                data = response.json()
+
+                items = []
+                if 'assets' in data and 'items' in data['assets']:
+                    items = data['assets']['items']
+                elif 'items' in data:
+                    items = data['items']
+
+                if not items:
+                    break
+
+                asset_ids.extend(item.get('id') for item in items if item.get('id'))
+
+                if len(items) < 1000:
+                    break
+                page += 1
+
+            return asset_ids
+        except Exception as e:
+            print(f"Failed to search assets by tag '{tag_name}': {e}")
+            return []
