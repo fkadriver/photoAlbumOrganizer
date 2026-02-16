@@ -321,7 +321,7 @@ function openLightbox(assetId, filename) {
   const lb = document.getElementById('lightbox');
   const img = document.getElementById('lbImg');
   const dl = document.getElementById('lbDownload');
-  img.src = '/api/full/' + assetId;
+  img.src = '/api/preview/' + assetId;
   dl.href = '/api/full/' + assetId;
   dl.download = filename || 'photo.jpg';
   lb.classList.add('show');
