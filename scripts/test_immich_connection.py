@@ -90,7 +90,7 @@ def test_connection():
         print("\n" + "=" * 60)
         print("✅ All tests passed! Immich integration is working.")
         print("\nYou can now use:")
-        print(f"  python photo_organizer.py \\")
+        print(f"  ./photo_organizer.py \\")
         print(f"    --source-type immich \\")
         print(f"    --immich-url {url} \\")
         print(f"    --immich-api-key YOUR_KEY \\")

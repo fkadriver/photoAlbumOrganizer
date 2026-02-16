@@ -31,7 +31,7 @@ When prompted, enter:
 Don't want to remember flags? Use the interactive menu:
 
 ```bash
-python photo_organizer.py -i
+./photo_organizer.py -i
 ```
 
 It walks you through every option step by step. You can save your settings to reuse next time.

@@ -117,8 +117,8 @@ cd ~/photoAlbumOrganizer
 #   [s] Drop to shell            (default — just press Enter)
 
 # Or run directly:
-python photo_organizer.py -i                          # Interactive setup
-python photo_organizer.py -s /source -o /output       # Direct CLI
+./photo_organizer.py -i                          # Interactive setup
+./photo_organizer.py -s /source -o /output       # Direct CLI
 
 # Leave the directory - environment unloads automatically
 cd ~

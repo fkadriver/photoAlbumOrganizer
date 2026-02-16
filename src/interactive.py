@@ -2,7 +2,7 @@
 Interactive menu system for Photo Album Organizer.
 
 Provides a guided setup experience as an alternative to CLI flags.
-Launched via `python photo_organizer.py -i`.
+Launched via `./photo_organizer.py -i`.
 """
 
 import argparse
@@ -649,6 +649,8 @@ def run_interactive_menu():
             print("\n  [c] Confirm and run")
             print("  [s] Save settings and run")
             print("  [e] Edit a section")
+            if settings.get("source_type") == "immich":
+                print("  [u] Undo / cleanup previous Immich changes")
             print("  [r] Restart from scratch")
             print("  [q] Quit")
 
@@ -665,6 +667,21 @@ def run_interactive_menu():
             elif choice in ("q", "quit"):
                 print("\nSetup cancelled.")
                 sys.exit(0)
+            elif choice in ("u", "undo") and settings.get("source_type") == "immich":
+                try:
+                    from immich_client import ImmichClient
+                    from cleanup import run_cleanup_menu
+                    _client = ImmichClient(
+                        url=settings["immich_url"],
+                        api_key=settings["immich_api_key"],
+                        verify_ssl=not settings.get("no_verify_ssl", False),
+                    )
+                    run_cleanup_menu(
+                        _client,
+                        album_prefix=settings.get("album_prefix", "Organized-"),
+                    )
+                except Exception as exc:
+                    print(f"  Cleanup error: {exc}")
             elif choice in ("e", "edit"):
                 print("\n  Which section to edit?")
                 for sec_num, sec_label, _ in _SECTION_LAYOUT:

@@ -73,8 +73,8 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 python scripts/verify_environment.py
 
 # Ready to use! (direnv will prompt to run or drop to shell on cd)
-python photo_organizer.py -i        # Interactive guided setup
-python photo_organizer.py -s ~/Photos -o ~/Organized  # Direct CLI
+./photo_organizer.py -i        # Interactive guided setup
+./photo_organizer.py -s ~/Photos -o ~/Organized  # Direct CLI
 ```
 
 **Without direnv:**
@@ -88,7 +88,7 @@ pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 
 # Run the organizer
-python photo_organizer.py -s ~/Photos -o ~/Organized
+./photo_organizer.py -s ~/Photos -o ~/Organized
 ```
 
 See [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md) for automatic environment activation setup.
@@ -157,7 +157,7 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 The easiest way to get started — a guided menu walks you through every option with sensible defaults:
 
 ```bash
-python photo_organizer.py -i
+./photo_organizer.py -i
 ```
 
 The menu covers source type, paths, processing tuning, advanced features (HDR, face-swap), and run options. Press Enter to accept defaults or change only what you need.
@@ -173,7 +173,7 @@ If you use direnv, entering the project directory will prompt you to run with sa
 ### Basic Usage (Local Photos)
 
 ```bash
-python photo_organizer.py -s /path/to/photos -o /path/to/output
+./photo_organizer.py -s /path/to/photos -o /path/to/output
 ```
 
 ### Immich Integration
@@ -187,7 +187,7 @@ The Photo Album Organizer now includes full integration with [Immich](https://im
 python scripts/test_immich_connection.py
 
 # Tag duplicates in Immich (safest, recommended first step)
-python photo_organizer.py \
+./photo_organizer.py \
   --source-type immich \
   --immich-url https://your-immich-url \
   --immich-api-key YOUR_KEY \
@@ -207,32 +207,32 @@ python photo_organizer.py \
 
 **Organize burst photos with default settings:**
 ```bash
-python photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
+./photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
 ```
 
 **Group all visually similar photos regardless of timestamp:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
+./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
 ```
 
 **Stricter similarity for near-duplicates only:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 3
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 3
 ```
 
 **Looser grouping for similar compositions:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 8
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 8
 ```
 
 **Custom time window (10 minutes instead of default 5):**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
+./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
 ```
 
 **Dry run to preview without changes:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
+./photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
 ```
 
 ## Command Line Options
@@ -308,25 +308,25 @@ Other Arguments:
 
 **For burst photos from the same moment:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 5
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 5
 # Default settings work well - groups visually similar photos taken within 5 minutes
 ```
 
 **For photos with incorrect timestamps:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
+./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
 # Ignores timestamps, groups purely by visual similarity
 ```
 
 **For finding duplicates across your entire library:**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --time-window 0
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --time-window 0
 # Very strict matching, no time restrictions
 ```
  
 **For grouping similar compositions (different angles of same scene):**
 ```bash
-python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
 # Looser matching, 30-minute window
 ```
 
@@ -505,7 +505,7 @@ These backends could be added in the future via the `FaceBackend` abstraction:
 ```bash
 # Process by year
 for year in 2020 2021 2022 2023 2024; do
-  python photo_organizer.py -s ~/Photos/$year -o ~/Organized/$year
+  ./photo_organizer.py -s ~/Photos/$year -o ~/Organized/$year
 done
 ```
 
@@ -606,16 +606,16 @@ These are harmless BLAS/LAPACK threading warnings. They're suppressed in the Nix
 python scripts/verify_environment.py
 
 # Test with limited photos (processes first 100 photos only)
-python photo_organizer.py -s ~/Photos -o ~/Organized --limit 100
+./photo_organizer.py -s ~/Photos -o ~/Organized --limit 100
 
 # Run with verbose output to debug
-python photo_organizer.py -s test_photos -o output --verbose
+./photo_organizer.py -s test_photos -o output --verbose
 
 # Dry run to test without changes
-python photo_organizer.py -s test_photos -o output --dry-run
+./photo_organizer.py -s test_photos -o output --dry-run
 
 # Combine test mode with resume capability
-python photo_organizer.py -s ~/Photos -o ~/Organized --limit 100 --resume
+./photo_organizer.py -s ~/Photos -o ~/Organized --limit 100 --resume
 ```
 
 ### Project Structure

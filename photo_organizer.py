@@ -47,38 +47,38 @@ def main():
         epilog="""
 Examples:
   # Local photos
-  python photo_organizer.py -s ~/Photos -o ~/OrganizedPhotos
-  python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --verbose
+  ./photo_organizer.py -s ~/Photos -o ~/OrganizedPhotos
+  ./photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --verbose
 
   # Immich integration - tag duplicates
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     --tag-only
 
   # Immich integration - create albums
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     --create-albums \\
     --mark-best-favorite
 
   # Immich integration - download and organize
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     -o ~/Organized
 
   # HDR merging for bracketed exposures
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --hdr-gamma 2.2
 
   # Face swapping to fix closed eyes
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-face-swap
 
   # Both HDR and face swapping
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --enable-face-swap
         """
     )
@@ -169,6 +169,10 @@ Examples:
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of threads for parallel processing (default: 2)')
 
+    # Cleanup mode
+    parser.add_argument('--cleanup', action='store_true',
+                        help='Launch Immich cleanup menu to undo organizer changes')
+
     # Interactive mode
     parser.add_argument('-i', '--interactive', action='store_true',
                         help='Launch interactive setup menu')
@@ -239,6 +243,21 @@ Examples:
         if potential_state_file.exists():
             potential_state_file.unlink()
             print("Starting fresh (previous progress deleted)...")
+
+    # Handle --cleanup before validation
+    if args.cleanup:
+        if not args.immich_url or not args.immich_api_key:
+            parser.error("--cleanup requires --immich-url and --immich-api-key (or use -i for interactive)")
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from immich_client import ImmichClient
+        from cleanup import run_cleanup_menu
+        client = ImmichClient(
+            url=args.immich_url,
+            api_key=args.immich_api_key,
+            verify_ssl=not args.no_verify_ssl,
+        )
+        run_cleanup_menu(client, album_prefix=args.album_prefix)
+        sys.exit(0)
 
     # Validate arguments
     if args.source_type == 'local':
