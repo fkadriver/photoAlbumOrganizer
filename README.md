@@ -24,6 +24,8 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Metadata Preservation**: Extracts and saves all EXIF and file metadata to text files
 - **Original Preservation**: Keeps all original photos safely in organized folders
 - **Multi-Format Support**: Handles JPEG, PNG, HEIC, and RAW formats (CR2, NEF, ARW, DNG)
+- **Web Viewer**: Built-in web-based review interface for browsing groups, viewing full photos, comparing EXIF data, and taking bulk actions (archive, delete, discard)
+- **Immich Cleanup**: Undo/cleanup previous organizer changes — remove tags, unfavorite, unarchive, delete albums
 - **Resume Capability**: Interrupt and resume processing without losing progress (perfect for large libraries)
 - **Interactive Setup Menu**: Guided `-i` mode walks you through all options — no need to memorize CLI flags
 - **Save/Load Settings**: Save your interactive configuration to JSON and reload it next time
@@ -162,6 +164,8 @@ The easiest way to get started — a guided menu walks you through every option 
 
 The menu covers source type, paths, processing tuning, advanced features (HDR, face-swap), and run options. Press Enter to accept defaults or change only what you need.
 
+**After a run completes**, a `processing_report.json` is generated. The next time you open interactive mode, the summary screen defaults to launching the **web viewer** (press Enter) so you can review results immediately. You can still press `c` to run again, `u` to clean up Immich changes, or `e` to edit settings.
+
 **Saving and loading settings:**
 
 At the summary screen, press `s` to save your configuration to `.photo_organizer_settings.json`. The next time you run with `-i`, the menu detects the file and offers to load it — skipping the full walkthrough and jumping straight to review. API keys are never saved to the file; they are re-prompted on load.
@@ -202,6 +206,51 @@ python scripts/test_immich_connection.py
 **See the complete Immich guide:** [docs/IMMICH.md](docs/IMMICH.md)
 
 **Quick setup script:** [scripts/immich.sh](scripts/immich.sh) - Convenient wrapper for all Immich operations
+
+### Web Viewer
+
+After running the organizer, a `processing_report.json` is generated with all group and photo data. Launch the built-in web viewer to review results:
+
+```bash
+# Launch viewer (reads processing_report.json by default)
+./photo_organizer.py --web-viewer \
+  --immich-url https://your-immich-url \
+  --immich-api-key YOUR_KEY
+
+# Custom report path and port
+./photo_organizer.py --web-viewer --report /path/to/report.json --port 9090
+```
+
+The viewer opens at `http://localhost:8080` and provides:
+- Group grid with thumbnails from Immich
+- Click to expand a group and see all photos with EXIF metadata
+- Lightbox for full-resolution preview
+- Change the "best" photo for any group
+- Bulk actions: archive non-best, delete non-best, discard changes
+
+In interactive mode (`-i`), the web viewer is offered as the **default action** when a previous report exists — just press Enter at the summary screen.
+
+### Immich Cleanup
+
+Undo previous organizer changes in Immich:
+
+```bash
+# Interactive cleanup menu
+./photo_organizer.py --cleanup \
+  --immich-url https://your-immich-url \
+  --immich-api-key YOUR_KEY
+
+# Or from interactive mode: press [u] at the summary screen
+```
+
+Cleanup options:
+1. Delete albums by prefix
+2. Remove `photo-organizer/*` tags
+3. Unfavorite 'best' tagged photos
+4. Unarchive 'non-best' tagged photos
+5. Full cleanup (all above in sequence)
+
+Each operation shows a dry-run preview before confirming.
 
 ### Common Use Cases
 
@@ -297,6 +346,14 @@ Interactive Mode:
                            .photo_organizer_settings.json
   -r, --run-settings FILE  Run directly from a saved settings JSON file
                            (default: .photo_organizer_settings.json)
+
+Web Viewer & Cleanup:
+  --web-viewer             Launch the web-based review interface
+  --report PATH            Path to processing report JSON
+                           (default: processing_report.json)
+  --port N                 Port for the web viewer (default: 8080)
+  --cleanup                Launch interactive Immich cleanup menu
+                           (remove tags, albums, unfavorite, unarchive)
 
 Other Arguments:
   --verbose                Enable detailed output during processing
@@ -631,6 +688,8 @@ photoAlbumOrganizer/
 │   ├── face_backend.py       # Pluggable face detection backend abstraction
 │   ├── photo_sources.py      # Photo source abstraction (local/Immich)
 │   ├── immich_client.py      # Immich API client
+│   ├── web_viewer.py         # Built-in web viewer for reviewing results
+│   ├── cleanup.py            # Immich cleanup/undo operations
 │   ├── processing_state.py   # Resume capability state management
 │   └── utils.py              # Logging setup and utilities
 ├── scripts/                   # Utility scripts
@@ -667,6 +726,23 @@ Contributions welcome! Please:
 5. Open a Pull Request
 
 ### Recent Enhancements
+
+- [x] **Web Viewer** - Built-in web-based review interface for browsing organizer results
+  - View all groups with thumbnails and full-resolution previews
+  - Compare EXIF metadata across photos in a group
+  - Change best photo selection directly from the viewer
+  - Bulk actions: archive non-best, delete non-best, discard changes
+  - Proxied Immich thumbnails/previews (no CORS issues, API key hidden)
+  - Launches automatically from interactive mode when a report exists
+  - `--web-viewer` flag for standalone use, `--port` to customize
+
+- [x] **Immich Cleanup** - Undo/cleanup previous organizer changes from interactive mode
+  - Delete albums by prefix
+  - Remove photo-organizer/* tags
+  - Unfavorite 'best' tagged photos
+  - Unarchive 'non-best' tagged photos
+  - Full cleanup (all above in sequence)
+  - `--cleanup` flag for standalone use
 
 - [x] **Enhanced Immich Actions** - Archive non-best, structured tags, CLIP search, server-side duplicates
   - `--archive-non-best` to hide non-best photos without deleting
@@ -715,7 +791,7 @@ Contributions welcome! Please:
 
 - [ ] Additional face backends (InsightFace, DeepFace, YOLOv8-Face)
 - [ ] GPU acceleration for face detection
-- [ ] Web interface for reviewing and managing groups
+- [x] Web interface for reviewing and managing groups
 - [ ] Apple Photos integration (macOS only, via `osxphotos`) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
 - [ ] Google Photos integration (OAuth2, read-only) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
 - [ ] Video support for organizing video clips

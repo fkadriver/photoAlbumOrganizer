@@ -651,13 +651,17 @@ def run_interactive_menu():
             print("  [e] Edit a section")
             if settings.get("source_type") == "immich":
                 print("  [u] Undo / cleanup previous Immich changes")
-            if os.path.exists("processing_report.json"):
-                print("  [w] Launch web viewer")
+            has_report = os.path.exists("processing_report.json")
+            if has_report:
+                print("  [w] Launch web viewer (default)")
             print("  [r] Restart from scratch")
             print("  [q] Quit")
 
-            choice = input("\n  Your choice [c]: ").strip().lower()
-            if choice in ("", "c", "confirm"):
+            default = "w" if has_report else "c"
+            choice = input(f"\n  Your choice [{default}]: ").strip().lower()
+            if choice == "":
+                choice = default
+            if choice in ("c", "confirm"):
                 break
             elif choice in ("s", "save"):
                 save_path = _prompt_text(

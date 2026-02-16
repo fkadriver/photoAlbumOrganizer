@@ -715,6 +715,46 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 | Resume capability | ✅ | ✅ |
 | Auto-resume detection | ✅ | ✅ |
 | Cleanup albums | ❌ | ✅ |
+| Web viewer | ❌ | ✅ |
+| Undo/cleanup changes | ❌ | ✅ |
+
+## Web Viewer
+
+After running the organizer, launch the built-in web viewer to review results visually:
+
+```bash
+./photo_organizer.py --web-viewer \
+  --immich-url https://your-immich-url \
+  --immich-api-key YOUR_KEY
+```
+
+The viewer proxies thumbnails and previews from Immich (no CORS issues, API key stays server-side). You can:
+- Browse all groups with photo thumbnails
+- Click to expand groups and compare EXIF metadata
+- View full-resolution previews in a lightbox
+- Change the "best" photo for any group
+- Bulk archive, delete, or discard changes for selected groups
+
+In interactive mode (`-i`), the web viewer is the **default action** when a previous `processing_report.json` exists.
+
+## Cleanup / Undo
+
+To undo changes made by the organizer:
+
+```bash
+./photo_organizer.py --cleanup \
+  --immich-url https://your-immich-url \
+  --immich-api-key YOUR_KEY
+```
+
+Or press `[u]` at the interactive mode summary screen. Options:
+1. **Delete albums** created by the organizer (by prefix)
+2. **Remove tags** under `photo-organizer/*`
+3. **Unfavorite** photos tagged as "best"
+4. **Unarchive** photos tagged as "non-best"
+5. **Full cleanup** — all of the above in sequence
+
+Each operation shows a dry-run preview with counts before confirming.
 
 ## See Also
 
@@ -737,5 +777,6 @@ The immich.sh wrapper script makes it easy to use the photo organizer with Immic
 **Quick Start:**
 1. `scripts/immich.sh test` - Test connection
 2. `scripts/immich.sh tag-only` - Find duplicates safely
-3. Review in Immich web UI
+3. `./photo_organizer.py --web-viewer` - Review results in the web viewer
 4. `scripts/immich.sh create-albums` - Organize into albums
+5. `./photo_organizer.py --cleanup` - Undo changes if needed
