@@ -40,7 +40,8 @@ def compute_hash(photo: Photo, photo_source: PhotoSource):
                     img = img.convert('RGB')
                 return imagehash.dhash(img)
     except Exception as e:
-        logging.error(f"Error hashing {photo.id}: {e}")
+        filename = photo.metadata.get('filename', photo.id)
+        logging.warning(f"Skipped unhashable photo '{filename}': {e}")
         return None
 
 
@@ -144,10 +145,16 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                     photo_data.append(result)
             except Exception as e:
                 photo = future_to_photo[future]
-                logging.error(f"Error processing photo {photo.id}: {e}")
+                filename = photo.metadata.get('filename', photo.id)
+                logging.warning(f"Error processing '{filename}': {e}")
 
     # Complete progress bar
     print()  # New line after progress bar
+
+    skipped = processed_count - len(photo_data)
+    if skipped > 0:
+        print(f"\n  Skipped {skipped} unreadable photo(s)")
+        logging.warning(f"Skipped {skipped} unreadable photo(s) during hashing")
 
     logging.info(f"Grouping {len(photo_data)} photos by similarity...")
 
