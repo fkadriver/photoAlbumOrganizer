@@ -651,6 +651,8 @@ def run_interactive_menu():
             print("  [e] Edit a section")
             if settings.get("source_type") == "immich":
                 print("  [u] Undo / cleanup previous Immich changes")
+            if os.path.exists("processing_report.json"):
+                print("  [w] Launch web viewer")
             print("  [r] Restart from scratch")
             print("  [q] Quit")
 
@@ -667,6 +669,22 @@ def run_interactive_menu():
             elif choice in ("q", "quit"):
                 print("\nSetup cancelled.")
                 sys.exit(0)
+            elif choice in ("w", "web") and os.path.exists("processing_report.json"):
+                try:
+                    from web_viewer import start_viewer
+                    immich_client = None
+                    if settings.get("source_type") == "immich" and settings.get("immich_api_key"):
+                        from immich_client import ImmichClient
+                        immich_client = ImmichClient(
+                            url=settings["immich_url"],
+                            api_key=settings["immich_api_key"],
+                            verify_ssl=not settings.get("no_verify_ssl", False),
+                        )
+                    start_viewer("processing_report.json", immich_client=immich_client)
+                except KeyboardInterrupt:
+                    print("\n  Viewer stopped.")
+                except Exception as exc:
+                    print(f"  Viewer error: {exc}")
             elif choice in ("u", "undo") and settings.get("source_type") == "immich":
                 try:
                     from immich_client import ImmichClient

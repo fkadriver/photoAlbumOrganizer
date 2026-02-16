@@ -4,6 +4,7 @@ Main photo organizer class that coordinates the photo organization process.
 
 import os
 import sys
+import json
 import shutil
 import signal
 import logging
@@ -93,6 +94,9 @@ class PhotoOrganizer:
         self.archive_non_best = archive_non_best
         self.immich_use_duplicates = immich_use_duplicates
         self.immich_smart_search = immich_smart_search
+
+        # Processing report for web viewer
+        self.report = {"groups": [], "metadata": {}}
 
         # Configure face detection backend
         if face_backend != 'auto':
@@ -477,6 +481,32 @@ class PhotoOrganizer:
 
         print(f"  Tagged {len(group)} photos (best: {best_id[:8]}...)")
 
+    def _write_report(self, groups):
+        """Write processing report JSON for the web viewer."""
+        self.report["metadata"] = {
+            "total_groups": len(groups),
+            "total_photos": sum(len(g) for g in groups),
+            "source_type": self.photo_source.__class__.__name__,
+            "similarity_threshold": self.similarity_threshold,
+            "time_window": self.time_window,
+            "min_group_size": self.min_group_size,
+            "generated_at": datetime.now().isoformat(),
+        }
+        if hasattr(self.photo_source, 'client'):
+            self.report["metadata"]["immich_url"] = self.photo_source.client.url
+
+        report_path = Path("processing_report.json")
+        if self.output_dir:
+            report_path = self.output_dir / "processing_report.json"
+
+        try:
+            with open(report_path, "w") as f:
+                json.dump(self.report, f, indent=2, default=str)
+            print(f"\nReport saved to: {report_path}")
+            logging.info(f"Processing report written to {report_path}")
+        except Exception as e:
+            logging.warning(f"Failed to write processing report: {e}")
+
     def _process_groups(self, groups):
         """Process all groups: tag, create albums, download, HDR, face-swap."""
         for i, group in enumerate(groups, 1):
@@ -604,8 +634,54 @@ class PhotoOrganizer:
 
                 print(f"Group {i} complete: {group_dir}")
 
+            # Collect report data for this group
+            actions_taken = []
+            if self.tag_only or self.create_albums:
+                actions_taken.append("tagged")
+            if self.create_albums:
+                actions_taken.append("album_created")
+            if self.mark_best_favorite:
+                actions_taken.append("best_favorited")
+            if self.archive_non_best:
+                actions_taken.append("non_best_archived")
+
+            group_report = {
+                "group_index": i,
+                "photo_count": len(group),
+                "person_name": group[0].get('person_name'),
+                "best_photo": {
+                    "id": best_photo.id,
+                    "asset_id": best_photo.metadata.get('asset_id', best_photo.id),
+                    "filename": best_photo.metadata.get('filename', best_photo.id),
+                },
+                "photos": [],
+                "actions_taken": actions_taken,
+            }
+            for pd in group:
+                p = pd['photo']
+                photo_entry = {
+                    "id": p.id,
+                    "asset_id": p.metadata.get('asset_id', p.id),
+                    "filename": p.metadata.get('filename', p.id),
+                    "is_best": p.id == best_photo.id,
+                    "hash": str(pd.get('hash')) if pd.get('hash') else None,
+                }
+                # Include select metadata keys
+                meta = pd.get('metadata', {})
+                for key in ('exif_Make', 'exif_Model', 'exif_DateTimeOriginal',
+                            'exif_FNumber', 'exif_ExposureTime', 'exif_ISOSpeedRatings',
+                            'dimensions', 'filesize'):
+                    if key in meta:
+                        photo_entry[key] = str(meta[key])
+                group_report["photos"].append(photo_entry)
+
+            self.report["groups"].append(group_report)
+
             # Mark group as completed
             self.state.mark_group_completed(i)
+
+        # Write processing report
+        self._write_report(groups)
 
         # If we completed all groups successfully, cleanup state file
         if not self._interrupted and self.state.state['groups_processed'] == len(groups):

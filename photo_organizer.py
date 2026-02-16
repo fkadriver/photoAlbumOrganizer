@@ -173,6 +173,14 @@ Examples:
     parser.add_argument('--cleanup', action='store_true',
                         help='Launch Immich cleanup menu to undo organizer changes')
 
+    # Web viewer
+    parser.add_argument('--web-viewer', action='store_true',
+                        help='Launch web viewer for processing report')
+    parser.add_argument('--report',
+                        help='Path to processing report JSON (default: processing_report.json)')
+    parser.add_argument('--port', type=int, default=8080,
+                        help='Web viewer port (default: 8080)')
+
     # Interactive mode
     parser.add_argument('-i', '--interactive', action='store_true',
                         help='Launch interactive setup menu')
@@ -243,6 +251,22 @@ Examples:
         if potential_state_file.exists():
             potential_state_file.unlink()
             print("Starting fresh (previous progress deleted)...")
+
+    # Handle --web-viewer before validation
+    if args.web_viewer:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from web_viewer import start_viewer
+        report_path = args.report or 'processing_report.json'
+        immich_client = None
+        if args.immich_url and args.immich_api_key:
+            from immich_client import ImmichClient
+            immich_client = ImmichClient(
+                url=args.immich_url,
+                api_key=args.immich_api_key,
+                verify_ssl=not args.no_verify_ssl,
+            )
+        start_viewer(report_path, port=args.port, immich_client=immich_client)
+        sys.exit(0)
 
     # Handle --cleanup before validation
     if args.cleanup:
