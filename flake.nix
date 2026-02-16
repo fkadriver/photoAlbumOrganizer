@@ -40,9 +40,9 @@
             libwebp
             
             # X11/XCB for dlib GUI support and OpenCV runtime
-            xorg.libX11
-            xorg.libXext
-            xorg.libxcb
+            libx11
+            libxext
+            libxcb
             
             # BLAS/LAPACK for optimized operations
             openblas
@@ -54,7 +54,7 @@
 
           shellHook = ''
             # CRITICAL: Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:${pkgs.xorg.libX11}/lib:${pkgs.xorg.libXext}/lib:${pkgs.xorg.libxcb}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:${pkgs.libx11}/lib:${pkgs.libxext}/lib:${pkgs.libxcb}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
             # Fix BLAS/LAPACK warnings by using single-threaded mode
             export OMP_NUM_THREADS=1
