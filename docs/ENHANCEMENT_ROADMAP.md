@@ -1,181 +1,155 @@
-# Enhancement Roadmap
+# Feature Roadmap
 
-Planned and completed enhancements for Photo Album Organizer.
+## Status Overview
+
+| Feature | Status |
+|---------|--------|
+| Resume Capability | ✅ COMPLETED |
+| Multi-threaded Processing | ✅ COMPLETED |
+| Immich Integration (Phase 1 + 2) | ✅ COMPLETED |
+| HDR / Exposure Blending | ✅ COMPLETED |
+| Advanced Face Swapping (basic) | ✅ COMPLETED |
+| Web Viewer | ✅ COMPLETED |
+| Viewer Lifecycle (`scripts/viewer`) | ✅ COMPLETED |
+| HEIC Support | ✅ COMPLETED |
+| Timestamped Reports | ✅ COMPLETED |
+| Additional Face Backends | 🔧 IN PROGRESS |
+| GPU Acceleration | 🔧 IN PROGRESS |
+| Async Immich Downloads | ⏳ PLANNED |
+| Immich Phase 3 (real-time sync) | ⏳ PLANNED |
+| Video Support | ⏳ PLANNED |
+| Apple / Google Photos | ⏳ PLANNED |
+| ML-Based Quality Scoring | ⏳ PLANNED |
 
 ---
 
-## ✅ Completed Features
+## ✅ Completed
 
-### Resume Capability & Hash Persistence
-**Status:** ✅ COMPLETED
-
-Interrupt and resume long-running jobs without losing progress. State is saved to `.photo_organizer_state.json` every 50 photos, with hash caching for faster resume.
+### Resume Capability
+Interrupt and resume long-running jobs without losing progress. State saved to `.photo_organizer_state.json` every 50 photos with hash caching.
 
 ```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized         # auto-detects prior run, prompts
+./photo_organizer.py -s ~/Photos -o ~/Organized           # auto-detects prior run
 ./photo_organizer.py -s ~/Photos -o ~/Organized --resume  # skip prompt, always resume
-./photo_organizer.py -s ~/Photos -o ~/Organized --force-fresh  # skip prompt, start fresh
+./photo_organizer.py -s ~/Photos -o ~/Organized --force-fresh
 ```
 
----
-
-### Multi-Threading
-**Status:** ✅ COMPLETED
-
-Parallel hash computation via `--threads N`. Speeds up the hashing phase 2–4× on multi-core systems.
+### Multi-threaded Processing
+Parallel hash computation via `--threads N`. Speeds up hashing 2–4× on multi-core systems.
 
 ```bash
 ./photo_organizer.py -s ~/Photos -o ~/Organized --threads 4
 ```
 
----
+### Immich Integration (Phase 1 + 2)
+Full read and write integration. See [IMMICH.md](IMMICH.md).
 
-### Immich Integration
-**Status:** ✅ COMPLETED (full Phase 1 + Phase 2)
-
-Full integration with [Immich](https://immich.app/) self-hosted photo management:
-- ✅ Connect to Immich API, read photos
-- ✅ Tag duplicates with structured tags (`photo-organizer/best`, `photo-organizer/non-best`)
-- ✅ Create organized albums
-- ✅ Mark best photos as favorites
-- ✅ Archive non-best photos
-- ✅ Group by recognized person
-- ✅ CLIP semantic search pre-filtering
-- ✅ Server-side duplicate detection
-- ✅ Concurrent prefetching, bulk API operations
-- ✅ Cleanup/undo all organizer changes
-
-See [IMMICH.md](IMMICH.md) for usage.
-
----
-
-### Web Viewer
-**Status:** ✅ COMPLETED
-
-Built-in stdlib HTTP server — no Flask or React required. Features:
-- ✅ Group grid with Immich thumbnail proxying
-- ✅ Report switcher dropdown (compare runs)
-- ✅ Click to expand groups with EXIF metadata
-- ✅ Full-resolution lightbox
-- ✅ Set best photo interactively
-- ✅ Bulk actions: archive, delete, discard
-- ✅ People view (browse by recognized person)
-- ✅ Background lifecycle manager (`scripts/viewer`) with watchdog auto-stop
-- ✅ direnv `[v]` prompt integration
-
-```bash
-scripts/viewer start   # background, auto-stops when you leave the directory
-```
-
----
+- Tag/untag duplicates with structured Immich tags
+- Create / delete albums
+- Mark best photos as favorites, archive non-best
+- Group by recognized person, CLIP semantic search
+- Server-side duplicate detection, bulk API operations
+- Full cleanup/undo menu
 
 ### HDR / Exposure Blending
-**Status:** ✅ COMPLETED
-
-Detects bracketed exposures from EXIF and merges them using OpenCV Debevec HDR + Drago tone mapping.
+Detects bracketed exposures from EXIF and merges using OpenCV Debevec HDR + Drago tone mapping.
 
 ```bash
 ./photo_organizer.py -s ~/Photos -o ~/Organized --enable-hdr
 ```
 
----
-
-### Advanced Face Swapping
-**Status:** ✅ COMPLETED (basic version)
-
-Detects closed eyes using Eye Aspect Ratio (EAR), identifies the same person across photos using face encodings, and swaps the face region using seamless clone blending.
+### Advanced Face Swapping (basic)
+Detects closed eyes via Eye Aspect Ratio, finds best replacement face using encoding distance, blends with `seamlessClone`.
 
 ```bash
 ./photo_organizer.py -s ~/Photos -o ~/Organized --enable-face-swap
 ```
 
----
+Limitations: requires `face_recognition` backend; no multi-face composite; no pose normalization.
 
-### Interactive Setup Menu
-**Status:** ✅ COMPLETED
+### Web Viewer
+Built-in stdlib HTTP server. Group grid with Immich thumbnail proxying, report switcher, EXIF comparison, lightbox, set-best, bulk actions, people view.
 
-Full guided `-i` mode with save/load settings, direnv prompt integration, and summary screen with web viewer as default action.
-
----
+```bash
+scripts/viewer start        # background, auto-stops on directory exit
+scripts/viewer status
+scripts/viewer stop
+```
 
 ### HEIC Support
-**Status:** ✅ COMPLETED
-
-Apple HEIC format processed via Pillow with `pillow-heif` plugin.
-
----
+Apple HEIC format processed via `pillow-heif`.
 
 ### Timestamped Reports
-**Status:** ✅ COMPLETED
-
-Reports saved to `reports/report_YYYY-MM-DD_HHMMSS.json` with a `reports/latest.json` symlink. The web viewer dropdown lists all historical reports.
+Reports saved to `reports/report_YYYY-MM-DD_HHMMSS.json` with a `reports/latest.json` symlink. Web viewer dropdown lists all historical reports.
 
 ---
 
-## 🔧 In Progress / Planned
+## 🔧 In Progress
 
-### GPU Acceleration for Face Detection
-**Status:** 🔧 IN PROGRESS — design complete, implementation next
+### Additional Face Backends
+**Design complete — implementation next.**
 
-10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). New backends: FaceNet/PyTorch and InsightFace.
+Three new pluggable backends to add alongside `face_recognition` and `MediaPipe`:
 
-See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for the full design.
+| Backend | `--face-backend` | Key Advantage |
+|---------|-----------------|---------------|
+| InsightFace | `insightface` | Best accuracy, 512-d ArcFace, CUDA |
+| FaceNet/PyTorch | `facenet` | Modern dlib replacement, CUDA/MPS, batch |
+| YOLOv8-Face | `yolov8` | Fastest detection, GPU-capable |
+
+**Implementation plan:**
+1. Create `src/backends/` directory with `__init__.py`
+2. Add `insightface_backend.py`, `facenet_backend.py`, `yolov8_backend.py`
+3. Register in `get_face_backend()`, update `--face-backend` choices
+4. Ship `requirements-gpu.txt` for optional GPU dependencies
+
+See [FACE_BACKENDS.md](FACE_BACKENDS.md) for full design and interface pseudocode.
+
+### GPU Acceleration
+**Design complete — implementation next.**
+
+10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). Activated via `--gpu` flag with automatic device detection and CPU fallback.
 
 ```bash
 # Planned usage:
 ./photo_organizer.py -s ~/Photos -o ~/Organized --gpu
 ./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --face-backend facenet
+./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --gpu-device 1
 ```
 
----
+**Auto-detection order:** FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
 
-### Additional Face Backends
-**Status:** 🔧 IN PROGRESS — design complete, implementation next
-
-Three new pluggable backends to complement `face_recognition` and `MediaPipe`:
-- **InsightFace** — state-of-the-art accuracy, 512-d ArcFace encoding, CUDA
-- **FaceNet/PyTorch** — MTCNN detection, 128-d encoding, CUDA/MPS
-- **YOLOv8-Face** — fastest detection, GPU-capable, detection-only
-
-See [FACE_BACKENDS.md](FACE_BACKENDS.md) for the full design.
+See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for full design, file structure, and install instructions.
 
 ---
+
+## ⏳ Planned
+
+### Async / Parallel Immich Downloads
+Replace synchronous `requests` in `immich_client.py` with `aiohttp` for concurrent fetching. Expected 3–5× speedup for download-heavy workflows.
 
 ### Immich Phase 3: Stream Processing
-**Status:** ⏳ PLANNED
-
-- Real-time sync (process new photos as they arrive)
-- Async/parallel downloads via `aiohttp`
+- Real-time sync (process new photos as they arrive in Immich)
 - Bi-directional sync
-
----
+- Use Immich ML models directly
 
 ### Video Support
-**Status:** ⏳ PLANNED
+Extract key frames from video clips, compute perceptual hashes, group similar clips alongside photos.
 
-Extract key frames from videos, compute perceptual hashes, group similar clips.
-
----
-
-### Apple Photos / Google Photos Integration
-**Status:** ⏳ PLANNED (design exists)
-
+### Apple / Google Photos Integration
 - Apple Photos via `osxphotos` (macOS only)
 - Google Photos via OAuth2 (read-only)
 
 See [CLOUD_INTEGRATION_DESIGN.md](CLOUD_INTEGRATION_DESIGN.md) for design details.
 
----
-
 ### ML-Based Photo Quality Scoring
-**Status:** ⏳ PLANNED
-
-Use CLIP or MobileNetV2 to score aesthetic quality (composition, sharpness, lighting) beyond face quality metrics.
+Use CLIP or MobileNetV2 to score aesthetic quality (sharpness, composition, exposure) as an additional signal for best-photo selection. The web viewer's "set best" action is a natural feedback signal for fine-tuning.
 
 ---
 
 ## Implementation Notes
 
-- All new face backends follow the `FaceBackend` abstract interface in `src/face_backend.py`
-- GPU support is opt-in via `--gpu` flag with automatic device detection and CPU fallback
-- Each feature is independently toggled by CLI flag — no breaking changes to existing workflows
+- All face backends implement `FaceBackend` from `src/face_backend.py`
+- GPU support is opt-in via `--gpu`; CPU fallback is automatic
+- Each feature is independently flag-gated — no breaking changes to existing workflows
+- `--face-backend auto` always works; GPU-capable backends are preferred when `--gpu` is set

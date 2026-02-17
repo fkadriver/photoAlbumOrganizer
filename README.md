@@ -307,8 +307,7 @@ photoAlbumOrganizer/
 │   ├── TROUBLESHOOTING.md      # Common issues and fixes
 │   ├── DIRENV_SETUP.md         # direnv configuration guide
 │   ├── QUICKSTART.md           # Quick start guide
-│   ├── ENHANCEMENT_ROADMAP.md  # Feature roadmap and status
-│   └── ADVANCED_FEATURES_ROADMAP.md
+│   └── ENHANCEMENT_ROADMAP.md  # Feature roadmap and status
 ├── models/                     # Downloaded model files (not tracked in git)
 ├── requirements.txt
 ├── flake.nix                   # NixOS development environment
