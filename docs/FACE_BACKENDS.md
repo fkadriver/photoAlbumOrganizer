@@ -195,6 +195,37 @@ pip install ultralytics
 
 ---
 
+### ML Quality Scorer *(Planned — ships with new backends)*
+
+Alongside the face backends, an optional `MLQualityScorer` module will use CLIP or MobileNetV2 to score aesthetic photo quality (sharpness, composition, exposure) as an additional signal for best-photo selection — complementing rather than replacing face quality scoring.
+
+**How it integrates:**
+- Runs after face scoring, adds a weighted aesthetic quality score
+- Automatically uses the same GPU device as the active face backend when `--gpu` is set
+- Opt-out via `--no-ml-quality` if not desired
+- The web viewer's "set best" action provides a natural feedback signal for future fine-tuning
+
+**Planned interface:**
+```python
+class MLQualityScorer:
+    def __init__(self, device: str = 'cpu'):
+        # Uses CLIP (openai/clip-vit-base-patch32) or MobileNetV2 fallback
+        ...
+
+    def score(self, image_path: str) -> float:
+        """Returns 0.0–1.0 aesthetic quality score."""
+        ...
+```
+
+**Install (when available):**
+```bash
+pip install transformers torch  # CLIP via HuggingFace
+# or lightweight fallback:
+pip install torch torchvision   # MobileNetV2 (built into torchvision)
+```
+
+---
+
 ## Auto-Selection Logic
 
 The `auto` backend (default) selects the best available backend:

@@ -13,13 +13,12 @@
 | Viewer Lifecycle (`scripts/viewer`) | ✅ COMPLETED |
 | HEIC Support | ✅ COMPLETED |
 | Timestamped Reports | ✅ COMPLETED |
-| Additional Face Backends | 🔧 IN PROGRESS |
+| Additional Face Backends + ML Quality Scoring | 🔧 IN PROGRESS |
 | GPU Acceleration | 🔧 IN PROGRESS |
 | Async Immich Downloads | ⏳ PLANNED |
 | Immich Phase 3 (real-time sync) | ⏳ PLANNED |
 | Video Support | ⏳ PLANNED |
 | Apple / Google Photos | ⏳ PLANNED |
-| ML-Based Quality Scoring | ⏳ PLANNED |
 
 ---
 
@@ -86,22 +85,26 @@ Reports saved to `reports/report_YYYY-MM-DD_HHMMSS.json` with a `reports/latest.
 
 ## 🔧 In Progress
 
-### Additional Face Backends
+### Additional Face Backends + ML Quality Scoring
 **Design complete — implementation next.**
 
-Three new pluggable backends to add alongside `face_recognition` and `MediaPipe`:
+Three new pluggable backends to add alongside `face_recognition` and `MediaPipe`, plus ML-based photo quality scoring as a fourth scorer:
 
-| Backend | `--face-backend` | Key Advantage |
-|---------|-----------------|---------------|
+| Backend / Scorer | `--face-backend` | Key Advantage |
+|-----------------|-----------------|---------------|
 | InsightFace | `insightface` | Best accuracy, 512-d ArcFace, CUDA |
 | FaceNet/PyTorch | `facenet` | Modern dlib replacement, CUDA/MPS, batch |
 | YOLOv8-Face | `yolov8` | Fastest detection, GPU-capable |
+| CLIP Quality Scorer | *(auto, no flag)* | Aesthetic scoring: sharpness, composition, exposure |
+
+The CLIP/MobileNetV2 quality scorer runs alongside whichever face backend is active, adding an aesthetic quality signal to best-photo selection beyond face quality alone. It uses the same GPU device as the face backend when `--gpu` is set.
 
 **Implementation plan:**
 1. Create `src/backends/` directory with `__init__.py`
 2. Add `insightface_backend.py`, `facenet_backend.py`, `yolov8_backend.py`
-3. Register in `get_face_backend()`, update `--face-backend` choices
-4. Ship `requirements-gpu.txt` for optional GPU dependencies
+3. Add `ml_quality_scorer.py` (CLIP or MobileNetV2, optional, auto-used when available)
+4. Register in `get_face_backend()`, update `--face-backend` choices
+5. Ship `requirements-gpu.txt` for optional GPU dependencies
 
 See [FACE_BACKENDS.md](FACE_BACKENDS.md) for full design and interface pseudocode.
 
@@ -141,11 +144,6 @@ Extract key frames from video clips, compute perceptual hashes, group similar cl
 - Google Photos via OAuth2 (read-only)
 
 See [CLOUD_INTEGRATION_DESIGN.md](CLOUD_INTEGRATION_DESIGN.md) for design details.
-
-### ML-Based Photo Quality Scoring
-Use CLIP or MobileNetV2 to score aesthetic quality (sharpness, composition, exposure) as an additional signal for best-photo selection. The web viewer's "set best" action is a natural feedback signal for fine-tuning.
-
----
 
 ## Implementation Notes
 
