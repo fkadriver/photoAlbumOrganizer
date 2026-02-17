@@ -114,13 +114,17 @@ cd ~/photoAlbumOrganizer
 # direnv will prompt you:
 #   [r] Run with saved settings  (if .photo_organizer_settings.json exists)
 #   [i] Interactive setup
+#   [v] Web viewer               (starts in background, auto-stops on cd out)
 #   [s] Drop to shell            (default — just press Enter)
 
 # Or run directly:
 ./photo_organizer.py -i                          # Interactive setup
 ./photo_organizer.py -s /source -o /output       # Direct CLI
+scripts/viewer start                             # Web viewer (background)
+scripts/viewer status                            # Check viewer status
 
 # Leave the directory - environment unloads automatically
+# (web viewer also stops automatically within ~3 seconds)
 cd ~
 ```
 
@@ -205,7 +209,7 @@ Plug 'direnv/direnv.vim'
 
 ## Security Note
 
-Always review `.envrc` files before running `direnv allow`, as they execute shell code. In this project, `.envrc` loads the flake.nix environment and presents a prompt to run the photo organizer or drop to a shell.
+Always review `.envrc` files before running `direnv allow`, as they execute shell code. In this project, `.envrc` loads the flake.nix environment and presents a prompt to run the photo organizer, start the web viewer, or drop to a shell. The `[v]` web viewer option starts the viewer in the background with a watchdog that auto-stops it when you leave the project directory.
 
 ## Alternative: Using .envrc with shell.nix
 

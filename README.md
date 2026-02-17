@@ -1,34 +1,20 @@
 # Photo Album Organizer
 
-A Python tool to organize large photo collections by automatically grouping similar photos (bursts, duplicates, similar shots) and selecting the best image from each group based on facial expression quality. Now with full [Immich](https://immich.app/) integration for self-hosted photo management!
+A Python tool to organize large photo collections by automatically grouping similar photos (bursts, duplicates, similar shots) and selecting the best image from each group based on facial expression quality. Full [Immich](https://immich.app/) integration for self-hosted photo management.
 
 ## Features
 
-- **Intelligent Grouping**: Uses perceptual hashing to find visually similar photos, even with timestamp errors
+- **Intelligent Grouping**: Perceptual hashing finds visually similar photos even with timestamp errors
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
-- **Face Quality Detection**: Scores faces for smiles and open eyes using pluggable backends (face_recognition or MediaPipe)
-- **Best Photo Selection**: Automatically selects the best photo from each group
-- **Configurable Group Size**: Set minimum photos per group (default 3, min 2)
-- **Immich Integration**: Full integration with Immich self-hosted photo management
-  - Tag duplicates with structured tags (best/non-best/group/person)
-  - Create organized albums automatically
-  - Mark best photos as favorites
-  - Archive non-best photos (hides without deleting)
-  - Group by recognized person (Immich face detection)
-  - Use Immich server-side duplicate detection
-  - CLIP semantic search to pre-filter photos
-  - Concurrent photo prefetching for faster processing
-  - Bulk API operations for efficiency
-  - Process photos without downloading (tag-only mode)
-  - Smart caching for performance
-- **Metadata Preservation**: Extracts and saves all EXIF and file metadata to text files
-- **Original Preservation**: Keeps all original photos safely in organized folders
-- **Multi-Format Support**: Handles JPEG, PNG, HEIC, and RAW formats (CR2, NEF, ARW, DNG)
-- **Web Viewer**: Built-in web-based review interface for browsing groups, viewing full photos, comparing EXIF data, and taking bulk actions (archive, delete, discard)
-- **Immich Cleanup**: Undo/cleanup previous organizer changes — remove tags, unfavorite, unarchive, delete albums
-- **Resume Capability**: Interrupt and resume processing without losing progress (perfect for large libraries)
-- **Interactive Setup Menu**: Guided `-i` mode walks you through all options — no need to memorize CLI flags
-- **Save/Load Settings**: Save your interactive configuration to JSON and reload it next time
+- **Face Quality Detection**: Scores faces for smiles and open eyes — pluggable backends (face_recognition, MediaPipe, InsightFace, FaceNet — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md))
+- **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md) *(in progress)*
+- **Immich Integration**: Full integration with Immich — tag, album, favorite, archive, cleanup, people view
+- **Web Viewer**: Built-in review interface with thumbnails, EXIF comparison, bulk actions, report switcher, and people view
+- **Viewer Lifecycle**: `scripts/viewer` manages background start/stop with watchdog auto-stop on directory exit
+- **Resume Capability**: Interrupt and resume processing without losing progress
+- **Interactive Setup**: Guided `-i` mode with save/load settings
+- **HEIC + RAW Support**: JPEG, PNG, HEIC, CR2, NEF, ARW, DNG
+- **Multi-Format Reports**: Timestamped JSON reports with historical comparison dropdown
 - **NixOS Optimized**: First-class NixOS support with automatic environment setup
 
 ## Table of Contents
@@ -36,31 +22,25 @@ A Python tool to organize large photo collections by automatically grouping simi
 - [Installation](#installation)
   - [NixOS (Recommended)](#nixos-recommended)
   - [Other Linux/macOS](#other-linuxmacos)
-  - [Windows](#windows)
 - [Usage](#usage)
   - [Interactive Mode](#interactive-mode)
-  - [Local Photos](#basic-usage)
+  - [Local Photos](#local-photos)
   - [Immich Integration](#immich-integration)
+  - [Web Viewer](#web-viewer)
+  - [Immich Cleanup](#immich-cleanup)
+  - [Common Use Cases](#common-use-cases)
 - [Command Line Options](#command-line-options)
 - [Output Structure](#output-structure)
-- [Configuration Guide](#configuration-guide)
-- [Face Detection Backends](#face-detection-backends)
-- [Performance](#performance)
-- [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [Immich Integration Guide](docs/IMMICH.md)
-- [Cloud Integration Design](docs/CLOUD_INTEGRATION_DESIGN.md)
+- [Documentation](#documentation)
+
+---
 
 ## Installation
 
 ### NixOS (Recommended)
 
-NixOS users get automatic environment setup with all dependencies properly linked. See [docs/NIXOS_SETUP.md](docs/NIXOS_SETUP.md) for detailed instructions.
-
-**Quick Start with direnv (automatic environment):**
-
 ```bash
-# Clone the repository
 git clone https://github.com/fkadriver/photoAlbumOrganizer.git
 cd photoAlbumOrganizer
 
@@ -69,112 +49,60 @@ direnv allow
 
 # Install Python packages (first time only)
 pip install -r requirements.txt
-pip install git+https://github.com/ageitgey/face_recognition_models
 
 # Verify installation
 python scripts/verify_environment.py
-
-# Ready to use! (direnv will prompt to run or drop to shell on cd)
-./photo_organizer.py -i        # Interactive guided setup
-./photo_organizer.py -s ~/Photos -o ~/Organized  # Direct CLI
 ```
+
+direnv will prompt you on every `cd` into the project. See [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md).
 
 **Without direnv:**
-
 ```bash
-# Enter development environment
 nix develop
-
-# Install Python packages
 pip install -r requirements.txt
-pip install git+https://github.com/ageitgey/face_recognition_models
-
-# Run the organizer
-./photo_organizer.py -s ~/Photos -o ~/Organized
+./photo_organizer.py -i
 ```
-
-See [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md) for automatic environment activation setup.
 
 ### Other Linux/macOS
 
-**Prerequisites:**
-- Python 3.11 or higher
-- CMake (required for dlib)
-- System libraries: OpenBLAS, LAPACK, OpenCV dependencies
-
 **Ubuntu/Debian:**
-
 ```bash
-# Install system dependencies
-sudo apt-get update
-sudo apt-get install python3.11 python3.11-venv python3.11-dev
-sudo apt-get install cmake build-essential
-sudo apt-get install libopenblas-dev liblapack-dev
-sudo apt-get install libgl1-mesa-glx libglib2.0-0
-
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install Python packages
+sudo apt-get install python3.11 python3.11-venv cmake build-essential \
+  libopenblas-dev liblapack-dev libgl1-mesa-glx libglib2.0-0
+python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 ```
 
 **macOS:**
-
 ```bash
-# Install Homebrew dependencies
 brew install python@3.11 cmake openblas lapack
-
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install Python packages
+python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 ```
 
-### Windows
-
-```powershell
-# Install Python 3.11 from python.org
-# Install Visual Studio Build Tools
-# Install CMake from cmake.org
-
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\activate
-
-# Install Python packages
-pip install -r requirements.txt
-pip install git+https://github.com/ageitgey/face_recognition_models
-```
+---
 
 ## Usage
 
 ### Interactive Mode
 
-The easiest way to get started — a guided menu walks you through every option with sensible defaults:
-
 ```bash
 ./photo_organizer.py -i
 ```
 
-The menu covers source type, paths, processing tuning, advanced features (HDR, face-swap), and run options. Press Enter to accept defaults or change only what you need.
+Guided menu walks through every option. After a run, the summary screen defaults to launching the web viewer. Press `s` to save settings for reuse.
 
-**After a run completes**, a `processing_report.json` is generated. The next time you open interactive mode, the summary screen defaults to launching the **web viewer** (press Enter) so you can review results immediately. You can still press `c` to run again, `u` to clean up Immich changes, or `e` to edit settings.
+**direnv integration:** entering the project directory shows:
+```
+[r] Run with saved settings
+[i] Interactive setup
+[v] Web viewer          ← starts in background, auto-stops on cd out
+[s] Drop to shell       ← default (press Enter)
+```
 
-**Saving and loading settings:**
-
-At the summary screen, press `s` to save your configuration to `.photo_organizer_settings.json`. The next time you run with `-i`, the menu detects the file and offers to load it — skipping the full walkthrough and jumping straight to review. API keys are never saved to the file; they are re-prompted on load.
-
-**direnv integration:**
-
-If you use direnv, entering the project directory will prompt you to run with saved settings, launch interactive setup, start the web viewer, or drop to a shell. Press Enter to drop to the shell (default). Choosing `[v]` starts the web viewer in the background with a watchdog that auto-stops it when you `cd` out of the project.
-
-### Basic Usage (Local Photos)
+### Local Photos
 
 ```bash
 ./photo_organizer.py -s /path/to/photos -o /path/to/output
@@ -182,654 +110,270 @@ If you use direnv, entering the project directory will prompt you to run with sa
 
 ### Immich Integration
 
-The Photo Album Organizer now includes full integration with [Immich](https://immich.app/) self-hosted photo management!
-
-**Quick Start with Immich:**
-
 ```bash
-# Test connection
-python scripts/test_immich_connection.py
+# Store credentials once
+mkdir -p ~/.config/photo-organizer
+echo 'IMMICH_API_KEY="your-key"' > ~/.config/photo-organizer/immich.conf
+echo 'IMMICH_URL="https://your-immich-url"' >> ~/.config/photo-organizer/immich.conf
+chmod 600 ~/.config/photo-organizer/immich.conf
 
-# Tag duplicates in Immich (safest, recommended first step)
-./photo_organizer.py \
-  --source-type immich \
-  --immich-url https://your-immich-url \
-  --immich-api-key YOUR_KEY \
-  --tag-only
+# Tag duplicates (safest first step)
+scripts/immich.sh tag-only
 
-# Or use the convenient wrapper script
-./scripts/immich.sh tag-only
-./scripts/immich.sh create-albums
-./scripts/immich.sh help
+# Create albums and mark favorites
+scripts/immich.sh create-albums
+
+# All options
+scripts/immich.sh help
 ```
 
-**See the complete Immich guide:** [docs/IMMICH.md](docs/IMMICH.md)
-
-**Quick setup script:** [scripts/immich.sh](scripts/immich.sh) - Convenient wrapper for all Immich operations
+See [docs/IMMICH.md](docs/IMMICH.md) for the full guide.
 
 ### Web Viewer
 
-After running the organizer, a `processing_report.json` is generated with all group and photo data. Launch the built-in web viewer to review results:
-
 ```bash
-# Recommended: use the viewer lifecycle script (auto-stops when you leave the directory)
-scripts/viewer start          # Start on default port 8080
-scripts/viewer start 9090     # Start on custom port
-scripts/viewer status         # Check if running
-scripts/viewer stop            # Stop manually
+# Lifecycle-managed background viewer (recommended)
+scripts/viewer start          # port 8080, loads Immich config automatically
+scripts/viewer start 9090     # custom port
+scripts/viewer status
+scripts/viewer stop
 
-# Or from the direnv prompt: choose [v] Web viewer
-
-# Or launch directly via CLI flags (foreground, no auto-stop)
+# Or foreground via CLI
 ./photo_organizer.py --web-viewer \
   --immich-url https://your-immich-url \
   --immich-api-key YOUR_KEY
 ```
 
-The `scripts/viewer` approach runs the server in the background and spawns a watchdog that automatically stops the viewer when your shell leaves the project directory (or when the terminal closes). Immich credentials are loaded from `~/.config/photo-organizer/immich.conf` automatically.
-
-The viewer opens at `http://localhost:8080` and provides:
-- Group grid with thumbnails from Immich
-- Report switcher dropdown to compare different runs
-- Click to expand a group and see all photos with EXIF metadata
-- Lightbox for full-resolution preview
-- Change the "best" photo for any group
-- Bulk actions: archive non-best, delete non-best, discard changes
-
-In interactive mode (`-i`), the web viewer is offered as the **default action** when a previous report exists — just press Enter at the summary screen. With direnv, choosing `[v]` at the prompt starts the viewer with auto-stop.
+The viewer auto-stops when your shell leaves the project directory. Features: group grid, report switcher, EXIF comparison, full-resolution lightbox, set-best, bulk archive/delete/discard, people view.
 
 ### Immich Cleanup
 
-Undo previous organizer changes in Immich:
+Undo previous organizer changes:
 
 ```bash
-# Interactive cleanup menu
 ./photo_organizer.py --cleanup \
   --immich-url https://your-immich-url \
   --immich-api-key YOUR_KEY
 
-# Or from interactive mode: press [u] at the summary screen
+# Or via wrapper (delete all Organized- albums):
+scripts/immich.sh cleanup "Organized-" no
 ```
-
-Cleanup options:
-1. Delete albums by prefix
-2. Remove `photo-organizer/*` tags
-3. Unfavorite 'best' tagged photos
-4. Unarchive 'non-best' tagged photos
-5. Full cleanup (all above in sequence)
-
-Each operation shows a dry-run preview before confirming.
 
 ### Common Use Cases
 
-**Organize burst photos with default settings:**
 ```bash
-./photo_organizer.py -s ~/Photos/2024 -o ~/Organized/2024
-```
+# Burst photos — default settings
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 5
 
-**Group all visually similar photos regardless of timestamp:**
-```bash
+# Ignore timestamps, group purely by visual similarity
 ./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
-```
 
-**Stricter similarity for near-duplicates only:**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized -t 3
-```
+# Strict duplicate detection
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --time-window 0
 
-**Looser grouping for similar compositions:**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized -t 8
-```
+# Similar compositions (30-minute window)
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
 
-**Custom time window (10 minutes instead of default 5):**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 600
-```
-
-**Dry run to preview without changes:**
-```bash
+# Dry run — preview without making changes
 ./photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
 ```
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for a full threshold and time-window guide.
+
+---
 
 ## Command Line Options
 
 ```
 Source Arguments:
-  --source-type TYPE        Photo source type: local or immich (default: local)
-  -s, --source SOURCE       Source directory containing photos (local source)
-  -o, --output OUTPUT       Output directory for organized photos
+  --source-type TYPE        local or immich (default: local)
+  -s, --source SOURCE       Source directory (local)
+  -o, --output OUTPUT       Output directory
 
 Processing Arguments:
-  -t, --threshold N         Similarity threshold (0-64, default=5)
-                           Lower = stricter matching (0-3: only near-duplicates)
-                           Higher = looser grouping (7-10: similar compositions)
-
-  --time-window SECONDS    Time window in seconds for grouping (default=300)
-                           Photos within this window are grouped together
-                           Only applies when timestamps are available
-                           Use 0 to disable and group purely by visual similarity
-
-  --min-group-size N       Minimum photos per group (default: 3, min: 2)
-  --threads N              Number of threads for parallel processing (default: 2)
+  -t, --threshold N         Similarity threshold 0–64 (default: 5, lower=stricter)
+  --time-window SECONDS     Time window for grouping (default: 300, 0=disable)
+  --min-group-size N        Minimum photos per group (default: 3, min: 2)
+  --threads N               Parallel hash threads (default: 2)
 
 Immich Arguments:
-  --immich-url URL         Immich server URL (e.g., http://immich:2283)
-  --immich-api-key KEY     Immich API key
-  --immich-album ALBUM     Process a specific Immich album
-  --immich-cache-dir DIR   Cache directory for Immich photos
-  --immich-cache-size MB   Cache size in MB (default: 5000)
-  --no-verify-ssl          Disable SSL certificate verification
-  --use-full-resolution    Download full resolution (default: use thumbnails)
+  --immich-url URL          Immich server URL
+  --immich-api-key KEY      Immich API key
+  --immich-album ALBUM      Process a specific album
+  --immich-cache-size MB    Cache size in MB (default: 5000)
+  --no-verify-ssl           Disable SSL certificate verification
+  --use-full-resolution     Download full resolution (default: thumbnails)
 
 Immich Actions:
-  --tag-only               Only tag photos as duplicates (Immich only)
-  --create-albums          Create Immich albums for each group
-  --album-prefix PREFIX    Prefix for created albums (default: Organized-)
-  --mark-best-favorite     Mark best photo in each group as favorite (Immich only)
-  --archive-non-best       Archive non-best photos (hides without deleting, Immich only)
-  --immich-group-by-person Group photos by recognized person (Immich only)
-  --immich-person NAME     Filter to specific person name (Immich only)
+  --tag-only                Tag photos as duplicates (Immich only)
+  --create-albums           Create Immich albums for each group
+  --album-prefix PREFIX     Prefix for created albums (default: Organized-)
+  --mark-best-favorite      Mark best photo as favorite (Immich only)
+  --archive-non-best        Archive non-best photos (Immich only)
+  --immich-group-by-person  Group photos by recognized person
+  --immich-person NAME      Filter to specific person
   --immich-use-server-faces Use Immich face data for best-photo selection
-  --immich-use-duplicates  Use Immich server-side duplicate detection for grouping
-  --immich-smart-search Q  Pre-filter photos using CLIP semantic search query
+  --immich-use-duplicates   Use Immich server-side duplicate detection
+  --immich-smart-search Q   Pre-filter with CLIP semantic search
 
-Resume Capability:
-  --resume                 Resume from previous interrupted run
-  --force-fresh            Force fresh start, delete any existing progress
-  --state-file PATH        Custom path for state file (for resume)
+Resume:
+  --resume                  Resume from previous interrupted run
+  --force-fresh             Force fresh start, delete existing progress
 
 Advanced Image Processing:
-  --enable-hdr             Enable HDR merging for bracketed exposure shots
-  --hdr-gamma VALUE        HDR tone mapping gamma value (default: 2.2)
-  --face-backend BACKEND   Face detection backend: auto, face_recognition,
-                           or mediapipe (default: auto)
-  --enable-face-swap       Enable automatic face swapping to fix closed
-                           eyes/bad expressions
-  --swap-closed-eyes       Swap faces with closed eyes (default: True)
+  --enable-hdr              Enable HDR merging for bracketed exposures
+  --hdr-gamma VALUE         HDR tone mapping gamma (default: 2.2)
+  --face-backend BACKEND    face_recognition, mediapipe, insightface, facenet, yolov8, auto
+  --enable-face-swap        Enable automatic face swapping
 
 Interactive Mode:
-  -i, --interactive        Launch interactive setup menu (guided walkthrough)
-                           Settings can be saved/loaded from
-                           .photo_organizer_settings.json
-  -r, --run-settings FILE  Run directly from a saved settings JSON file
-                           (default: .photo_organizer_settings.json)
+  -i, --interactive         Launch interactive setup menu
+  -r, --run-settings FILE   Run from saved settings (default: .photo_organizer_settings.json)
 
 Web Viewer & Cleanup:
-  --web-viewer             Launch the web-based review interface
-  --report PATH            Path to processing report JSON
-                           (default: processing_report.json)
-  --port N                 Port for the web viewer (default: 8080)
-  --cleanup                Launch interactive Immich cleanup menu
-                           (remove tags, albums, unfavorite, unarchive)
+  --web-viewer              Launch web viewer (foreground)
+  --live-viewer             Start web viewer in background during processing
+  --report PATH             Path to report JSON (default: reports/latest.json)
+  --port N                  Web viewer port (default: 8080)
+  --cleanup                 Launch Immich cleanup menu
 
-Other Arguments:
-  --verbose                Enable detailed output during processing
-  --dry-run                Show what would be done without making changes
-  --limit N                Limit processing to first N photos (for testing)
+Other:
+  --verbose                 Detailed output
+  --dry-run                 Show what would be done without making changes
+  --limit N                 Limit to first N photos (for testing)
 ```
 
-### Choosing the Right Options
-
-**For burst photos from the same moment:**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized -t 5
-# Default settings work well - groups visually similar photos taken within 5 minutes
-```
-
-**For photos with incorrect timestamps:**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized --time-window 0
-# Ignores timestamps, groups purely by visual similarity
-```
-
-**For finding duplicates across your entire library:**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized -t 3 --time-window 0
-# Very strict matching, no time restrictions
-```
- 
-**For grouping similar compositions (different angles of same scene):**
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --time-window 1800
-# Looser matching, 30-minute window
-```
+---
 
 ## Output Structure
-
-The organizer creates a structured output with preserved originals:
 
 ```
 output_directory/
 ├── group_0001/
-│   ├── originals/              # All original photos in this group
+│   ├── originals/              # All original photos
 │   │   ├── IMG_001.jpg
 │   │   ├── IMG_002.jpg
 │   │   └── IMG_003.jpg
-│   ├── metadata.txt            # Complete metadata for all photos
+│   ├── metadata.txt            # Complete EXIF and file metadata
 │   └── best_IMG_001.jpg        # Best photo selected from group
 ├── group_0002/
-│   ├── originals/
-│   ├── metadata.txt
-│   └── best_IMG_045.jpg
-└── group_NNNN/
-    └── ...
+│   └── ...
+└── reports/
+    ├── report_2026-01-15_143022.json
+    ├── report_2026-01-20_091500.json
+    └── latest.json              # Symlink to most recent report
 ```
 
-### Metadata File Contents
-
-Each `metadata.txt` contains comprehensive information:
-
-- **File Information**: Original filename, full path, file size
-- **Timestamps**: Creation time, modification time
-- **Image Properties**: Dimensions, format, color mode
-- **EXIF Data**: Camera model, lens, settings (ISO, aperture, shutter speed)
-- **Location Data**: GPS coordinates (if available)
-- **Date/Time**: Original capture timestamp from EXIF
-
-Example:
-```
-Photo Group - 3 images
-================================================================================
-
-Photo 1: IMG_2024_001.jpg
---------------------------------------------------------------------------------
-filename: IMG_2024_001.jpg
-filepath: /home/user/Photos/2024/IMG_2024_001.jpg
-filesize: 4234567
-dimensions: 4032x3024
-format: JPEG
-exif_Make: Canon
-exif_Model: Canon EOS R5
-exif_DateTimeOriginal: 2024:03:15 14:23:45
-exif_FNumber: 2.8
-exif_ExposureTime: 1/500
-exif_ISOSpeedRatings: 400
-```
-
-## Configuration Guide
-
-### Similarity Threshold Guide
-
-The threshold parameter controls how similar photos must be to be grouped:
-
-| Threshold | Use Case | Description |
-|-----------|----------|-------------|
-| **0-3** | Duplicates | Only near-identical photos (different exposures of same shot) |
-| **4-6** | Burst photos | Recommended for typical burst sequences (default: 5) |
-| **7-10** | Similar scenes | Groups photos of same subject from different angles |
-| **11+** | Very loose | May group unrelated but visually similar photos |
-
-### Time Window Guide
-
-| Window | Use Case |
-|--------|----------|
-| **60s** | High-speed bursts, sports photography |
-| **300s (default)** | Standard burst photography, family photos |
-| **600s** | Event photography, multiple compositions of scenes |
-| **--time-window 0** | Duplicate detection across entire library |
-
-## Face Detection Backends
-
-The organizer uses a pluggable face detection backend controlled by `--face-backend`:
-
-| Backend | `--face-backend` | Detection | Landmarks (EAR) | Face Encoding | Install Complexity |
-|---------|-------------------|-----------|-----------------|---------------|-------------------|
-| **face_recognition** | `face_recognition` | dlib HOG/CNN | 68-point (dlib) | Yes (128-d) | High (requires dlib compilation) |
-| **MediaPipe** | `mediapipe` | FaceLandmarker | 468-point (FaceMesh) | No | Low (`pip install mediapipe`) |
-| **Auto** (default) | `auto` | Tries face_recognition first, then MediaPipe | — | — | — |
-
-### Currently Supported
-
-**face_recognition (dlib)** — The original backend. Provides face encoding for identity matching (needed for face-swap). Requires dlib compilation (or `dlib-binary`). Can be noisy (DGESVD warnings) but works reliably.
-
-**MediaPipe** — Google's lightweight face detection. No compilation needed, just `pip install mediapipe`. Requires downloading a model file:
-
-```bash
-mkdir -p models
-curl -sSL -o models/face_landmarker.task \
-  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
-```
-
-MediaPipe provides 468-point landmarks (mapped to 6-point eye contours for EAR calculation) but does not support face encoding, so the face-swap feature (`--enable-face-swap`) is unavailable with this backend.
-
-**Immich Server-Side Faces** — When using `--immich-use-server-faces`, the organizer uses Immich's built-in face detection data (bounding boxes, person recognition) for best-photo selection. This avoids downloading photos for face analysis and scores by face area (larger faces = clearer shots). Combine with `--immich-group-by-person` to organize by person.
-
-### Other Alternatives (Not Yet Implemented)
-
-These backends could be added in the future via the `FaceBackend` abstraction:
-
-| Library | Strengths | Limitations |
-|---------|-----------|-------------|
-| **InsightFace** | State-of-the-art accuracy, fast GPU inference, face encoding via ArcFace | Heavy install (~1GB models), ONNX Runtime dependency |
-| **DeepFace** | Unified API for multiple models (VGGFace, ArcFace, Facenet), face encoding | Meta-library with large dependencies, slower |
-| **YOLOv8-Face** | Best detection speed, good for large libraries | Detection only (no landmarks or encoding), Ultralytics dependency |
-| **RetinaFace** | Excellent accuracy on small/occluded faces, 5-point landmarks | No encoding, moderate speed |
-| **dlib (direct)** | Fewer dependencies than face_recognition, same underlying models | Same 2015-era model limitations |
-
-## How It Works
-
-1. **Discovery Phase**
-   - Recursively scans source directory for supported image formats
-   - Extracts metadata from each photo (EXIF data, file info, timestamps)
-
-2. **Hashing Phase**
-   - Computes perceptual hash (dHash) for each photo
-   - Creates visual fingerprint resistant to minor edits/resizing
-
-3. **Grouping Phase**
-   - Compares perceptual hashes using Hamming distance
-   - Groups photos below similarity threshold
-   - Optionally filters by temporal proximity
-
-4. **Analysis Phase**
-   - Detects faces using pluggable backend (face_recognition or MediaPipe)
-   - Scores faces for quality (open eyes, smiling)
-   - Uses OpenCV for additional facial feature detection
-
-5. **Selection Phase**
-   - Ranks photos in each group by face quality scores
-   - Selects best overall photo from group
-   - Falls back to first photo if no faces detected
-
-6. **Organization Phase**
-   - Creates structured output directories
-   - Copies originals to preserve source files
-   - Saves comprehensive metadata
-   - Copies best photo to group root
-
-## Performance
-
-### Processing Speeds
-
-- **Small collections** (< 1,000 photos): 5-10 minutes
-- **Medium collections** (1,000-10,000 photos): 30-60 minutes
-- **Large collections** (10,000-50,000 photos): 2-4 hours
-- **Very large collections** (128GB+): 4-8 hours
-
-**Factors affecting speed:**
-- CPU speed and core count
-- Storage type (SSD vs HDD)
-- Image resolution and format
-- Number of faces in photos
-
-### Memory Usage
-
-- **Typical**: 2-4 GB RAM
-- **Large libraries**: 4-8 GB RAM
-- **Peak usage**: During hash computation and face detection
-
-### Optimization Tips
-
-1. **Use SSD** for both source and output directories
-2. **Process in batches** by year or event for very large libraries
-3. **Start with higher threshold** (e.g., -t 7) to create fewer, larger groups
-4. **Test on subset first** to tune parameters before full run
-
-**Example batch processing:**
-```bash
-# Process by year
-for year in 2020 2021 2022 2023 2024; do
-  ./photo_organizer.py -s ~/Photos/$year -o ~/Organized/$year
-done
-```
-
-## Supported Formats
-
-| Format | Extensions | Notes |
-|--------|-----------|-------|
-| **JPEG** | .jpg, .jpeg | Most common, fully supported |
-| **PNG** | .png | Lossless format, fully supported |
-| **HEIC** | .heic | Apple Photos format, requires Pillow HEIC support |
-| **RAW** | .cr2, .nef, .arw, .dng | Canon, Nikon, Sony, Adobe RAW formats |
-
-**Note on RAW formats**: RAW files are processed for similarity detection and metadata extraction. The "best photo" output will be in the original RAW format.
-
-## Troubleshooting
-
-### Installation Issues
-
-**dlib won't compile:**
-```bash
-# Ensure build tools are installed
-# Ubuntu/Debian:
-sudo apt-get install build-essential cmake python3.11-dev
-
-# Try pre-built version instead:
-pip install dlib-binary
-```
-
-**face_recognition import error:**
-```bash
-# Reinstall face_recognition_models
-pip uninstall face_recognition_models -y
-pip install git+https://github.com/ageitgey/face_recognition_models
-
-# Verify:
-python -c "import face_recognition; print('Success!')"
-```
-
-**OpenCV missing libraries (non-NixOS):**
-```bash
-# Ubuntu/Debian:
-sudo apt-get install libgl1-mesa-glx libglib2.0-0
-
-# macOS: usually works out of the box
-# Windows: Install Visual C++ Redistributable
-```
-
-### Runtime Issues
-
-**"Out of memory" errors:**
-- Process smaller batches
-- Close other applications
-- Use a machine with more RAM
-- Consider processing by year or folder
-
-**Slow processing:**
-- Move photos to SSD
-- Increase similarity threshold to reduce groups
-- Process fewer photos at once
-- Check if antivirus is scanning files
-
-**No faces detected:**
-- Ensure photos contain clear, front-facing faces
-- Check photo quality and lighting
-- Face detection works best with faces > 50x50 pixels
-- Profile/side faces may not be detected
-
-**Wrong "best photo" selected:**
-- Face detection prefers:
-  - Open eyes (weighted heavily)
-  - Smiles
-  - Multiple faces all meeting criteria
-- Manual review recommended for important photo groups
-
-### NixOS Specific Issues
-
-**Library linking errors:**
-```bash
-# Ensure LD_LIBRARY_PATH is set correctly
-echo $LD_LIBRARY_PATH
-# Should include paths to libGL, libstdc++, glib, etc.
-
-# Reload environment
-direnv reload
-# or
-exit && nix develop
-```
-
-**DGESVD warnings:**
-These are harmless BLAS/LAPACK threading warnings. They're suppressed in the NixOS environment but don't affect functionality.
+---
 
 ## Development
 
 ### Running Tests
 
 ```bash
-# Verify environment
 python scripts/verify_environment.py
-
-# Test with limited photos (processes first 100 photos only)
-./photo_organizer.py -s ~/Photos -o ~/Organized --limit 100
-
-# Run with verbose output to debug
+./photo_organizer.py -s test_photos -o output --limit 100 --dry-run
 ./photo_organizer.py -s test_photos -o output --verbose
-
-# Dry run to test without changes
-./photo_organizer.py -s test_photos -o output --dry-run
-
-# Combine test mode with resume capability
-./photo_organizer.py -s ~/Photos -o ~/Organized --limit 100 --resume
 ```
 
 ### Project Structure
 
 ```
 photoAlbumOrganizer/
-├── photo_organizer.py         # Main entry point (CLI argument parsing)
-├── src/                       # Python source code
-│   ├── interactive.py        # Interactive setup menu and settings save/load
-│   ├── organizer.py          # Core PhotoOrganizer class
-│   ├── grouping.py           # Perceptual hashing and similarity grouping
-│   ├── image_processing.py   # Face detection, HDR, and face swapping
-│   ├── face_backend.py       # Pluggable face detection backend abstraction
-│   ├── photo_sources.py      # Photo source abstraction (local/Immich)
-│   ├── immich_client.py      # Immich API client
-│   ├── web_viewer.py         # Built-in web viewer for reviewing results
-│   ├── cleanup.py            # Immich cleanup/undo operations
-│   ├── processing_state.py   # Resume capability state management
-│   └── utils.py              # Logging setup and utilities
-├── scripts/                   # Utility scripts
-│   ├── viewer                # Web viewer lifecycle manager (start/stop/status + watchdog)
-│   ├── immich.sh             # Immich wrapper script
-│   ├── test_immich_connection.py  # Test Immich connectivity
-│   └── verify_environment.py      # Environment verification
-├── docs/                      # Documentation
-│   ├── IMMICH.md             # Immich integration guide
-│   ├── IMMICH_INTEGRATION.md # Immich integration details
-│   ├── RESUME_CAPABILITY.md  # Resume feature guide
-│   ├── CLOUD_INTEGRATION_DESIGN.md  # Apple/Google Photos design
-│   ├── NIXOS_SETUP.md        # NixOS setup guide
-│   ├── DIRENV_SETUP.md       # direnv configuration guide
-│   ├── QUICKSTART.md         # Quick start guide
-│   └── ...                   # Additional documentation
-├── models/                    # Downloaded model files (not tracked in git)
-│   └── face_landmarker.task  # MediaPipe face model (download separately)
-├── requirements.txt          # Python dependencies
-├── flake.nix                 # NixOS development environment
-├── shell.nix                 # Alternative NixOS shell
-├── .envrc                    # direnv configuration
-├── README.md                 # This file
-└── LICENSE                   # MIT License
+├── photo_organizer.py          # Main entry point
+├── src/
+│   ├── face_backend.py         # Pluggable face detection abstraction
+│   ├── interactive.py          # Interactive menu and settings
+│   ├── organizer.py            # Core PhotoOrganizer class
+│   ├── grouping.py             # Perceptual hashing and grouping
+│   ├── image_processing.py     # Face detection, HDR, face swapping
+│   ├── photo_sources.py        # Local/Immich photo source abstraction
+│   ├── immich_client.py        # Immich API client
+│   ├── web_viewer.py           # Built-in web viewer
+│   ├── cleanup.py              # Immich cleanup/undo operations
+│   ├── processing_state.py     # Resume capability
+│   └── utils.py                # Logging and utilities
+├── scripts/
+│   ├── viewer                  # Web viewer lifecycle (start/stop/status + watchdog)
+│   ├── immich.sh               # Immich operations wrapper
+│   ├── test_immich_connection.py
+│   └── verify_environment.py
+├── docs/
+│   ├── IMMICH.md               # Immich integration guide
+│   ├── CONFIGURATION.md        # Threshold, time window, settings guide
+│   ├── FACE_BACKENDS.md        # Face detection backends + GPU-capable backends
+│   ├── GPU_ACCELERATION.md     # GPU setup and design
+│   ├── PERFORMANCE.md          # Performance tuning and supported formats
+│   ├── TROUBLESHOOTING.md      # Common issues and fixes
+│   ├── DIRENV_SETUP.md         # direnv configuration guide
+│   ├── QUICKSTART.md           # Quick start guide
+│   ├── ENHANCEMENT_ROADMAP.md  # Feature roadmap and status
+│   └── ADVANCED_FEATURES_ROADMAP.md
+├── models/                     # Downloaded model files (not tracked in git)
+├── requirements.txt
+├── flake.nix                   # NixOS development environment
+└── .envrc                      # direnv configuration
 ```
 
 ### Contributing
 
-Contributions welcome! Please:
-
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Recent Enhancements
-
-- [x] **Web Viewer** - Built-in web-based review interface for browsing organizer results
-  - View all groups with thumbnails and full-resolution previews
-  - Compare EXIF metadata across photos in a group
-  - Change best photo selection directly from the viewer
-  - Bulk actions: archive non-best, delete non-best, discard changes
-  - Proxied Immich thumbnails/previews (no CORS issues, API key hidden)
-  - Launches automatically from interactive mode when a report exists
-  - `--web-viewer` flag for standalone use, `--port` to customize
-
-- [x] **Immich Cleanup** - Undo/cleanup previous organizer changes from interactive mode
-  - Delete albums by prefix
-  - Remove photo-organizer/* tags
-  - Unfavorite 'best' tagged photos
-  - Unarchive 'non-best' tagged photos
-  - Full cleanup (all above in sequence)
-  - `--cleanup` flag for standalone use
-
-- [x] **Enhanced Immich Actions** - Archive non-best, structured tags, CLIP search, server-side duplicates
-  - `--archive-non-best` to hide non-best photos without deleting
-  - Structured tags via Immich tag API (best/non-best/group/person)
-  - `--immich-use-duplicates` to use Immich server-side duplicate detection
-  - `--immich-smart-search` for CLIP semantic search pre-filtering
-  - Concurrent photo prefetching for faster processing
-  - Bulk API operations for efficiency
-
-- [x] **Group by Person** - Organize photos by recognized person using Immich face detection
-  - `--immich-group-by-person` to group by person
-  - `--immich-person` to filter to specific person
-  - `--immich-use-server-faces` for server-side face quality scoring
-
-- [x] **Configurable Group Size** - `--min-group-size N` (default 3, min 2)
-
-- [x] **JSON State Files** - Migrated from pickle to JSON for security and portability
-  - Automatic migration from old `.pkl` files on resume
-
-- [x] **Interactive Setup Menu** - Guided `-i` mode with save/load settings
-  - Step-by-step walkthrough of all options with sensible defaults
-  - Save configuration to `.photo_organizer_settings.json` for reuse
-  - API keys excluded from saved files and re-prompted on load
-  - direnv prompt on directory entry to run or launch setup
-
-- [x] **Immich Integration** - Full integration with Immich self-hosted photo management
-  - Tag duplicates directly in Immich
-  - Create organized albums
-  - Mark best photos as favorites
-  - Smart caching for performance
-  - See [docs/IMMICH.md](docs/IMMICH.md) for details
-
-- [x] **Resume Capability** - Interrupt and resume long-running jobs without losing progress
-  - Automatic state persistence every 50 photos
-  - Graceful interruption with Ctrl+C
-  - Hash caching for faster resume
-  - Skip already-processed groups
-  - See [docs/RESUME_CAPABILITY.md](docs/RESUME_CAPABILITY.md) for details
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes
+4. Push and open a Pull Request
 
 ### Known Issues
 
-- **face_recognition unmaintained** — The [face_recognition](https://github.com/ageitgey/face_recognition) library hasn't been updated since ~2020 and relies on a 2015-era dlib model. MediaPipe is now available as an alternative backend via `--face-backend mediapipe`. Note: MediaPipe does not support face encoding, so face-swap matching is unavailable with it.
-- **OMP_NUM_THREADS=1 in flake.nix** — OpenBLAS/LAPACK threading is disabled to suppress warnings, which reduces numerical performance on multi-core systems. The runtime `SuppressStderr` utility may make this unnecessary.
+- **face_recognition unmaintained** — The library hasn't been updated since ~2020 and uses a 2015-era dlib model. MediaPipe is available as an alternative (`--face-backend mediapipe`). InsightFace and FaceNet/PyTorch backends are in progress.
+- **OMP_NUM_THREADS=1 in flake.nix** — OpenBLAS/LAPACK threading disabled to suppress warnings; doesn't affect correctness.
 
 ### Future Enhancements
 
-- [ ] Additional face backends (InsightFace, DeepFace, YOLOv8-Face)
-- [ ] GPU acceleration for face detection
-- [x] Web interface for reviewing and managing groups
-- [ ] Apple Photos integration (macOS only, via `osxphotos`) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
-- [ ] Google Photos integration (OAuth2, read-only) — see [design doc](docs/CLOUD_INTEGRATION_DESIGN.md)
-- [ ] Video support for organizing video clips
-- [ ] Shared album support in Immich
-- [ ] Async/parallel downloads for Immich (using aiohttp)
+- [x] GPU acceleration for face detection (design complete — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md))
+- [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face (design complete — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md))
+- [ ] Async/parallel Immich downloads (`aiohttp`)
+- [ ] Apple Photos integration (macOS, `osxphotos`)
+- [ ] Google Photos integration (OAuth2, read-only)
+- [ ] Video support
+- [ ] ML-based photo quality scoring (CLIP/MobileNetV2)
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/IMMICH.md](docs/IMMICH.md) | Full Immich integration guide |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Quick start guide |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Threshold, time window, settings |
+| [docs/FACE_BACKENDS.md](docs/FACE_BACKENDS.md) | Face detection backends |
+| [docs/GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md) | GPU acceleration design |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Performance tuning, supported formats |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and fixes |
+| [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md) | direnv configuration |
+| [docs/NIXOS_SETUP.md](docs/NIXOS_SETUP.md) | NixOS-specific setup |
+| [docs/ENHANCEMENT_ROADMAP.md](docs/ENHANCEMENT_ROADMAP.md) | Feature roadmap |
+
+---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- **[ImageHash](https://github.com/JohannesBuchner/imagehash)** - Perceptual hashing library
-- **[face_recognition](https://github.com/ageitgey/face_recognition)** - Face detection and recognition (dlib-based)
-- **[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)** - Google's face landmarker (alternative backend)
-- **[Pillow](https://python-pillow.org/)** - Python Imaging Library
-- **[OpenCV](https://opencv.org/)** - Computer vision library
-- **[dlib](http://dlib.net/)** - Machine learning toolkit
+- **[ImageHash](https://github.com/JohannesBuchner/imagehash)** — Perceptual hashing
+- **[face_recognition](https://github.com/ageitgey/face_recognition)** — dlib-based face detection
+- **[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)** — Google face landmarker
+- **[Pillow](https://python-pillow.org/)** — Python Imaging Library
+- **[OpenCV](https://opencv.org/)** — Computer vision library
+- **[Immich](https://immich.app/)** — Self-hosted photo management
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/fkadriver/photoAlbumOrganizer/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/fkadriver/photoAlbumOrganizer/discussions)
-- **Documentation**: See markdown files in repository
-
-## Author
-
-Created for organizing 20 years of photo memories across multiple formats and folder structures. Built with a focus on NixOS integration and reproducible environments.
+- **Documentation**: See `docs/` directory
 
 ---
 
-**Star this repo** if you find it useful! ⭐
+*Created for organizing 20 years of photo memories. Built with a focus on NixOS integration and reproducible environments.*
