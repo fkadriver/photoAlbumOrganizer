@@ -75,6 +75,10 @@ Thumbs.db
 # MediaPipe model files (downloaded at runtime)
 models/*.task
 
+# Web viewer PID files
+.viewer.pid
+.viewer-watchdog.pid
+
 # Nix
 result
 result-*

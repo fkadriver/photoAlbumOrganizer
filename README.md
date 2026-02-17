@@ -172,7 +172,7 @@ At the summary screen, press `s` to save your configuration to `.photo_organizer
 
 **direnv integration:**
 
-If you use direnv, entering the project directory will prompt you to run with saved settings, launch interactive setup, or drop to a shell. Press Enter to drop to the shell (default).
+If you use direnv, entering the project directory will prompt you to run with saved settings, launch interactive setup, start the web viewer, or drop to a shell. Press Enter to drop to the shell (default). Choosing `[v]` starts the web viewer in the background with a watchdog that auto-stops it when you `cd` out of the project.
 
 ### Basic Usage (Local Photos)
 
@@ -212,23 +212,31 @@ python scripts/test_immich_connection.py
 After running the organizer, a `processing_report.json` is generated with all group and photo data. Launch the built-in web viewer to review results:
 
 ```bash
-# Launch viewer (reads processing_report.json by default)
+# Recommended: use the viewer lifecycle script (auto-stops when you leave the directory)
+scripts/viewer start          # Start on default port 8080
+scripts/viewer start 9090     # Start on custom port
+scripts/viewer status         # Check if running
+scripts/viewer stop            # Stop manually
+
+# Or from the direnv prompt: choose [v] Web viewer
+
+# Or launch directly via CLI flags (foreground, no auto-stop)
 ./photo_organizer.py --web-viewer \
   --immich-url https://your-immich-url \
   --immich-api-key YOUR_KEY
-
-# Custom report path and port
-./photo_organizer.py --web-viewer --report /path/to/report.json --port 9090
 ```
+
+The `scripts/viewer` approach runs the server in the background and spawns a watchdog that automatically stops the viewer when your shell leaves the project directory (or when the terminal closes). Immich credentials are loaded from `~/.config/photo-organizer/immich.conf` automatically.
 
 The viewer opens at `http://localhost:8080` and provides:
 - Group grid with thumbnails from Immich
+- Report switcher dropdown to compare different runs
 - Click to expand a group and see all photos with EXIF metadata
 - Lightbox for full-resolution preview
 - Change the "best" photo for any group
 - Bulk actions: archive non-best, delete non-best, discard changes
 
-In interactive mode (`-i`), the web viewer is offered as the **default action** when a previous report exists — just press Enter at the summary screen.
+In interactive mode (`-i`), the web viewer is offered as the **default action** when a previous report exists — just press Enter at the summary screen. With direnv, choosing `[v]` at the prompt starts the viewer with auto-stop.
 
 ### Immich Cleanup
 
@@ -693,6 +701,7 @@ photoAlbumOrganizer/
 │   ├── processing_state.py   # Resume capability state management
 │   └── utils.py              # Logging setup and utilities
 ├── scripts/                   # Utility scripts
+│   ├── viewer                # Web viewer lifecycle manager (start/stop/status + watchdog)
 │   ├── immich.sh             # Immich wrapper script
 │   ├── test_immich_connection.py  # Test Immich connectivity
 │   └── verify_environment.py      # Environment verification

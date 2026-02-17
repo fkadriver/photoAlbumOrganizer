@@ -723,19 +723,31 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 After running the organizer, launch the built-in web viewer to review results visually:
 
 ```bash
+# Recommended: lifecycle-managed background viewer (auto-stops when you leave the directory)
+scripts/viewer start          # Start on port 8080 (loads Immich config automatically)
+scripts/viewer start 9090     # Custom port
+scripts/viewer status         # Check if running
+scripts/viewer stop            # Manual stop
+
+# Or from the direnv prompt: choose [v] Web viewer
+
+# Or launch directly (foreground, no auto-stop)
 ./photo_organizer.py --web-viewer \
   --immich-url https://your-immich-url \
   --immich-api-key YOUR_KEY
 ```
 
+The `scripts/viewer` script runs the server in the background and spawns a watchdog that polls every 3 seconds. When your shell leaves the project directory (or the terminal closes), the watchdog kills the viewer and cleans up PID files automatically. Immich credentials are loaded from `~/.config/photo-organizer/immich.conf` or environment variables.
+
 The viewer proxies thumbnails and previews from Immich (no CORS issues, API key stays server-side). You can:
 - Browse all groups with photo thumbnails
+- Switch between different report runs via the dropdown
 - Click to expand groups and compare EXIF metadata
 - View full-resolution previews in a lightbox
 - Change the "best" photo for any group
 - Bulk archive, delete, or discard changes for selected groups
 
-In interactive mode (`-i`), the web viewer is the **default action** when a previous `processing_report.json` exists.
+In interactive mode (`-i`), the web viewer is the **default action** when a previous `processing_report.json` exists. With direnv, choosing `[v]` at the prompt starts the viewer with auto-stop.
 
 ## Cleanup / Undo
 
@@ -777,6 +789,6 @@ The immich.sh wrapper script makes it easy to use the photo organizer with Immic
 **Quick Start:**
 1. `scripts/immich.sh test` - Test connection
 2. `scripts/immich.sh tag-only` - Find duplicates safely
-3. `./photo_organizer.py --web-viewer` - Review results in the web viewer
+3. `scripts/viewer start` - Review results in the web viewer (auto-stops on directory exit)
 4. `scripts/immich.sh create-albums` - Organize into albums
 5. `./photo_organizer.py --cleanup` - Undo changes if needed
