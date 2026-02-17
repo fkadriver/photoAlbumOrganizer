@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# Resolve project root from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Configuration
 IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
@@ -276,11 +280,7 @@ case "$MODE" in
             echo ""
         fi
 
-        # Resolve project root from script location
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-        python -c "
+        "${PROJECT_ROOT}/venv/bin/python" -c "
 import sys, os, traceback
 sys.path.insert(0, os.path.join('${PROJECT_ROOT}', 'src'))
 
@@ -314,40 +314,24 @@ try:
         print(f'  - {name} (ID: {aid}, {count} assets)')
 
     if dry_run:
-        print(f'\nDRY RUN: Would delete {len(matched_albums)} album(s) and unfavorite their assets')
+        print(f'\nDRY RUN: Would delete {len(matched_albums)} album(s)')
         print('Run with dry_run=no to actually perform cleanup')
         sys.exit(0)
 
-    # Unfavorite assets in matched albums
-    unfavorited = 0
-    for album in matched_albums:
-        aid = album.get('id')
-        if not aid:
-            continue
-        try:
-            assets = client.get_album_assets(aid)
-            for asset in assets:
-                if asset.is_favorite:
-                    if client.update_asset(asset.id, is_favorite=False):
-                        unfavorited += 1
-        except Exception as e:
-            print(f'  Warning: Failed to unfavorite assets in {album.get(\"albumName\")}: {e}')
-
-    if unfavorited > 0:
-        print(f'\n✓ Unfavorited {unfavorited} asset(s)')
-
-    # Delete albums
+    # Delete albums (photos are NOT deleted, only album grouping is removed)
     deleted = 0
-    for album in matched_albums:
+    total = len(matched_albums)
+    for i, album in enumerate(matched_albums, 1):
         name = album.get('albumName', 'Unknown')
         aid = album.get('id')
         if aid and client.delete_album(aid):
             deleted += 1
-            print(f'  ✓ Deleted: {name}')
+            if deleted % 50 == 0 or deleted == total:
+                print(f'  Progress: {deleted}/{total} albums deleted')
         else:
             print(f'  ✗ Failed to delete: {name}')
 
-    print(f'\n✓ Cleaned up {deleted} of {len(matched_albums)} album(s)')
+    print(f'\n✓ Deleted {deleted} of {total} album(s)')
 
 except Exception as e:
     print(f'Error during cleanup: {e}')
@@ -359,7 +343,7 @@ except Exception as e:
     test)
         echo "🧪 Testing connection to Immich..."
         echo ""
-        python scripts/test_immich_connection.py
+        "${PROJECT_ROOT}/venv/bin/python" scripts/test_immich_connection.py
         ;;
 
     help|--help|-h)

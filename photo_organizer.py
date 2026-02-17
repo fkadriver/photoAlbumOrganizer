@@ -392,13 +392,25 @@ Examples:
         immich_client_for_viewer = None
         if args.source_type == 'immich':
             immich_client_for_viewer = photo_source.client
-        start_viewer_background(report_path, port=args.port,
+        viewer_port = getattr(args, 'port', 8080)
+        start_viewer_background(report_path, port=viewer_port,
                                 immich_client=immich_client_for_viewer,
                                 report_dir=report_dir)
-        print(f"\nLive viewer running at http://localhost:{args.port}")
+        print(f"\nLive viewer running at http://localhost:{viewer_port}")
         print(f"Report updates as processing progresses\n")
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
+
+    # If live viewer is running, keep the process alive so the daemon thread persists
+    if getattr(args, 'live_viewer', False):
+        print(f"\nProcessing complete. Viewer still running at http://localhost:{viewer_port}")
+        print("Press Ctrl+C to stop\n")
+        try:
+            while True:
+                import time
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nViewer stopped.")
 
 
 if __name__ == "__main__":
