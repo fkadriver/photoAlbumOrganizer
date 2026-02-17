@@ -9,6 +9,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import imagehash
 
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
+
 from photo_sources import Photo, PhotoSource
 from processing_state import ProcessingState
 

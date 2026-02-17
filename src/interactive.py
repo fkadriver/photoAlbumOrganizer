@@ -419,7 +419,9 @@ def _prompt_run_options():
         except ValueError:
             print("  Invalid number, ignoring limit.")
             limit = None
-    return {"dry_run": dry_run, "verbose": verbose, "limit": limit}
+    live_viewer = _prompt_bool("Start web viewer during processing?", default=False)
+    return {"dry_run": dry_run, "verbose": verbose, "limit": limit,
+            "live_viewer": live_viewer}
 
 
 # --- Summary / confirmation ---
@@ -453,7 +455,7 @@ _SECTION_LAYOUT = [
         "enable_face_swap", "swap_closed_eyes", "face_backend",
     ]),
     (5, "Run Options", [
-        "dry_run", "verbose", "limit",
+        "dry_run", "verbose", "limit", "live_viewer",
     ]),
 ]
 
@@ -534,6 +536,8 @@ def _build_namespace(settings):
     ns.dry_run = settings.get("dry_run", False)
     ns.limit = settings.get("limit")
     ns.threads = settings.get("threads", 2)
+    ns.report_dir = settings.get("report_dir", "reports")
+    ns.live_viewer = settings.get("live_viewer", False)
     ns.interactive = True
     return ns
 
@@ -651,7 +655,8 @@ def run_interactive_menu():
             print("  [e] Edit a section")
             if settings.get("source_type") == "immich":
                 print("  [u] Undo / cleanup previous Immich changes")
-            has_report = os.path.exists("processing_report.json")
+            has_report = (os.path.exists(os.path.join("reports", "latest.json"))
+                          or os.path.exists("processing_report.json"))
             if has_report:
                 print("  [w] Launch web viewer (default)")
             print("  [r] Restart from scratch")
@@ -673,9 +678,13 @@ def run_interactive_menu():
             elif choice in ("q", "quit"):
                 print("\nSetup cancelled.")
                 sys.exit(0)
-            elif choice in ("w", "web") and os.path.exists("processing_report.json"):
+            elif choice in ("w", "web") and has_report:
                 try:
                     from web_viewer import start_viewer
+                    # Find best available report
+                    report_file = os.path.join("reports", "latest.json")
+                    if not os.path.exists(report_file):
+                        report_file = "processing_report.json"
                     immich_client = None
                     if settings.get("source_type") == "immich" and settings.get("immich_api_key"):
                         from immich_client import ImmichClient
@@ -684,7 +693,7 @@ def run_interactive_menu():
                             api_key=settings["immich_api_key"],
                             verify_ssl=not settings.get("no_verify_ssl", False),
                         )
-                    start_viewer("processing_report.json", immich_client=immich_client)
+                    start_viewer(report_file, immich_client=immich_client)
                 except KeyboardInterrupt:
                     print("\n  Viewer stopped.")
                 except Exception as exc:

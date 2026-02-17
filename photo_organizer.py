@@ -177,9 +177,13 @@ Examples:
     parser.add_argument('--web-viewer', action='store_true',
                         help='Launch web viewer for processing report')
     parser.add_argument('--report',
-                        help='Path to processing report JSON (default: processing_report.json)')
+                        help='Path to processing report JSON (default: reports/latest.json)')
+    parser.add_argument('--report-dir', default='reports',
+                        help='Directory for timestamped reports (default: reports)')
     parser.add_argument('--port', type=int, default=8080,
                         help='Web viewer port (default: 8080)')
+    parser.add_argument('--live-viewer', action='store_true',
+                        help='Start web viewer in background during processing')
 
     # Interactive mode
     parser.add_argument('-i', '--interactive', action='store_true',
@@ -196,7 +200,15 @@ Examples:
     if args.web_viewer:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
         from web_viewer import start_viewer
-        report_path = args.report or 'processing_report.json'
+        report_path = args.report
+        if not report_path:
+            # Try reports/latest.json first, fall back to processing_report.json
+            if os.path.exists(os.path.join(args.report_dir, 'latest.json')):
+                report_path = os.path.join(args.report_dir, 'latest.json')
+            elif os.path.exists('processing_report.json'):
+                report_path = 'processing_report.json'
+            else:
+                report_path = os.path.join(args.report_dir, 'latest.json')
         immich_client = None
         if args.immich_url and args.immich_api_key:
             from immich_client import ImmichClient
@@ -367,7 +379,24 @@ Examples:
         archive_non_best=getattr(args, 'archive_non_best', False),
         immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
         immich_smart_search=getattr(args, 'immich_smart_search', None),
+        report_dir=getattr(args, 'report_dir', 'reports'),
     )
+
+    # Start live viewer if requested
+    if getattr(args, 'live_viewer', False):
+        from web_viewer import start_viewer_background
+        report_dir = getattr(args, 'report_dir', 'reports')
+        report_path = os.path.join(report_dir, 'latest.json')
+        # Write empty initial report so viewer can start
+        organizer._write_report([])
+        immich_client_for_viewer = None
+        if args.source_type == 'immich':
+            immich_client_for_viewer = photo_source.client
+        start_viewer_background(report_path, port=args.port,
+                                immich_client=immich_client_for_viewer,
+                                report_dir=report_dir)
+        print(f"\nLive viewer running at http://localhost:{args.port}")
+        print(f"Report updates as processing progresses\n")
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
 

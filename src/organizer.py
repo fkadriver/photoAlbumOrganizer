@@ -39,7 +39,8 @@ class PhotoOrganizer:
                  immich_use_server_faces=False,
                  archive_non_best=False,
                  immich_use_duplicates=False,
-                 immich_smart_search=None):
+                 immich_smart_search=None,
+                 report_dir="reports"):
         """
         Initialize the photo organizer.
 
@@ -94,9 +95,33 @@ class PhotoOrganizer:
         self.archive_non_best = archive_non_best
         self.immich_use_duplicates = immich_use_duplicates
         self.immich_smart_search = immich_smart_search
+        self.report_dir = Path(report_dir) if report_dir else Path("reports")
 
         # Processing report for web viewer
         self.report = {"groups": [], "metadata": {}}
+
+        # Capture run settings for the report
+        self.report["settings"] = {
+            "source_type": photo_source.__class__.__name__,
+            "similarity_threshold": similarity_threshold,
+            "time_window": time_window,
+            "use_time_window": use_time_window,
+            "min_group_size": min_group_size,
+            "tag_only": tag_only,
+            "create_albums": create_albums,
+            "album_prefix": album_prefix,
+            "mark_best_favorite": mark_best_favorite,
+            "limit": limit,
+            "enable_hdr": enable_hdr,
+            "enable_face_swap": enable_face_swap,
+            "threads": threads,
+            "immich_group_by_person": immich_group_by_person,
+            "immich_person": immich_person,
+            "immich_use_server_faces": immich_use_server_faces,
+            "archive_non_best": archive_non_best,
+            "immich_use_duplicates": immich_use_duplicates,
+            "immich_smart_search": immich_smart_search,
+        }
 
         # Configure face detection backend
         if face_backend != 'auto':
@@ -482,7 +507,7 @@ class PhotoOrganizer:
         print(f"  Tagged {len(group)} photos (best: {best_id[:8]}...)")
 
     def _write_report(self, groups):
-        """Write processing report JSON for the web viewer."""
+        """Write processing report JSON to timestamped file in reports/ directory."""
         self.report["metadata"] = {
             "total_groups": len(groups),
             "total_photos": sum(len(g) for g in groups),
@@ -495,15 +520,26 @@ class PhotoOrganizer:
         if hasattr(self.photo_source, 'client'):
             self.report["metadata"]["immich_url"] = self.photo_source.client.url
 
-        report_path = Path("processing_report.json")
-        if self.output_dir:
-            report_path = self.output_dir / "processing_report.json"
-
         try:
-            with open(report_path, "w") as f:
+            # Create reports directory
+            self.report_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate timestamped filename (reuse same timestamp for the run)
+            if not hasattr(self, '_report_timestamp'):
+                self._report_timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+            timestamped_path = self.report_dir / f"report_{self._report_timestamp}.json"
+
+            # Write timestamped report
+            with open(timestamped_path, "w") as f:
                 json.dump(self.report, f, indent=2, default=str)
-            print(f"\nReport saved to: {report_path}")
-            logging.info(f"Processing report written to {report_path}")
+
+            # Update latest.json as a copy
+            latest_path = self.report_dir / "latest.json"
+            with open(latest_path, "w") as f:
+                json.dump(self.report, f, indent=2, default=str)
+
+            print(f"\nReport saved to: {timestamped_path}")
+            logging.info(f"Processing report written to {timestamped_path}")
         except Exception as e:
             logging.warning(f"Failed to write processing report: {e}")
 
@@ -676,10 +712,13 @@ class PhotoOrganizer:
 
             self.report["groups"].append(group_report)
 
+            # Write incremental report so live viewer can show progress
+            self._write_report(groups)
+
             # Mark group as completed
             self.state.mark_group_completed(i)
 
-        # Write processing report
+        # Final report write (ensures complete metadata)
         self._write_report(groups)
 
         # If we completed all groups successfully, cleanup state file

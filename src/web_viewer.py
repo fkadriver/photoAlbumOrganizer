@@ -15,6 +15,7 @@ from pathlib import Path
 
 # Will be set by start_viewer()
 _report_path = None
+_report_dir = None
 _immich_client = None
 
 
@@ -134,6 +135,33 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   .btn-cancel { background: #555; color: #fff; }
   .bulk-bar .sep { border-left: 1px solid #555; height: 24px; }
 
+  /* Tab bar */
+  .tab-bar { display: flex; gap: 0; background: var(--card); border-bottom: 1px solid #333; }
+  .tab-bar button { padding: 0.6rem 1.5rem; border: none; background: transparent; color: var(--text);
+                    cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent;
+                    opacity: 0.6; transition: all 0.15s; }
+  .tab-bar button.active { border-bottom-color: var(--accent); opacity: 1; font-weight: 600; }
+  .tab-bar button:hover { opacity: 0.9; }
+
+  /* People view */
+  .people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                 gap: 1rem; padding: 1.5rem 2rem; }
+  .person-card { background: var(--card); border-radius: 8px; overflow: hidden; cursor: pointer;
+                 transition: transform 0.15s; border: 2px solid transparent; text-align: center; }
+  .person-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .person-card img { width: 100%; height: 160px; object-fit: cover; }
+  .person-card .person-info { padding: 0.5rem; }
+  .person-card .person-name { font-weight: 600; font-size: 0.9rem; }
+  .person-card .person-count { font-size: 0.75rem; opacity: 0.6; }
+  .person-photos { padding: 1.5rem 2rem; }
+  .person-photos h3 { margin-bottom: 1rem; }
+  .person-photos .back-btn { background: var(--accent); color: #fff; border: none; padding: 0.4rem 1rem;
+                              border-radius: 4px; cursor: pointer; margin-bottom: 1rem; font-size: 0.85rem; }
+  .person-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                       gap: 0.5rem; }
+  .person-photo-grid img { width: 100%; height: 140px; object-fit: cover; border-radius: 4px;
+                           cursor: pointer; }
+
   /* Toast notification */
   .toast { position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%);
            background: var(--card); border: 1px solid var(--accent); padding: 0.6rem 1.2rem;
@@ -148,12 +176,24 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   <div class="stats" id="stats"></div>
 </header>
 
-<div class="controls">
-  <input type="text" id="search" placeholder="Filter by person, filename...">
-  <label><input type="checkbox" id="bulkMode"> Bulk select</label>
+<div class="tab-bar">
+  <button class="active" id="tabGroups" onclick="switchTab('groups')">Groups</button>
+  <button id="tabPeople" onclick="switchTab('people')">People</button>
 </div>
 
-<div class="grid" id="grid"></div>
+<div id="groupsView">
+  <div class="controls">
+    <select id="reportSelect" style="padding:0.4rem;border-radius:4px;border:1px solid #555;background:#222;color:var(--text);"></select>
+    <input type="text" id="search" placeholder="Filter by person, filename...">
+    <label><input type="checkbox" id="bulkMode"> Bulk select</label>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div id="peopleView" style="display:none;">
+  <div class="people-grid" id="peopleGrid"></div>
+  <div class="person-photos" id="personPhotos" style="display:none;"></div>
+</div>
 
 <div class="overlay" id="overlay">
   <button class="close-btn" id="closeBtn">&times;</button>
@@ -181,6 +221,7 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
 <script>
 let report = null;
 let selectedGroups = new Set();
+let currentReportFile = null;
 
 function toast(msg, ms) {
   const el = document.getElementById('toast');
@@ -189,17 +230,48 @@ function toast(msg, ms) {
   setTimeout(() => el.classList.remove('show'), ms || 3000);
 }
 
+async function loadReportList() {
+  try {
+    const resp = await fetch('/api/reports');
+    const reports = await resp.json();
+    const sel = document.getElementById('reportSelect');
+    sel.innerHTML = '<option value="">Current report</option>';
+    reports.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.filename;
+      const date = r.generated_at ? r.generated_at.replace('T', ' ').substring(0, 19) : r.filename;
+      const summary = r.settings_summary
+        ? ` (t=${r.settings_summary.threshold || '?'}, ${r.total_groups || 0} groups)`
+        : '';
+      opt.textContent = date + summary;
+      sel.appendChild(opt);
+    });
+    sel.onchange = async () => {
+      currentReportFile = sel.value;
+      await load();
+    };
+  } catch(e) { /* reports dir may not exist */ }
+}
+
 async function load() {
-  const resp = await fetch('/api/report');
+  let url = '/api/report';
+  if (currentReportFile) {
+    url = '/api/report/' + currentReportFile;
+  }
+  const resp = await fetch(url);
   report = await resp.json();
   render();
 }
 
 function render() {
   const meta = report.metadata || {};
-  document.getElementById('stats').textContent =
-    `${meta.total_groups || 0} groups | ${meta.total_photos || 0} photos | ` +
-    `threshold: ${meta.similarity_threshold || '?'} | ${meta.generated_at || ''}`;
+  const settings = report.settings || {};
+  let statsText = `${meta.total_groups || 0} groups | ${meta.total_photos || 0} photos | ` +
+    `threshold: ${settings.similarity_threshold || meta.similarity_threshold || '?'}`;
+  if (settings.limit) statsText += ` | limit: ${settings.limit}`;
+  if (settings.source_type) statsText += ` | ${settings.source_type}`;
+  statsText += ` | ${meta.generated_at || ''}`;
+  document.getElementById('stats').textContent = statsText;
 
   const filter = document.getElementById('search').value.toLowerCase();
   const grid = document.getElementById('grid');
@@ -411,6 +483,89 @@ document.getElementById('bulkMode').onchange = () => {
   }
 };
 
+/* Tab switching */
+function switchTab(tab) {
+  document.getElementById('tabGroups').classList.toggle('active', tab === 'groups');
+  document.getElementById('tabPeople').classList.toggle('active', tab === 'people');
+  document.getElementById('groupsView').style.display = tab === 'groups' ? '' : 'none';
+  document.getElementById('peopleView').style.display = tab === 'people' ? '' : 'none';
+  if (tab === 'people') loadPeople();
+}
+
+/* People view */
+let peopleCache = null;
+
+async function loadPeople() {
+  const grid = document.getElementById('peopleGrid');
+  const photos = document.getElementById('personPhotos');
+  photos.style.display = 'none';
+  grid.style.display = '';
+
+  if (!peopleCache) {
+    grid.innerHTML = '<div style="padding:2rem;opacity:0.6">Loading people...</div>';
+    try {
+      const resp = await fetch('/api/people');
+      peopleCache = await resp.json();
+      if (peopleCache.error) {
+        grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">${peopleCache.error}</div>`;
+        return;
+      }
+    } catch(e) {
+      grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">Failed to load people: ${e}</div>`;
+      return;
+    }
+  }
+
+  grid.innerHTML = '';
+  peopleCache.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'person-card';
+    card.onclick = () => showPersonPhotos(p);
+    card.innerHTML = `
+      <img src="/api/people/${p.id}/thumbnail" alt="${p.name}" loading="lazy">
+      <div class="person-info">
+        <div class="person-name">${p.name}</div>
+        <div class="person-count">${p.assetCount} photo${p.assetCount !== 1 ? 's' : ''}</div>
+      </div>`;
+    grid.appendChild(card);
+  });
+
+  if (peopleCache.length === 0) {
+    grid.innerHTML = '<div style="padding:2rem;opacity:0.6">No named people found in Immich</div>';
+  }
+}
+
+async function showPersonPhotos(person) {
+  const grid = document.getElementById('peopleGrid');
+  const container = document.getElementById('personPhotos');
+  grid.style.display = 'none';
+  container.style.display = '';
+  container.innerHTML = `
+    <button class="back-btn" onclick="loadPeople()">Back to People</button>
+    <h3>${person.name} (${person.assetCount} photos)</h3>
+    <div style="padding:1rem 0;opacity:0.6">Loading photos...</div>`;
+
+  try {
+    const resp = await fetch('/api/people/' + person.id + '/photos');
+    const photos = await resp.json();
+    let photoGrid = '<div class="person-photo-grid">';
+    photos.forEach(p => {
+      photoGrid += `<img src="/api/thumbnail/${p.asset_id}" alt="${p.filename || ''}"
+                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}')">`;
+    });
+    photoGrid += '</div>';
+    container.innerHTML = `
+      <button class="back-btn" onclick="loadPeople()">Back to People</button>
+      <h3>${person.name} (${photos.length} photos loaded)</h3>
+      ${photoGrid}`;
+  } catch(e) {
+    container.innerHTML = `
+      <button class="back-btn" onclick="loadPeople()">Back to People</button>
+      <div style="color:var(--danger)">Failed to load photos: ${e}</div>`;
+  }
+}
+
+loadReportList();
 load();
 </script>
 </body>
@@ -458,6 +613,13 @@ class ViewerHandler(BaseHTTPRequestHandler):
         elif path == "/api/report":
             self._send_json(_load_report())
 
+        elif path == "/api/reports":
+            self._handle_list_reports()
+
+        elif path.startswith("/api/report/"):
+            filename = path[len("/api/report/"):]
+            self._handle_get_report(filename)
+
         elif path.startswith("/api/thumbnail/"):
             asset_id = path[len("/api/thumbnail/"):]
             self._proxy_image(asset_id, "thumbnail")
@@ -469,6 +631,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/full/"):
             asset_id = path[len("/api/full/"):]
             self._proxy_full(asset_id)
+
+        elif path == "/api/people":
+            self._handle_people()
+
+        elif path.startswith("/api/people/") and path.endswith("/thumbnail"):
+            person_id = path[len("/api/people/"):-len("/thumbnail")]
+            self._handle_person_thumbnail(person_id)
+
+        elif path.startswith("/api/people/") and path.endswith("/photos"):
+            person_id = path[len("/api/people/"):-len("/photos")]
+            self._handle_person_photos(person_id)
 
         else:
             self.send_error(404)
@@ -494,6 +667,99 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._send_image(data, content_type="image/jpeg")
         else:
             self.send_error(404, "Asset not found")
+
+    def _handle_people(self):
+        """Return list of named people from Immich."""
+        if not _immich_client:
+            self._send_json({"error": "No Immich client configured"}, 503)
+            return
+        people = _immich_client.get_people()
+        # Filter to named people and format response
+        result = []
+        for p in people:
+            name = p.get('name', '').strip()
+            if not name:
+                continue
+            result.append({
+                "id": p.get('id'),
+                "name": name,
+                "thumbnailPath": p.get('thumbnailPath', ''),
+                "assetCount": p.get('assetCount', 0),
+            })
+        result.sort(key=lambda x: x['name'].lower())
+        self._send_json(result)
+
+    def _handle_person_thumbnail(self, person_id):
+        """Proxy person face thumbnail from Immich."""
+        if not _immich_client:
+            self.send_error(503, "No Immich client configured")
+            return
+        data = _immich_client.get_person_thumbnail(person_id)
+        if data:
+            self._send_image(data)
+        else:
+            self.send_error(404, "Person thumbnail not found")
+
+    def _handle_person_photos(self, person_id):
+        """Return photo list for a specific person."""
+        if not _immich_client:
+            self._send_json({"error": "No Immich client configured"}, 503)
+            return
+        assets = _immich_client.get_person_assets(person_id, limit=200)
+        result = []
+        for a in assets:
+            result.append({
+                "id": a.id,
+                "asset_id": a.id,
+                "filename": a.original_file_name,
+            })
+        self._send_json(result)
+
+    def _handle_list_reports(self):
+        """List all report files in the reports directory."""
+        reports = []
+        report_dir = Path(_report_dir) if _report_dir else Path("reports")
+        if report_dir.is_dir():
+            for f in sorted(report_dir.glob("report_*.json"), reverse=True):
+                try:
+                    with open(f) as fh:
+                        data = json.load(fh)
+                    meta = data.get("metadata", {})
+                    settings = data.get("settings", {})
+                    reports.append({
+                        "filename": f.name,
+                        "generated_at": meta.get("generated_at", ""),
+                        "total_groups": meta.get("total_groups", 0),
+                        "total_photos": meta.get("total_photos", 0),
+                        "settings_summary": {
+                            "source_type": settings.get("source_type", ""),
+                            "threshold": settings.get("similarity_threshold", ""),
+                            "limit": settings.get("limit"),
+                        },
+                    })
+                except Exception:
+                    reports.append({"filename": f.name, "error": "Could not parse"})
+        self._send_json(reports)
+
+    def _handle_get_report(self, filename):
+        """Serve a specific report file from the reports directory."""
+        report_dir = Path(_report_dir) if _report_dir else Path("reports")
+        report_file = report_dir / filename
+        # Prevent path traversal
+        try:
+            report_file.resolve().relative_to(report_dir.resolve())
+        except ValueError:
+            self.send_error(403, "Forbidden")
+            return
+        if not report_file.exists():
+            self.send_error(404, "Report not found")
+            return
+        try:
+            with open(report_file) as f:
+                data = json.load(f)
+            self._send_json(data)
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -609,7 +875,33 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self._send_json({"ok": True, "message": messages.get(action, "Done")})
 
 
-def start_viewer(report_path, port=8080, immich_client=None):
+def start_viewer_background(report_path, port=8080, immich_client=None, report_dir="reports"):
+    """
+    Start the web viewer server in a background daemon thread.
+
+    Args:
+        report_path: Path to the report JSON file
+        port: HTTP port (default: 8080)
+        immich_client: Optional ImmichClient for thumbnail proxying
+        report_dir: Directory containing timestamped reports
+
+    Returns:
+        The background thread
+    """
+    import threading
+
+    global _report_path, _immich_client, _report_dir
+    _report_path = str(report_path)
+    _immich_client = immich_client
+    _report_dir = str(report_dir)
+
+    server = HTTPServer(("0.0.0.0", port), ViewerHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return thread
+
+
+def start_viewer(report_path, port=8080, immich_client=None, report_dir="reports"):
     """
     Start the web viewer server.
 
@@ -617,10 +909,12 @@ def start_viewer(report_path, port=8080, immich_client=None):
         report_path: Path to processing_report.json
         port: HTTP port (default: 8080)
         immich_client: Optional ImmichClient for thumbnail proxying and actions
+        report_dir: Directory containing timestamped reports (default: reports)
     """
-    global _report_path, _immich_client
+    global _report_path, _immich_client, _report_dir
     _report_path = str(report_path)
     _immich_client = immich_client
+    _report_dir = str(report_dir)
 
     if not os.path.exists(_report_path):
         print(f"Error: Report file not found: {_report_path}")

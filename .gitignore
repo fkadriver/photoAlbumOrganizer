@@ -59,6 +59,10 @@ organized_photos/
 
 # Interactive menu saved settings
 .photo_organizer_settings.json
+processing_report.json
+
+# Reports directory (timestamped run reports)
+reports/
 
 # Logs and debugging
 *.log
