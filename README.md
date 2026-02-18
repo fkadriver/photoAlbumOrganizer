@@ -67,9 +67,18 @@ pip install -r requirements.txt
 ### Other Linux/macOS
 
 **Ubuntu/Debian:**
+
+> **Note:** Ubuntu 22.04 ships with Python 3.10. For Python 3.11, add the deadsnakes PPA first:
+> ```bash
+> sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update
+> ```
+
 ```bash
-sudo apt-get install python3.11 python3.11-venv cmake build-essential \
-  libopenblas-dev liblapack-dev libgl1 libglib2.0-0
+# Core dependencies + dlib compilation + HEIC support + video codecs
+sudo apt-get install python3.11 python3.11-venv python3.11-dev \
+  cmake build-essential libopenblas-dev liblapack-dev \
+  libgl1 libglib2.0-0 libheif-dev ffmpeg
+
 python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
@@ -77,7 +86,7 @@ pip install git+https://github.com/ageitgey/face_recognition_models
 
 **macOS:**
 ```bash
-brew install python@3.11 cmake openblas lapack
+brew install python@3.11 cmake openblas lapack libheif ffmpeg
 python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
