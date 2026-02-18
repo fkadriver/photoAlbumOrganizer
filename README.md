@@ -66,7 +66,25 @@ pip install -r requirements.txt
 
 ### Other Linux/macOS
 
-**Ubuntu/Debian:**
+**Quick Setup (Recommended):**
+```bash
+git clone https://github.com/fkadriver/photoAlbumOrganizer.git
+cd photoAlbumOrganizer
+
+# Automated setup - installs system deps + Python venv
+./scripts/setup.sh
+
+# Activate the environment
+source venv/bin/activate
+
+# Verify installation
+python scripts/verify_environment.py
+```
+
+The setup script auto-detects Ubuntu/Debian or macOS and installs all dependencies.
+
+<details>
+<summary><b>Manual Installation (Ubuntu/Debian)</b></summary>
 
 > **Note:** Ubuntu 22.04 ships with Python 3.10. For Python 3.11, add the deadsnakes PPA first:
 > ```bash
@@ -83,14 +101,18 @@ python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 ```
+</details>
 
-**macOS:**
+<details>
+<summary><b>Manual Installation (macOS)</b></summary>
+
 ```bash
 brew install python@3.11 cmake openblas lapack libheif ffmpeg
 python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
 ```
+</details>
 
 ---
 
@@ -309,6 +331,7 @@ photoAlbumOrganizer/
 │   ├── utils.py                # Logging and utilities
 │   └── backends/               # GPU-capable face detection backends
 ├── scripts/
+│   ├── setup.sh                # Ubuntu/macOS setup (system deps + Python venv)
 │   ├── viewer                  # Web viewer lifecycle (start/stop/status + watchdog)
 │   ├── immich.sh               # Immich operations wrapper
 │   ├── test_immich_connection.py
