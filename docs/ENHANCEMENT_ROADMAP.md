@@ -15,6 +15,7 @@
 | Timestamped Reports | ✅ COMPLETED |
 | Additional Face Backends + ML Quality Scoring | ✅ COMPLETED |
 | GPU Acceleration | ✅ COMPLETED |
+| Hybrid Local+Immich Mode | ✅ COMPLETED |
 | Web Viewer Group Combine/Split + Reprocess | ✅ COMPLETED |
 | Async / Parallel Immich Downloads | ✅ COMPLETED |
 | Immich Phase 3 (real-time sync) | ⏳ PLANNED |
@@ -137,6 +138,38 @@ See [FACE_BACKENDS.md](FACE_BACKENDS.md) for details.
 **Auto-detection order:** FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
 
 See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for install instructions and benchmarks.
+
+### Hybrid Local+Immich Mode
+
+For users running the photo organizer on the same machine as Immich (e.g., same server or Docker host), this mode provides:
+
+- **Direct filesystem access** to full-resolution photos (no HTTP download overhead)
+- **Immich API integration** for tagging, albums, favorites, and archive operations
+
+Ideal for large photo libraries where downloading over HTTP would be slow.
+
+```bash
+./photo_organizer.py --source-type hybrid \
+  --immich-library-path /mnt/photos/immich-app/library \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --tag-only
+
+# With GPU acceleration:
+./photo_organizer.py --source-type hybrid \
+  --immich-library-path /mnt/photos/immich-app/library \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --gpu --create-albums
+```
+
+**Default library path:** `/mnt/photos/immich-app/library` (common Docker mount point)
+
+**How it works:**
+1. Scans local filesystem for photos (like `--source-type local`)
+2. Queries Immich API to build a mapping of `originalPath` → `asset_id`
+3. Processes photos locally (hashing, face detection, grouping)
+4. Updates Immich via API (tags, albums, favorites) using mapped asset IDs
 
 ---
 

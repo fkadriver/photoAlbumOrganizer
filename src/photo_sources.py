@@ -585,3 +585,335 @@ class ImmichPhotoSource(PhotoSource):
         pct = (downloaded / len(to_download)) * 100 if to_download else 100
         print(f"  Pre-fetched {downloaded}/{len(to_download)} photos ({pct:.0f}%)")
         return downloaded
+
+
+class HybridPhotoSource(PhotoSource):
+    """Hybrid photo source: local filesystem + Immich API.
+
+    Reads photos directly from the local filesystem (for speed) while
+    maintaining Immich API connectivity for tagging, albums, favorites, etc.
+
+    Ideal for users running the organizer on the same machine as Immich,
+    avoiding HTTP download overhead.
+    """
+
+    # Common Immich library paths (Docker mount points)
+    DEFAULT_LIBRARY_PATHS = [
+        '/mnt/photos/immich-app/library',
+        '/photos/library',
+        '/data/immich/library',
+        '/var/lib/immich/library',
+    ]
+
+    def __init__(self, library_path: str, immich_url: str, api_key: str,
+                 verify_ssl: bool = True, supported_formats: Optional[set] = None):
+        """
+        Initialize hybrid photo source.
+
+        Args:
+            library_path: Local path to Immich library (e.g., /mnt/photos/immich-app/library)
+            immich_url: Immich server URL (e.g., http://localhost:2283)
+            api_key: Immich API key for authentication
+            verify_ssl: Whether to verify SSL certificates
+            supported_formats: Set of supported file extensions
+        """
+        self.library_path = Path(library_path)
+        self.supported_formats = supported_formats or {
+            '.jpg', '.jpeg', '.png', '.heic', '.cr2', '.nef', '.arw', '.dng', '.gif', '.webp'
+        }
+
+        # Validate library path exists
+        if not self.library_path.exists():
+            raise FileNotFoundError(
+                f"Immich library path not found: {library_path}\n"
+                f"Common paths: {', '.join(self.DEFAULT_LIBRARY_PATHS)}"
+            )
+
+        # Initialize Immich client
+        self.client = ImmichClient(immich_url, api_key, verify_ssl)
+
+        # Test connection
+        if not self.client.ping():
+            raise ConnectionError(f"Failed to connect to Immich server at {immich_url}")
+
+        # Build path -> asset_id mapping
+        self._path_to_asset: Dict[str, str] = {}
+        self._asset_to_path: Dict[str, str] = {}
+        self._asset_metadata: Dict[str, Dict] = {}
+        self._build_asset_mapping()
+
+    def _build_asset_mapping(self):
+        """Build mapping between local paths and Immich asset IDs."""
+        print("Building local path to Immich asset mapping...")
+        assets = self.client.get_all_assets()
+
+        for asset in assets:
+            if asset.type != 'IMAGE':
+                continue
+
+            original_path = asset.original_path
+            if original_path:
+                # Normalize the path for comparison
+                # Immich stores paths relative to its library root
+                self._path_to_asset[original_path] = asset.id
+                self._asset_to_path[asset.id] = original_path
+                self._asset_metadata[asset.id] = {
+                    'asset_id': asset.id,
+                    'filename': asset.original_file_name,
+                    'file_created_at': asset.file_created_at,
+                    'file_modified_at': asset.file_modified_at,
+                    'is_favorite': asset.is_favorite,
+                    'exif': asset.exif_info,
+                    'original_path': original_path,
+                }
+
+        print(f"  Mapped {len(self._path_to_asset)} Immich assets to local paths")
+
+    def _find_asset_id_for_path(self, local_path: Path) -> Optional[str]:
+        """Find Immich asset ID for a local file path.
+
+        Tries multiple matching strategies:
+        1. Exact path match
+        2. Path relative to library root
+        3. Filename + size match (fallback)
+        """
+        path_str = str(local_path)
+
+        # Strategy 1: Exact match
+        if path_str in self._path_to_asset:
+            return self._path_to_asset[path_str]
+
+        # Strategy 2: Try path relative to library root
+        try:
+            rel_path = local_path.relative_to(self.library_path)
+            # Immich paths often start with upload/ or library/ prefix
+            for prefix in ['', 'upload/', 'library/']:
+                test_path = prefix + str(rel_path)
+                if test_path in self._path_to_asset:
+                    return self._path_to_asset[test_path]
+        except ValueError:
+            pass
+
+        # Strategy 3: Match by filename (less reliable but useful fallback)
+        filename = local_path.name
+        candidates = []
+        for immich_path, asset_id in self._path_to_asset.items():
+            if immich_path.endswith('/' + filename) or immich_path == filename:
+                candidates.append(asset_id)
+
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Strategy 4: If multiple filename matches, try to match by size
+        if len(candidates) > 1:
+            try:
+                local_size = local_path.stat().st_size
+                for asset_id in candidates:
+                    meta = self._asset_metadata.get(asset_id, {})
+                    exif = meta.get('exif', {})
+                    if exif:
+                        immich_size = exif.get('fileSizeInByte', 0)
+                        if immich_size == local_size:
+                            return asset_id
+            except:
+                pass
+
+        return None
+
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
+        """List photos from local filesystem that are also in Immich."""
+        photos = []
+
+        search_dir = self.library_path
+        if album:
+            # For album filtering, use Immich API to get album assets
+            # then filter local files to only those in the album
+            albums = self.client.get_albums()
+            album_id = None
+            for alb in albums:
+                if alb.get('albumName') == album:
+                    album_id = alb.get('id')
+                    break
+
+            if not album_id:
+                print(f"Album '{album}' not found in Immich")
+                return []
+
+            album_assets = self.client.get_album_assets(album_id, limit=limit)
+            album_asset_ids = {a.id for a in album_assets}
+
+            # Find local files that match album assets
+            for local_path in self.library_path.rglob('*'):
+                if local_path.suffix.lower() not in self.supported_formats:
+                    continue
+
+                asset_id = self._find_asset_id_for_path(local_path)
+                if asset_id and asset_id in album_asset_ids:
+                    photo = self._create_photo_from_local(local_path, asset_id)
+                    photos.append(photo)
+
+                    if limit and len(photos) >= limit:
+                        break
+        else:
+            # Scan local filesystem
+            for local_path in self.library_path.rglob('*'):
+                if local_path.suffix.lower() not in self.supported_formats:
+                    continue
+
+                asset_id = self._find_asset_id_for_path(local_path)
+                if asset_id:
+                    photo = self._create_photo_from_local(local_path, asset_id)
+                    photos.append(photo)
+
+                    if limit and len(photos) >= limit:
+                        break
+
+        return photos
+
+    def _create_photo_from_local(self, local_path: Path, asset_id: str) -> Photo:
+        """Create a Photo object from local path with Immich metadata."""
+        metadata = self._asset_metadata.get(asset_id, {}).copy()
+        metadata['filepath'] = str(local_path)
+        metadata['local_path'] = str(local_path)
+
+        photo = Photo(
+            photo_id=asset_id,  # Use Immich asset ID as photo ID
+            source='hybrid',
+            metadata=metadata
+        )
+        photo.cached_path = local_path  # Direct filesystem access
+        return photo
+
+    def get_photo_data(self, photo: Photo) -> bytes:
+        """Get photo data from local filesystem."""
+        local_path = photo.metadata.get('local_path') or photo.metadata.get('filepath')
+        if local_path:
+            return Path(local_path).read_bytes()
+
+        # Fallback: download from Immich
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        data = self.client.download_asset(asset_id)
+        if data:
+            return data
+        raise ValueError(f"Failed to get photo data for {photo.id}")
+
+    def get_metadata(self, photo: Photo) -> Dict:
+        """Get metadata combining local file info and Immich data."""
+        from PIL.ExifTags import TAGS
+
+        local_path = photo.metadata.get('local_path') or photo.metadata.get('filepath')
+        if not local_path:
+            # Fallback to Immich metadata
+            return photo.metadata
+
+        path = Path(local_path)
+        metadata = {
+            'filename': path.name,
+            'filepath': str(path),
+            'filesize': path.stat().st_size,
+            'modified_time': datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+            'created_time': datetime.fromtimestamp(path.stat().st_ctime).isoformat(),
+            'asset_id': photo.metadata.get('asset_id', photo.id),
+            'is_favorite': photo.metadata.get('is_favorite', False),
+        }
+
+        # Read local EXIF
+        try:
+            with Image.open(path) as img:
+                metadata['dimensions'] = f"{img.size[0]}x{img.size[1]}"
+                metadata['format'] = img.format
+
+                exif_data = img.getexif()
+                if exif_data:
+                    for tag_id, value in exif_data.items():
+                        tag = TAGS.get(tag_id, tag_id)
+                        metadata[f'exif_{tag}'] = str(value)
+        except Exception as e:
+            metadata['error'] = f"Could not read EXIF: {str(e)}"
+
+        return metadata
+
+    def tag_photo(self, photo: Photo, tags: List[str]) -> bool:
+        """Add tags via Immich API."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.tag_assets([asset_id], tags)
+
+    def create_album(self, name: str, photos: List[Photo]) -> bool:
+        """Create album via Immich API."""
+        asset_ids = [p.metadata.get('asset_id', p.id) for p in photos]
+        album_id = self.client.create_album(name, asset_ids)
+        return album_id is not None
+
+    def set_favorite(self, photo: Photo, favorite: bool = True) -> bool:
+        """Mark photo as favorite via Immich API."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.update_asset(asset_id, is_favorite=favorite)
+
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Mark photo as archived via Immich API."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.update_asset(asset_id, is_archived=archived)
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people from Immich."""
+        return self.client.get_people()
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None) -> List[Photo]:
+        """List photos of a specific person, using local files where available."""
+        assets = self.client.get_person_assets(person_id, limit=limit)
+        photos = []
+
+        for asset in assets:
+            # Try to find local file for this asset
+            local_path = None
+            if asset.original_path:
+                # Check if we can find it locally
+                for test_path in [
+                    self.library_path / asset.original_path,
+                    Path(asset.original_path),
+                ]:
+                    if test_path.exists():
+                        local_path = test_path
+                        break
+
+            metadata = {
+                'asset_id': asset.id,
+                'filename': asset.original_file_name,
+                'file_created_at': asset.file_created_at,
+                'file_modified_at': asset.file_modified_at,
+                'is_favorite': asset.is_favorite,
+                'exif': asset.exif_info,
+            }
+
+            if local_path:
+                metadata['filepath'] = str(local_path)
+                metadata['local_path'] = str(local_path)
+
+            photo = Photo(
+                photo_id=asset.id,
+                source='hybrid',
+                metadata=metadata
+            )
+
+            if local_path:
+                photo.cached_path = local_path
+
+            photos.append(photo)
+
+        return photos
+
+    def get_asset_face_data(self, photo: Photo) -> List[Dict]:
+        """Get face bounding boxes via Immich API."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.get_asset_faces(asset_id)
+
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 8) -> int:
+        """No prefetch needed - photos are already on local filesystem."""
+        # Just verify all photos have cached_path set
+        count = 0
+        for photo in photos:
+            local_path = photo.metadata.get('local_path') or photo.metadata.get('filepath')
+            if local_path and Path(local_path).exists():
+                photo.cached_path = Path(local_path)
+                count += 1
+        return count

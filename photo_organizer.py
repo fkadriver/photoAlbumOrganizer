@@ -80,12 +80,26 @@ Examples:
   # Both HDR and face swapping
   ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --enable-face-swap
+
+  # Hybrid mode - local Immich library + API
+  ./photo_organizer.py --source-type hybrid \\
+    --immich-library-path /mnt/photos/immich-app/library \\
+    --immich-url http://localhost:2283 \\
+    --immich-api-key YOUR_KEY \\
+    --tag-only
+
+  # Hybrid mode with GPU acceleration
+  ./photo_organizer.py --source-type hybrid \\
+    --immich-library-path /mnt/photos/immich-app/library \\
+    --immich-url http://localhost:2283 \\
+    --immich-api-key YOUR_KEY \\
+    --gpu --create-albums --mark-best-favorite
         """
     )
 
     # Source arguments
-    parser.add_argument('--source-type', choices=['local', 'immich'], default='local',
-                        help='Photo source type (default: local)')
+    parser.add_argument('--source-type', choices=['local', 'immich', 'hybrid'], default='local',
+                        help='Photo source type: local, immich, or hybrid (default: local)')
     parser.add_argument('-s', '--source',
                         help='Source directory containing photos (for local source)')
     parser.add_argument('-o', '--output',
@@ -106,6 +120,10 @@ Examples:
                         help='Disable SSL certificate verification')
     parser.add_argument('--use-full-resolution', action='store_true',
                         help='Download full resolution (default: use thumbnails)')
+    parser.add_argument('--immich-library-path',
+                        default='/mnt/photos/immich-app/library',
+                        help='Local path to Immich library for hybrid mode '
+                             '(default: /mnt/photos/immich-app/library)')
 
     # Processing arguments
     parser.add_argument('-t', '--threshold', type=int, default=5, choices=range(0, 65),
@@ -320,10 +338,20 @@ Examples:
         if not args.output and not args.tag_only and not args.create_albums:
             parser.error("--output, --tag-only, or --create-albums is required for immich source type")
 
+    if args.source_type == 'hybrid':
+        if not args.immich_url:
+            parser.error("--immich-url is required for hybrid source type")
+        if not args.immich_api_key:
+            parser.error("--immich-api-key is required for hybrid source type")
+        if not args.immich_library_path:
+            parser.error("--immich-library-path is required for hybrid source type")
+        if not args.output and not args.tag_only and not args.create_albums:
+            parser.error("--output, --tag-only, or --create-albums is required for hybrid source type")
+
     # Deferred imports — these pull in cv2, face_recognition, etc.
     # and require the Nix development environment for native libraries.
     try:
-        from photo_sources import LocalPhotoSource, ImmichPhotoSource
+        from photo_sources import LocalPhotoSource, ImmichPhotoSource, HybridPhotoSource
         from organizer import PhotoOrganizer
     except ImportError as e:
         print(f"\nError: Failed to import required libraries: {e}\n")
@@ -351,6 +379,13 @@ Examples:
     # Create photo source
     if args.source_type == 'local':
         photo_source = LocalPhotoSource(args.source)
+    elif args.source_type == 'hybrid':
+        photo_source = HybridPhotoSource(
+            library_path=args.immich_library_path,
+            immich_url=args.immich_url,
+            api_key=args.immich_api_key,
+            verify_ssl=not args.no_verify_ssl,
+        )
     else:  # immich
         photo_source = ImmichPhotoSource(
             url=args.immich_url,
