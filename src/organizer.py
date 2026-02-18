@@ -41,7 +41,8 @@ class PhotoOrganizer:
                  archive_non_best=False,
                  immich_use_duplicates=False,
                  immich_smart_search=None,
-                 report_dir="reports"):
+                 report_dir="reports",
+                 media_type='image', video_strategy='scene_change', video_max_frames=10):
         """
         Initialize the photo organizer.
 
@@ -76,8 +77,14 @@ class PhotoOrganizer:
             archive_non_best: Archive non-best photos in Immich
             immich_use_duplicates: Use Immich server-side duplicate detection
             immich_smart_search: CLIP search query to pre-filter photos
+            media_type: Type of media to process ('image' or 'video')
+            video_strategy: Key frame extraction strategy ('scene_change', 'fixed_interval', 'iframe')
+            video_max_frames: Maximum number of key frames to extract per video
         """
         self.photo_source = photo_source
+        self.media_type = media_type
+        self.video_strategy = video_strategy
+        self.video_max_frames = video_max_frames
         self.output_dir = Path(output_dir) if output_dir else None
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
@@ -135,6 +142,9 @@ class PhotoOrganizer:
             "archive_non_best": archive_non_best,
             "immich_use_duplicates": immich_use_duplicates,
             "immich_smart_search": immich_smart_search,
+            "media_type": media_type,
+            "video_strategy": video_strategy,
+            "video_max_frames": video_max_frames,
         }
 
         # Configure face detection backend with GPU support
@@ -229,6 +239,10 @@ class PhotoOrganizer:
         logging.info(f"  Archive non-best: {self.archive_non_best}")
         logging.info(f"  Use server duplicates: {self.immich_use_duplicates}")
         logging.info(f"  Smart search: {self.immich_smart_search}")
+        logging.info(f"  Media type: {self.media_type}")
+        if self.media_type == 'video':
+            logging.info(f"  Video strategy: {self.video_strategy}")
+            logging.info(f"  Video max frames: {self.video_max_frames}")
 
         # Setup signal handlers for graceful interruption
         self._interrupted = False
@@ -301,8 +315,8 @@ class PhotoOrganizer:
             return None
 
     def find_all_photos(self, album: str = None):
-        """Find all photos from the photo source."""
-        return self.photo_source.list_photos(album=album, limit=self.limit)
+        """Find all photos/videos from the photo source."""
+        return self.photo_source.list_photos(album=album, limit=self.limit, media_type=self.media_type)
 
     def save_metadata(self, group, group_dir):
         """Save metadata for all photos in group to text file."""
@@ -372,29 +386,30 @@ class PhotoOrganizer:
             raise
 
     def _organize_by_hash(self, album: str = None):
-        """Group photos by perceptual hash similarity (default strategy)."""
+        """Group photos/videos by perceptual hash similarity (default strategy)."""
         photos = self.find_all_photos(album=album)
 
-        # Apply CLIP smart search filter if specified
-        if self.immich_smart_search and hasattr(self.photo_source, 'client'):
+        # Apply CLIP smart search filter if specified (images only)
+        if self.immich_smart_search and hasattr(self.photo_source, 'client') and self.media_type == 'image':
             print(f"Filtering with CLIP search: '{self.immich_smart_search}'")
             search_results = self.photo_source.client.smart_search(self.immich_smart_search, size=1000)
             search_ids = {a.id for a in search_results}
             photos = [p for p in photos if p.id in search_ids]
             print(f"  {len(photos)} photos match smart search query")
 
+        media_label = "videos" if self.media_type == 'video' else "photos"
         if self.limit is not None and self.limit > 0:
-            msg = f"🔬 TEST MODE: Processing {len(photos)} photos (limit: {self.limit})"
+            msg = f"🔬 TEST MODE: Processing {len(photos)} {media_label} (limit: {self.limit})"
         else:
-            msg = f"Found {len(photos)} photos"
+            msg = f"Found {len(photos)} {media_label}"
         print(msg)
         logging.info(msg)
 
         for photo in photos:
             self.state.mark_photo_discovered()
 
-        # Pre-fetch photos for Immich sources
-        if hasattr(self.photo_source, 'prefetch_photos'):
+        # Pre-fetch photos for Immich sources (images only, videos are too large)
+        if hasattr(self.photo_source, 'prefetch_photos') and self.media_type == 'image':
             self.photo_source.prefetch_photos(photos, max_workers=self.threads)
 
         return group_similar_photos(
@@ -402,7 +417,10 @@ class PhotoOrganizer:
             self.extract_metadata, self.get_datetime_from_metadata,
             self.similarity_threshold, self.use_time_window, self.time_window,
             self.min_group_size, self.threads,
-            lambda: self._interrupted
+            lambda: self._interrupted,
+            media_type=self.media_type,
+            video_strategy=self.video_strategy,
+            video_max_frames=self.video_max_frames
         )
 
     def _organize_by_person(self, album: str = None):

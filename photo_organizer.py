@@ -94,6 +94,22 @@ Examples:
     --immich-url http://localhost:2283 \\
     --immich-api-key YOUR_KEY \\
     --gpu --create-albums --mark-best-favorite
+
+  # Process only videos (group similar video clips)
+  ./photo_organizer.py --source-type immich \\
+    --immich-url http://localhost:2283 \\
+    --immich-api-key YOUR_KEY \\
+    --media-type video \\
+    --tag-only
+
+  # Hybrid mode with videos
+  ./photo_organizer.py --source-type hybrid \\
+    --immich-library-path /mnt/photos/immich-app/library \\
+    --immich-url http://localhost:2283 \\
+    --immich-api-key YOUR_KEY \\
+    --media-type video \\
+    --video-strategy fixed_interval \\
+    --create-albums
         """
     )
 
@@ -126,6 +142,8 @@ Examples:
                              '(default: /mnt/photos/immich-app/library)')
 
     # Processing arguments
+    parser.add_argument('--media-type', choices=['image', 'video'], default='image',
+                        help='Media type to process: image (photos) or video (default: image)')
     parser.add_argument('-t', '--threshold', type=int, default=5, choices=range(0, 65),
                         metavar='N',
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
@@ -133,6 +151,11 @@ Examples:
                         help='Time window in seconds for grouping (default=300, use 0 to disable time window)')
     parser.add_argument('--min-group-size', type=int, default=3,
                         help='Minimum photos per group (default: 3, min: 2)')
+    parser.add_argument('--video-strategy', choices=['scene_change', 'fixed_interval', 'iframe'],
+                        default='scene_change',
+                        help='Video key frame extraction strategy (default: scene_change)')
+    parser.add_argument('--video-max-frames', type=int, default=10,
+                        help='Maximum key frames to extract per video (default: 10)')
 
     # Immich action arguments
     parser.add_argument('--tag-only', action='store_true',
@@ -428,6 +451,9 @@ Examples:
         immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
         immich_smart_search=getattr(args, 'immich_smart_search', None),
         report_dir=getattr(args, 'report_dir', 'reports'),
+        media_type=getattr(args, 'media_type', 'image'),
+        video_strategy=getattr(args, 'video_strategy', 'scene_change'),
+        video_max_frames=getattr(args, 'video_max_frames', 10),
     )
 
     # Start live viewer if requested

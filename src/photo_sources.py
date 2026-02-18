@@ -16,6 +16,18 @@ from PIL import Image
 from immich_client import ImmichClient
 
 
+# Supported image formats
+IMAGE_FORMATS = {
+    '.jpg', '.jpeg', '.png', '.heic', '.cr2', '.nef', '.arw', '.dng', '.gif', '.webp'
+}
+
+# Supported video formats
+VIDEO_FORMATS = {
+    '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v',
+    '.wmv', '.flv', '.mpg', '.mpeg', '.3gp', '.mts'
+}
+
+
 class Photo:
     """Represents a photo from any source."""
 
@@ -41,13 +53,15 @@ class PhotoSource(ABC):
     """Abstract base class for photo sources."""
 
     @abstractmethod
-    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
+                    media_type: str = 'image') -> List[Photo]:
         """
-        List all photos from this source.
+        List all photos/videos from this source.
 
         Args:
             album: Optional album/folder filter
             limit: Optional limit on number of photos to return (for testing/performance)
+            media_type: Type of media to list ('image' or 'video')
 
         Returns:
             List of Photo objects
@@ -152,31 +166,45 @@ class LocalPhotoSource(PhotoSource):
 
         Args:
             source_dir: Root directory containing photos
-            supported_formats: Set of supported file extensions
+            supported_formats: Set of supported file extensions (deprecated, use media_type in list_photos)
         """
         self.source_dir = Path(source_dir)
-        self.supported_formats = supported_formats or {
-            '.jpg', '.jpeg', '.png', '.heic', '.cr2', '.nef', '.arw', '.dng'
-        }
+        self.supported_formats = supported_formats or IMAGE_FORMATS
 
-    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
-        """List all photos in the directory."""
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
+                    media_type: str = 'image') -> List[Photo]:
+        """List all photos or videos in the directory.
+
+        Args:
+            album: Optional album/folder filter
+            limit: Optional limit on number of photos to return
+            media_type: 'image' for photos, 'video' for videos
+        """
         photos = []
+
+        # Select formats based on media type
+        formats = VIDEO_FORMATS if media_type == 'video' else IMAGE_FORMATS
 
         search_dir = self.source_dir
         if album:
             search_dir = self.source_dir / album
 
         for path in search_dir.rglob('*'):
-            if path.suffix.lower() in self.supported_formats:
+            if path.suffix.lower() in formats:
                 photo_id = str(path.relative_to(self.source_dir))
                 photo = Photo(
                     photo_id=photo_id,
                     source='local',
-                    metadata={'filepath': str(path)}
+                    metadata={
+                        'filepath': str(path),
+                        'media_type': media_type,
+                    }
                 )
                 photo.cached_path = path
                 photos.append(photo)
+
+                if limit and len(photos) >= limit:
+                    break
 
         return photos
 
@@ -403,8 +431,18 @@ class ImmichPhotoSource(PhotoSource):
         if not self.client.ping():
             raise ConnectionError(f"Failed to connect to Immich server at {url}")
 
-    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
-        """List all photos from Immich."""
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
+                    media_type: str = 'image') -> List[Photo]:
+        """List all photos or videos from Immich.
+
+        Args:
+            album: Optional album name to filter
+            limit: Optional limit on number of assets to return
+            media_type: 'image' for photos, 'video' for videos
+        """
+        # Map media_type to Immich asset type
+        immich_type = 'VIDEO' if media_type == 'video' else 'IMAGE'
+
         if album:
             # Get album by name
             albums = self.client.get_albums()
@@ -425,6 +463,10 @@ class ImmichPhotoSource(PhotoSource):
 
         photos = []
         for asset in assets:
+            # Filter by asset type
+            if asset.type != immich_type:
+                continue
+
             photo = Photo(
                 photo_id=asset.id,
                 source='immich',
@@ -434,10 +476,14 @@ class ImmichPhotoSource(PhotoSource):
                     'file_created_at': asset.file_created_at,
                     'file_modified_at': asset.file_modified_at,
                     'is_favorite': asset.is_favorite,
-                    'exif': asset.exif_info
+                    'exif': asset.exif_info,
+                    'media_type': media_type,
                 }
             )
             photos.append(photo)
+
+            if limit and len(photos) >= limit:
+                break
 
         return photos
 
@@ -647,27 +693,38 @@ class HybridPhotoSource(PhotoSource):
         print("Building local path to Immich asset mapping...")
         assets = self.client.get_all_assets()
 
+        image_count = 0
+        video_count = 0
+
         for asset in assets:
-            if asset.type != 'IMAGE':
+            original_path = asset.original_path
+            if not original_path:
                 continue
 
-            original_path = asset.original_path
-            if original_path:
-                # Normalize the path for comparison
-                # Immich stores paths relative to its library root
-                self._path_to_asset[original_path] = asset.id
-                self._asset_to_path[asset.id] = original_path
-                self._asset_metadata[asset.id] = {
-                    'asset_id': asset.id,
-                    'filename': asset.original_file_name,
-                    'file_created_at': asset.file_created_at,
-                    'file_modified_at': asset.file_modified_at,
-                    'is_favorite': asset.is_favorite,
-                    'exif': asset.exif_info,
-                    'original_path': original_path,
-                }
+            # Track asset type
+            asset_type = 'video' if asset.type == 'VIDEO' else 'image'
 
-        print(f"  Mapped {len(self._path_to_asset)} Immich assets to local paths")
+            # Normalize the path for comparison
+            # Immich stores paths relative to its library root
+            self._path_to_asset[original_path] = asset.id
+            self._asset_to_path[asset.id] = original_path
+            self._asset_metadata[asset.id] = {
+                'asset_id': asset.id,
+                'filename': asset.original_file_name,
+                'file_created_at': asset.file_created_at,
+                'file_modified_at': asset.file_modified_at,
+                'is_favorite': asset.is_favorite,
+                'exif': asset.exif_info,
+                'original_path': original_path,
+                'media_type': asset_type,
+            }
+
+            if asset_type == 'video':
+                video_count += 1
+            else:
+                image_count += 1
+
+        print(f"  Mapped {len(self._path_to_asset)} Immich assets ({image_count} images, {video_count} videos)")
 
     def _find_asset_id_for_path(self, local_path: Path) -> Optional[str]:
         """Find Immich asset ID for a local file path.
@@ -720,9 +777,19 @@ class HybridPhotoSource(PhotoSource):
 
         return None
 
-    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None) -> List[Photo]:
-        """List photos from local filesystem that are also in Immich."""
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
+                    media_type: str = 'image') -> List[Photo]:
+        """List photos or videos from local filesystem that are also in Immich.
+
+        Args:
+            album: Optional album name to filter
+            limit: Optional limit on number of assets to return
+            media_type: 'image' for photos, 'video' for videos
+        """
         photos = []
+
+        # Select formats based on media type
+        formats = VIDEO_FORMATS if media_type == 'video' else IMAGE_FORMATS
 
         search_dir = self.library_path
         if album:
@@ -744,12 +811,17 @@ class HybridPhotoSource(PhotoSource):
 
             # Find local files that match album assets
             for local_path in self.library_path.rglob('*'):
-                if local_path.suffix.lower() not in self.supported_formats:
+                if local_path.suffix.lower() not in formats:
                     continue
 
                 asset_id = self._find_asset_id_for_path(local_path)
                 if asset_id and asset_id in album_asset_ids:
-                    photo = self._create_photo_from_local(local_path, asset_id)
+                    # Check media type matches
+                    asset_meta = self._asset_metadata.get(asset_id, {})
+                    if asset_meta.get('media_type', 'image') != media_type:
+                        continue
+
+                    photo = self._create_photo_from_local(local_path, asset_id, media_type)
                     photos.append(photo)
 
                     if limit and len(photos) >= limit:
@@ -757,12 +829,17 @@ class HybridPhotoSource(PhotoSource):
         else:
             # Scan local filesystem
             for local_path in self.library_path.rglob('*'):
-                if local_path.suffix.lower() not in self.supported_formats:
+                if local_path.suffix.lower() not in formats:
                     continue
 
                 asset_id = self._find_asset_id_for_path(local_path)
                 if asset_id:
-                    photo = self._create_photo_from_local(local_path, asset_id)
+                    # Check media type matches
+                    asset_meta = self._asset_metadata.get(asset_id, {})
+                    if asset_meta.get('media_type', 'image') != media_type:
+                        continue
+
+                    photo = self._create_photo_from_local(local_path, asset_id, media_type)
                     photos.append(photo)
 
                     if limit and len(photos) >= limit:
@@ -770,11 +847,13 @@ class HybridPhotoSource(PhotoSource):
 
         return photos
 
-    def _create_photo_from_local(self, local_path: Path, asset_id: str) -> Photo:
+    def _create_photo_from_local(self, local_path: Path, asset_id: str,
+                                  media_type: str = 'image') -> Photo:
         """Create a Photo object from local path with Immich metadata."""
         metadata = self._asset_metadata.get(asset_id, {}).copy()
         metadata['filepath'] = str(local_path)
         metadata['local_path'] = str(local_path)
+        metadata['media_type'] = media_type
 
         photo = Photo(
             photo_id=asset_id,  # Use Immich asset ID as photo ID

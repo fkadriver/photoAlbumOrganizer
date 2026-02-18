@@ -7,13 +7,14 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Intelligent Grouping**: Perceptual hashing finds visually similar photos even with timestamp errors
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
 - **Face Quality Detection**: Scores faces for smiles and open eyes — pluggable backends (face_recognition, MediaPipe, InsightFace, FaceNet — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md))
-- **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md) *(in progress)*
+- **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md)
 - **Immich Integration**: Full integration with Immich — tag, album, favorite, archive, cleanup, people view
 - **Web Viewer**: Built-in review interface with thumbnails, EXIF comparison, bulk actions, report switcher, and people view
 - **Viewer Lifecycle**: `scripts/viewer` manages background start/stop with watchdog auto-stop on directory exit
 - **Resume Capability**: Interrupt and resume processing without losing progress
 - **Interactive Setup**: Guided `-i` mode with save/load settings
 - **HEIC + RAW Support**: JPEG, PNG, HEIC, CR2, NEF, ARW, DNG
+- **Video Support**: Group similar video clips using key frame analysis (MP4, MOV, AVI, MKV, WebM)
 - **Multi-Format Reports**: Timestamped JSON reports with historical comparison dropdown
 - **NixOS Optimized**: First-class NixOS support with automatic environment setup
 
@@ -195,6 +196,9 @@ Processing Arguments:
   --time-window SECONDS     Time window for grouping (default: 300, 0=disable)
   --min-group-size N        Minimum photos per group (default: 3, min: 2)
   --threads N               Parallel hash threads (default: 2)
+  --media-type TYPE         Media type to process: image or video (default: image)
+  --video-strategy STRAT    Key frame extraction: scene_change, fixed_interval, iframe
+  --video-max-frames N      Maximum key frames per video (default: 10)
 
 Immich Arguments:
   --immich-url URL          Immich server URL
@@ -287,12 +291,14 @@ photoAlbumOrganizer/
 │   ├── organizer.py            # Core PhotoOrganizer class
 │   ├── grouping.py             # Perceptual hashing and grouping
 │   ├── image_processing.py     # Face detection, HDR, face swapping
-│   ├── photo_sources.py        # Local/Immich photo source abstraction
+│   ├── video_processing.py     # Video key frame extraction and hashing
+│   ├── photo_sources.py        # Local/Immich/Hybrid photo source abstraction
 │   ├── immich_client.py        # Immich API client
 │   ├── web_viewer.py           # Built-in web viewer
 │   ├── cleanup.py              # Immich cleanup/undo operations
 │   ├── processing_state.py     # Resume capability
-│   └── utils.py                # Logging and utilities
+│   ├── utils.py                # Logging and utilities
+│   └── backends/               # GPU-capable face detection backends
 ├── scripts/
 │   ├── viewer                  # Web viewer lifecycle (start/stop/status + watchdog)
 │   ├── immich.sh               # Immich operations wrapper
@@ -328,13 +334,15 @@ photoAlbumOrganizer/
 
 ### Future Enhancements
 
-- [x] GPU acceleration for face detection (design complete — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md))
-- [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face (design complete — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md))
-- [ ] Async/parallel Immich downloads (`aiohttp`)
+- [x] GPU acceleration for face detection — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md)
+- [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md)
+- [x] Async/parallel Immich downloads
+- [x] Video support — see [ENHANCEMENT_ROADMAP.md](docs/ENHANCEMENT_ROADMAP.md)
+- [x] ML-based photo quality scoring (CLIP/MobileNetV2)
+- [x] Hybrid local+Immich mode for same-server deployments
 - [ ] Apple Photos integration (macOS, `osxphotos`)
 - [ ] Google Photos integration (OAuth2, read-only)
-- [ ] Video support
-- [ ] ML-based photo quality scoring (CLIP/MobileNetV2)
+- [ ] Immich real-time sync
 
 ---
 

@@ -18,8 +18,8 @@
 | Hybrid Local+Immich Mode | ✅ COMPLETED |
 | Web Viewer Group Combine/Split + Reprocess | ✅ COMPLETED |
 | Async / Parallel Immich Downloads | ✅ COMPLETED |
+| Video Support | ✅ COMPLETED |
 | Immich Phase 3 (real-time sync) | ⏳ PLANNED |
-| Video Support | ⏳ PLANNED |
 | Apple / Google Photos | ⏳ PLANNED |
 
 ---
@@ -171,6 +171,54 @@ Ideal for large photo libraries where downloading over HTTP would be slow.
 3. Processes photos locally (hashing, face detection, grouping)
 4. Updates Immich via API (tags, albums, favorites) using mapped asset IDs
 
+### Video Support
+
+Dedicated video processing mode that groups similar videos together using key frame analysis. Videos are processed separately from images using `--media-type video`.
+
+```bash
+# Process only videos from local source
+./photo_organizer.py -s ~/Videos -o ~/OrganizedVideos --media-type video
+
+# Process videos from Immich
+./photo_organizer.py --source-type immich \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --media-type video \
+  --tag-only
+
+# Hybrid mode with videos
+./photo_organizer.py --source-type hybrid \
+  --immich-library-path /mnt/photos/immich-app/library \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --media-type video \
+  --create-albums
+
+# Custom key frame extraction
+./photo_organizer.py -s ~/Videos -o ~/Organized \
+  --media-type video \
+  --video-strategy fixed_interval \
+  --video-max-frames 15
+```
+
+**How it works:**
+1. Extract key frames from videos using OpenCV (scene change detection, fixed interval, or I-frame extraction)
+2. Compute perceptual hashes on extracted key frames
+3. Compare videos using multi-frame hash distance (weighted average of best frame matches + duration similarity)
+4. Group similar videos together (videos are only compared to other videos, never mixed with images)
+
+**Supported formats:** `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.m4v`, `.wmv`, `.flv`, `.mpg`, `.mpeg`, `.3gp`, `.mts`
+
+**Key frame extraction strategies (`--video-strategy`):**
+| Strategy | Description | Best For |
+|----------|-------------|----------|
+| `scene_change` | Detect visual scene changes (default) | Most videos, varied content |
+| `fixed_interval` | Extract frame every N seconds | Long videos, consistent content |
+| `iframe` | Extract I-frames only (fastest) | Quick processing, codec keyframes |
+
+**Options:**
+- `--video-max-frames N`: Maximum key frames to extract per video (default: 10)
+
 ---
 
 ## ⏳ Planned
@@ -179,9 +227,6 @@ Ideal for large photo libraries where downloading over HTTP would be slow.
 - Real-time sync (process new photos as they arrive in Immich)
 - Bi-directional sync
 - Use Immich ML models directly
-
-### Video Support
-Extract key frames from video clips, compute perceptual hashes, group similar clips alongside photos.
 
 ### Apple / Google Photos Integration
 - Apple Photos via `osxphotos` (macOS only)
