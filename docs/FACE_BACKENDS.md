@@ -63,11 +63,11 @@ curl -sSL -o models/face_landmarker.task \
 
 ---
 
-## Planned Backends
+## GPU-Capable Backends
 
-The following backends are designed and ready for implementation. They will be added as `src/backends/` submodules and registered in `get_face_backend()`.
+The following GPU-capable backends are available in `src/backends/` and registered in `get_face_backend()`.
 
-### InsightFace *(Planned)*
+### InsightFace
 
 State-of-the-art accuracy using the buffalo_l model (RetinaFace detection + ArcFace encoding). ONNX Runtime execution providers enable automatic GPU acceleration.
 
@@ -100,7 +100,7 @@ class InsightFaceBackend(FaceBackend):
         return True
 ```
 
-**Install (when available):**
+**Install:**
 ```bash
 pip install insightface onnxruntime
 # For GPU:
@@ -109,7 +109,7 @@ pip install insightface onnxruntime-gpu
 
 ---
 
-### FaceNet/PyTorch *(Planned — primary GPU backend)*
+### FaceNet/PyTorch (Primary GPU Backend)
 
 Uses facenet-pytorch: MTCNN for detection and InceptionResnetV1 for 128-d face embeddings. Native PyTorch enables automatic CUDA/MPS/CPU device selection.
 
@@ -150,7 +150,7 @@ class FacenetBackend(FaceBackend):
         return True
 ```
 
-**Install (when available):**
+**Install:**
 ```bash
 pip install facenet-pytorch
 # For GPU (PyTorch with CUDA):
@@ -160,7 +160,7 @@ pip install facenet-pytorch
 
 ---
 
-### YOLOv8-Face *(Planned)*
+### YOLOv8-Face
 
 Fastest detection using Ultralytics YOLOv8. Best for very large libraries where speed matters more than encoding precision.
 
@@ -188,14 +188,14 @@ class YOLOv8FaceBackend(FaceBackend):
         return False
 ```
 
-**Install (when available):**
+**Install:**
 ```bash
 pip install ultralytics
 ```
 
 ---
 
-### ML Quality Scorer *(Planned — ships with new backends)*
+### ML Quality Scorer
 
 Alongside the face backends, an optional `MLQualityScorer` module will use CLIP or MobileNetV2 to score aesthetic photo quality (sharpness, composition, exposure) as an additional signal for best-photo selection — complementing rather than replacing face quality scoring.
 
@@ -217,7 +217,7 @@ class MLQualityScorer:
         ...
 ```
 
-**Install (when available):**
+**Install:**
 ```bash
 pip install transformers torch  # CLIP via HuggingFace
 # or lightweight fallback:

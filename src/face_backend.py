@@ -305,16 +305,78 @@ class MediaPipeBackend(FaceBackend):
         return landmarks
 
 
-def get_face_backend(backend_name: str = "auto") -> Optional[FaceBackend]:
+def get_face_backend(
+    backend_name: str = "auto",
+    gpu: bool = False,
+    gpu_device: int = 0
+) -> Optional[FaceBackend]:
     """Create and return a face detection backend.
 
     Args:
-        backend_name: "face_recognition", "mediapipe", or "auto".
-            "auto" tries face_recognition first, then mediapipe.
+        backend_name: Backend to use:
+            - "auto": Auto-select best available (GPU backends first if gpu=True)
+            - "face_recognition": dlib-based (CPU only, supports encoding)
+            - "mediapipe": Google MediaPipe (CPU only, no encoding)
+            - "facenet": FaceNet/PyTorch (GPU: CUDA/MPS, supports encoding)
+            - "insightface": InsightFace/ONNX (GPU: CUDA, supports encoding)
+            - "yolov8": YOLOv8-Face (GPU: CUDA/MPS, fastest, no encoding)
+        gpu: Enable GPU acceleration (for GPU-capable backends)
+        gpu_device: CUDA device index (0 = first GPU)
 
     Returns:
         A FaceBackend instance, or None if no backend is available.
     """
+    # GPU-capable backends (try these first when gpu=True)
+    if backend_name == "facenet" or (backend_name == "auto" and gpu):
+        try:
+            from backends.facenet_backend import FacenetBackend
+            backend = FacenetBackend(gpu=gpu, gpu_device=gpu_device)
+            if gpu:
+                print(f"Using FaceNet backend on {backend.device}")
+            return backend
+        except ImportError:
+            if backend_name == "facenet":
+                print("Warning: facenet-pytorch not installed.")
+                print("Install with: pip install facenet-pytorch")
+                return None
+        except Exception as e:
+            if backend_name == "facenet":
+                print(f"Warning: Could not load FaceNet backend: {e}")
+                return None
+
+    if backend_name == "insightface" or (backend_name == "auto" and gpu):
+        try:
+            from backends.insightface_backend import InsightFaceBackend
+            backend = InsightFaceBackend(gpu=gpu, gpu_device=gpu_device)
+            if gpu:
+                print(f"Using InsightFace backend on {backend.device}")
+            return backend
+        except ImportError:
+            if backend_name == "insightface":
+                print("Warning: insightface not installed.")
+                print("Install with: pip install insightface onnxruntime-gpu")
+                return None
+        except Exception as e:
+            if backend_name == "insightface":
+                print(f"Warning: Could not load InsightFace backend: {e}")
+                return None
+
+    if backend_name == "yolov8":
+        try:
+            from backends.yolov8_backend import YOLOv8FaceBackend
+            backend = YOLOv8FaceBackend(gpu=gpu, gpu_device=gpu_device)
+            if gpu:
+                print(f"Using YOLOv8 backend on {backend.device}")
+            return backend
+        except ImportError:
+            print("Warning: ultralytics not installed.")
+            print("Install with: pip install ultralytics")
+            return None
+        except Exception as e:
+            print(f"Warning: Could not load YOLOv8 backend: {e}")
+            return None
+
+    # CPU-only backends
     if backend_name in ("face_recognition", "auto"):
         try:
             return FaceRecognitionBackend()
@@ -337,3 +399,14 @@ def get_face_backend(backend_name: str = "auto") -> Optional[FaceBackend]:
         print("Photos will be grouped, but best photo selection will be random.")
 
     return None
+
+
+# Valid backend names for CLI argument validation
+VALID_BACKENDS = [
+    "auto",
+    "face_recognition",
+    "mediapipe",
+    "facenet",
+    "insightface",
+    "yolov8",
+]

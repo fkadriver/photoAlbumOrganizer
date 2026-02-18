@@ -34,7 +34,8 @@ class PhotoOrganizer:
                  resume=False, state_file=None, limit=None,
                  enable_hdr=False, hdr_gamma=2.2,
                  enable_face_swap=False, swap_closed_eyes=True,
-                 face_backend='auto', threads=2, verbose=False,
+                 face_backend='auto', gpu=False, gpu_device=0, enable_ml_quality=True,
+                 threads=2, verbose=False,
                  immich_group_by_person=False, immich_person=None,
                  immich_use_server_faces=False,
                  archive_non_best=False,
@@ -62,7 +63,11 @@ class PhotoOrganizer:
             hdr_gamma: HDR tone mapping gamma value (default: 2.2)
             enable_face_swap: Enable automatic face swapping to fix closed eyes/bad expressions (default: False)
             swap_closed_eyes: Swap faces with closed eyes when face swapping is enabled (default: True)
-            face_backend: Face detection backend to use ('auto', 'face_recognition', 'mediapipe')
+            face_backend: Face detection backend ('auto', 'face_recognition', 'mediapipe',
+                         'facenet', 'insightface', 'yolov8')
+            gpu: Enable GPU acceleration for GPU-capable backends (default: False)
+            gpu_device: GPU device index for multi-GPU systems (default: 0)
+            enable_ml_quality: Enable ML-based aesthetic quality scoring (default: True)
             threads: Number of threads for parallel processing (default: 2)
             verbose: Show verbose error output
             immich_group_by_person: Group photos by recognized person (Immich only)
@@ -101,6 +106,11 @@ class PhotoOrganizer:
         self.report = {"groups": [], "metadata": {}}
 
         # Capture run settings for the report
+        self.gpu = gpu
+        self.gpu_device = gpu_device
+        self.enable_ml_quality = enable_ml_quality
+        self.ml_quality_scorer = None
+
         self.report["settings"] = {
             "source_type": photo_source.__class__.__name__,
             "similarity_threshold": similarity_threshold,
@@ -114,6 +124,10 @@ class PhotoOrganizer:
             "limit": limit,
             "enable_hdr": enable_hdr,
             "enable_face_swap": enable_face_swap,
+            "gpu": gpu,
+            "gpu_device": gpu_device,
+            "enable_ml_quality": enable_ml_quality,
+            "face_backend": face_backend,
             "threads": threads,
             "immich_group_by_person": immich_group_by_person,
             "immich_person": immich_person,
@@ -123,9 +137,15 @@ class PhotoOrganizer:
             "immich_smart_search": immich_smart_search,
         }
 
-        # Configure face detection backend
-        if face_backend != 'auto':
-            set_face_backend(face_backend)
+        # Configure face detection backend with GPU support
+        from face_backend import get_face_backend
+        backend = get_face_backend(face_backend, gpu=gpu, gpu_device=gpu_device)
+        if backend:
+            set_face_backend(face_backend, gpu=gpu, gpu_device=gpu_device)
+
+        # Initialize ML quality scorer if enabled
+        if enable_ml_quality:
+            self._init_ml_quality_scorer()
 
         # Resume capability
         self.resume = resume
@@ -198,6 +218,9 @@ class PhotoOrganizer:
         logging.info(f"  Limit: {self.limit}")
         logging.info(f"  HDR enabled: {self.enable_hdr}")
         logging.info(f"  Face swap enabled: {self.enable_face_swap}")
+        logging.info(f"  GPU enabled: {self.gpu}")
+        logging.info(f"  GPU device: {self.gpu_device}")
+        logging.info(f"  ML quality scoring: {self.enable_ml_quality}")
         logging.info(f"  Threads: {self.threads}")
         logging.info(f"  Verbose: {self.verbose}")
         logging.info(f"  Group by person: {self.immich_group_by_person}")
@@ -210,6 +233,39 @@ class PhotoOrganizer:
         # Setup signal handlers for graceful interruption
         self._interrupted = False
         self._setup_signal_handlers()
+
+    def _init_ml_quality_scorer(self):
+        """Initialize the ML quality scorer if available."""
+        try:
+            from backends.ml_quality_scorer import get_quality_scorer
+
+            # Determine device for ML scorer
+            if self.gpu:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        device = f'cuda:{self.gpu_device}'
+                    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                        device = 'mps'
+                    else:
+                        device = 'cpu'
+                except ImportError:
+                    device = 'cpu'
+            else:
+                device = 'cpu'
+
+            self.ml_quality_scorer = get_quality_scorer(device=device)
+            if self.ml_quality_scorer:
+                logging.info(f"  ML quality scorer: {self.ml_quality_scorer.model_type} on {device}")
+                print(f"ML quality scoring enabled ({self.ml_quality_scorer.model_type} on {device})")
+            else:
+                logging.info("  ML quality scorer: not available")
+        except ImportError:
+            logging.info("  ML quality scorer: not installed")
+            self.ml_quality_scorer = None
+        except Exception as e:
+            logging.warning(f"  ML quality scorer initialization failed: {e}")
+            self.ml_quality_scorer = None
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful interruption."""

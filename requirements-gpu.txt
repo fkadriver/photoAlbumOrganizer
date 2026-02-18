@@ -1,0 +1,54 @@
+# GPU-accelerated face detection backends
+# Install with: pip install -r requirements-gpu.txt
+#
+# For NVIDIA GPU (CUDA):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements-gpu.txt
+#
+# For Apple Silicon (MPS):
+#   pip install torch torchvision  # MPS support included by default
+#   pip install -r requirements-gpu.txt
+#
+# For CPU-only (no GPU):
+#   pip install -r requirements-gpu.txt
+#   (will use CPU fallback automatically)
+
+# FaceNet/PyTorch backend (Primary GPU backend)
+# MTCNN detection + InceptionResnetV1 128-d embeddings
+# Supports: CUDA, MPS (Apple Silicon), CPU
+facenet-pytorch>=2.5.3
+
+# InsightFace backend
+# RetinaFace detection + ArcFace 512-d embeddings
+# Supports: CUDA via ONNX Runtime, CPU
+insightface>=0.7.3
+
+# ONNX Runtime - GPU version for InsightFace
+# For NVIDIA CUDA:
+#   pip install onnxruntime-gpu>=1.17.0
+# For CPU-only:
+#   pip install onnxruntime>=1.17.0
+onnxruntime>=1.17.0
+
+# YOLOv8-Face backend (Fastest detection, no encoding)
+# Supports: CUDA, MPS, CPU
+ultralytics>=8.1.0
+
+# ML Quality Scorer (aesthetic scoring)
+# CLIP for high-quality aesthetic assessment
+# Falls back to MobileNetV2 (in torchvision) if not available
+transformers>=4.36.0
+
+# PyTorch (required for FaceNet, YOLOv8, and ML scorer)
+# Install separately based on your platform:
+#
+# NVIDIA CUDA:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# Apple Silicon:
+#   pip install torch torchvision
+#
+# CPU-only:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+torchvision>=0.16.0

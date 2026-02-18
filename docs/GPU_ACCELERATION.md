@@ -4,8 +4,8 @@ GPU acceleration targets the most CPU-intensive phase: face detection and encodi
 
 ## Status
 
-> **Planned — Implementation in progress.**
-> The design is finalized. The new GPU-capable backends (`InsightFace`, `FaceNet/PyTorch`) will be added to `src/backends/` and integrated into `get_face_backend()` in `src/face_backend.py`.
+> **✅ IMPLEMENTED**
+> GPU-capable backends (`InsightFace`, `FaceNet/PyTorch`, `YOLOv8-Face`) are available in `src/backends/` and integrated into `get_face_backend()`. ML Quality Scoring via CLIP/MobileNetV2 is also available.
 
 ---
 

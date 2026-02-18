@@ -13,8 +13,8 @@
 | Viewer Lifecycle (`scripts/viewer`) | ✅ COMPLETED |
 | HEIC Support | ✅ COMPLETED |
 | Timestamped Reports | ✅ COMPLETED |
-| Additional Face Backends + ML Quality Scoring | 🔧 IN PROGRESS |
-| GPU Acceleration | 🔧 IN PROGRESS |
+| Additional Face Backends + ML Quality Scoring | ✅ COMPLETED |
+| GPU Acceleration | ✅ COMPLETED |
 | Web Viewer Group Combine/Split + Reprocess | ✅ COMPLETED |
 | Async / Parallel Immich Downloads | ✅ COMPLETED |
 | Immich Phase 3 (real-time sync) | ⏳ PLANNED |
@@ -102,48 +102,41 @@ results = client.bulk_download_thumbnails(asset_ids, max_workers=8, size='previe
 # {asset_id: bytes_or_None}
 ```
 
----
-
-## 🔧 In Progress
-
 ### Additional Face Backends + ML Quality Scoring
-**Design complete — implementation next.**
 
-Three new pluggable backends to add alongside `face_recognition` and `MediaPipe`, plus ML-based photo quality scoring as a fourth scorer:
+Three new GPU-capable backends added alongside `face_recognition` and `MediaPipe`:
 
 | Backend / Scorer | `--face-backend` | Key Advantage |
 |-----------------|-----------------|---------------|
 | InsightFace | `insightface` | Best accuracy, 512-d ArcFace, CUDA |
 | FaceNet/PyTorch | `facenet` | Modern dlib replacement, CUDA/MPS, batch |
 | YOLOv8-Face | `yolov8` | Fastest detection, GPU-capable |
-| CLIP Quality Scorer | *(auto, no flag)* | Aesthetic scoring: sharpness, composition, exposure |
+| CLIP Quality Scorer | *(auto when `--gpu`)* | Aesthetic scoring: sharpness, composition, exposure |
 
-The CLIP/MobileNetV2 quality scorer runs alongside whichever face backend is active, adding an aesthetic quality signal to best-photo selection beyond face quality alone. It uses the same GPU device as the face backend when `--gpu` is set.
+```bash
+./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend facenet --gpu
+./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend insightface --gpu
+./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend yolov8 --gpu
+```
 
-**Implementation plan:**
-1. Create `src/backends/` directory with `__init__.py`
-2. Add `insightface_backend.py`, `facenet_backend.py`, `yolov8_backend.py`
-3. Add `ml_quality_scorer.py` (CLIP or MobileNetV2, optional, auto-used when available)
-4. Register in `get_face_backend()`, update `--face-backend` choices
-5. Ship `requirements-gpu.txt` for optional GPU dependencies
+Install GPU backends: `pip install -r requirements-gpu.txt`
 
-See [FACE_BACKENDS.md](FACE_BACKENDS.md) for full design and interface pseudocode.
+See [FACE_BACKENDS.md](FACE_BACKENDS.md) for details.
 
 ### GPU Acceleration
-**Design complete — implementation next.**
 
 10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). Activated via `--gpu` flag with automatic device detection and CPU fallback.
 
 ```bash
-# Planned usage:
 ./photo_organizer.py -s ~/Photos -o ~/Organized --gpu
 ./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --face-backend facenet
 ./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --gpu-device 1
+./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --no-ml-quality  # disable ML scorer
 ```
 
 **Auto-detection order:** FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
 
-See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for full design, file structure, and install instructions.
+See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for install instructions and benchmarks.
 
 ---
 

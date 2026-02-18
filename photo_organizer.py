@@ -151,13 +151,23 @@ Examples:
                         help='Enable HDR merging for bracketed exposure shots')
     parser.add_argument('--hdr-gamma', type=float, default=2.2,
                         help='HDR tone mapping gamma value (default: 2.2)')
-    parser.add_argument('--face-backend', choices=['auto', 'face_recognition', 'mediapipe'],
+    parser.add_argument('--face-backend',
+                        choices=['auto', 'face_recognition', 'mediapipe', 'facenet', 'insightface', 'yolov8'],
                         default='auto',
-                        help='Face detection backend (default: auto)')
+                        help='Face detection backend (default: auto). '
+                             'GPU backends: facenet (CUDA/MPS), insightface (CUDA), yolov8 (CUDA/MPS)')
     parser.add_argument('--enable-face-swap', action='store_true',
                         help='Enable automatic face swapping to fix closed eyes/bad expressions')
     parser.add_argument('--swap-closed-eyes', action='store_true', default=True,
                         help='Swap faces with closed eyes (default: True, use --no-swap-closed-eyes to disable)')
+
+    # GPU acceleration
+    parser.add_argument('--gpu', action='store_true',
+                        help='Enable GPU acceleration for face detection (auto-selects best GPU backend)')
+    parser.add_argument('--gpu-device', type=int, default=0,
+                        help='GPU device index for multi-GPU systems (default: 0)')
+    parser.add_argument('--no-ml-quality', action='store_true',
+                        help='Disable ML-based aesthetic quality scoring')
 
     # Other arguments
     parser.add_argument('--verbose', action='store_true',
@@ -371,6 +381,9 @@ Examples:
         enable_face_swap=args.enable_face_swap,
         swap_closed_eyes=args.swap_closed_eyes,
         face_backend=args.face_backend,
+        gpu=getattr(args, 'gpu', False),
+        gpu_device=getattr(args, 'gpu_device', 0),
+        enable_ml_quality=not getattr(args, 'no_ml_quality', False),
         threads=args.threads,
         verbose=args.verbose,
         immich_group_by_person=getattr(args, 'immich_group_by_person', False),

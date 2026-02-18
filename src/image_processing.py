@@ -19,11 +19,20 @@ _face_backend: Optional[FaceBackend] = get_face_backend("auto")
 FACE_DETECTION_ENABLED = _face_backend is not None
 
 
-def set_face_backend(backend_name: str):
-    """Set the face detection backend. Call before using any face functions."""
+def set_face_backend(backend_name: str, gpu: bool = False, gpu_device: int = 0):
+    """Set the face detection backend. Call before using any face functions.
+
+    Args:
+        backend_name: Backend to use ('auto', 'face_recognition', 'mediapipe',
+                     'facenet', 'insightface', 'yolov8')
+        gpu: Enable GPU acceleration for GPU-capable backends
+        gpu_device: GPU device index for multi-GPU systems
+    """
     global _face_backend, FACE_DETECTION_ENABLED
-    _face_backend = get_face_backend(backend_name)
+    _face_backend = get_face_backend(backend_name, gpu=gpu, gpu_device=gpu_device)
     FACE_DETECTION_ENABLED = _face_backend is not None
+    if _face_backend and hasattr(_face_backend, 'device'):
+        logging.info(f"Face backend set to {_face_backend.name} on {_face_backend.device}")
 
 
 def score_face_quality(photo: Photo, photo_source: PhotoSource):
