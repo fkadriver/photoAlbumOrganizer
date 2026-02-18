@@ -9,18 +9,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import imagehash
 
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
+
 from photo_sources import Photo, PhotoSource
 from processing_state import ProcessingState
 
 
-def compute_hash(photo: Photo, photo_source: PhotoSource, verbose: bool = False):
+def compute_hash(photo: Photo, photo_source: PhotoSource):
     """
     Compute perceptual hash for a photo.
 
     Args:
         photo: Photo object to hash
         photo_source: PhotoSource to get photo data from
-        verbose: Whether to print error messages
 
     Returns:
         Perceptual hash or None if error
@@ -45,15 +50,13 @@ def compute_hash(photo: Photo, photo_source: PhotoSource, verbose: bool = False)
                 img = img.convert('RGB')
             return imagehash.dhash(img)
     except Exception as e:
-        error_msg = f"Error hashing {photo.id}: {e}"
-        if verbose:
-            print(f'\n{error_msg}')
-        logging.error(error_msg)
+        filename = photo.metadata.get('filename', photo.id)
+        logging.warning(f"Skipped unhashable photo '{filename}': {e}")
         return None
 
 
 def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: ProcessingState,
-                       extract_metadata_func, get_datetime_func, verbose: bool = False):
+                       extract_metadata_func, get_datetime_func):
     """
     Process a single photo's hash and metadata (for parallel processing).
 
@@ -63,7 +66,6 @@ def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: Processin
         state: ProcessingState for caching hashes
         extract_metadata_func: Function to extract metadata from photo
         get_datetime_func: Function to extract datetime from metadata
-        verbose: Whether to print error messages
 
     Returns:
         Dictionary with photo, hash, metadata, and datetime
@@ -73,7 +75,7 @@ def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: Processin
     if cached_hash:
         hash_val = imagehash.hex_to_hash(cached_hash)
     else:
-        hash_val = compute_hash(photo, photo_source, verbose)
+        hash_val = compute_hash(photo, photo_source)
         if hash_val is None:
             return None
         # Cache the computed hash
@@ -93,7 +95,7 @@ def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: Processin
 def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: ProcessingState,
                         extract_metadata_func, get_datetime_func,
                         similarity_threshold: int, use_time_window: bool, time_window: int,
-                        threads: int, verbose: bool, interrupted_flag):
+                        min_group_size: int, threads: int, interrupted_flag):
     """
     Group photos by perceptual similarity.
 
@@ -106,16 +108,14 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
         similarity_threshold: Maximum hash difference for similarity
         use_time_window: Whether to use time window for grouping
         time_window: Time window in seconds
+        min_group_size: Minimum number of photos to form a group
         threads: Number of threads for parallel processing
-        verbose: Whether to print verbose error messages
         interrupted_flag: Flag to check for interruption
 
     Returns:
         List of groups (each group is a list of photo_data dictionaries)
     """
-    msg = f"Computing hashes for {len(photos)} photos using {threads} thread(s)..."
-    print(msg)
-    logging.info(msg)
+    logging.info(f"Computing hashes for {len(photos)} photos using {threads} thread(s)...")
 
     # Compute hashes and metadata in parallel
     photo_data = []
@@ -126,7 +126,7 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
         future_to_photo = {
             executor.submit(
                 process_photo_hash, photo, photo_source, state,
-                extract_metadata_func, get_datetime_func, verbose
+                extract_metadata_func, get_datetime_func
             ): photo
             for photo in photos
         }
@@ -155,17 +155,18 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                     photo_data.append(result)
             except Exception as e:
                 photo = future_to_photo[future]
-                error_msg = f"Error processing photo {photo.id}: {e}"
-                if verbose:
-                    print(f'\n{error_msg}')  # New line to not interfere with progress bar
-                logging.error(error_msg)
+                filename = photo.metadata.get('filename', photo.id)
+                logging.warning(f"Error processing '{filename}': {e}")
 
     # Complete progress bar
     print()  # New line after progress bar
 
-    grouping_msg = f"Grouping {len(photo_data)} photos by similarity..."
-    print(grouping_msg)
-    logging.info(grouping_msg)
+    skipped = processed_count - len(photo_data)
+    if skipped > 0:
+        print(f"\n  Skipped {skipped} unreadable photo(s)")
+        logging.warning(f"Skipped {skipped} unreadable photo(s) during hashing")
+
+    logging.info(f"Grouping {len(photo_data)} photos by similarity...")
 
     # Group by similarity
     groups = []
@@ -202,8 +203,8 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                     group.append(data2)
                     used.add(j)
 
-        if len(group) > 1:  # Only create groups with multiple photos
+        if len(group) >= min_group_size:
             groups.append(group)
 
-    print(f"Found {len(groups)} groups of similar photos")
+    logging.info(f"Found {len(groups)} groups of similar photos")
     return groups

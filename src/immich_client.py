@@ -33,6 +33,7 @@ class ImmichAsset:
         self.duration = data.get('duration')
         self.exif_info = data.get('exifInfo', {})
         self.tags = data.get('tags', [])
+        self.people = data.get('people', [])
         self.checksum = data.get('checksum')
 
         # Store raw data for additional fields
@@ -44,6 +45,17 @@ class ImmichAsset:
 
 class ImmichClient:
     """Client for Immich API."""
+
+    # Maps endpoint prefixes to required API key permission scopes.
+    # Used to give actionable 403 error messages.
+    _PERMISSION_HINTS = {
+        '/api/duplicates': 'duplicate.read',
+        '/api/people': 'people.read',
+        '/api/faces': 'people.read',
+        '/api/search/smart': 'asset.read',
+        '/api/search/metadata': 'asset.read',
+        '/api/tags': 'tag.read, tag.create, or tag.update',
+    }
 
     def __init__(self, url: str, api_key: str, verify_ssl: bool = True):
         """
@@ -65,39 +77,58 @@ class ImmichClient:
         })
         self.session.verify = verify_ssl
 
+    def _permission_hint(self, endpoint: str) -> str:
+        """Return a permission hint string for the given endpoint, or empty."""
+        for prefix, scope in self._PERMISSION_HINTS.items():
+            if endpoint.startswith(prefix):
+                return (f"\n  Hint: Your API key may need the '{scope}' permission. "
+                        f"Regenerate it in Immich → Administration → API Keys "
+                        f"with the required scope (or use 'All').")
+        return ""
+
+    def _raise_with_hint(self, response: requests.Response, endpoint: str):
+        """Raise for HTTP errors, adding permission hints for 403."""
+        if response.status_code == 403:
+            hint = self._permission_hint(endpoint)
+            raise requests.HTTPError(
+                f"403 Forbidden for {endpoint}{hint}",
+                response=response,
+            )
+        response.raise_for_status()
+
     def _get(self, endpoint: str, **kwargs) -> requests.Response:
         """Make GET request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.get(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _post(self, endpoint: str, **kwargs) -> requests.Response:
         """Make POST request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.post(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _put(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PUT request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.put(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _patch(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PATCH request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.patch(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def _delete(self, endpoint: str, **kwargs) -> requests.Response:
         """Make DELETE request to Immich API."""
         url = f"{self.url}{endpoint}"
         response = self.session.delete(url, **kwargs)
-        response.raise_for_status()
+        self._raise_with_hint(response, endpoint)
         return response
 
     def ping(self) -> bool:
@@ -261,6 +292,34 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to download asset {asset_id}: {e}")
             return None
+
+    def bulk_download_thumbnails(self, asset_ids: List[str], max_workers: int = 8,
+                                  size: str = 'preview') -> Dict[str, Optional[bytes]]:
+        """
+        Download multiple thumbnails concurrently using a thread pool.
+
+        Args:
+            asset_ids: List of asset IDs to download
+            max_workers: Number of concurrent download threads (default: 8)
+            size: Thumbnail size ('preview' or 'thumbnail')
+
+        Returns:
+            Dict mapping asset_id -> bytes (or None if download failed)
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: Dict[str, Optional[bytes]] = {}
+
+        def _fetch(asset_id: str):
+            return asset_id, self.get_asset_thumbnail(asset_id, size=size)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_fetch, aid): aid for aid in asset_ids}
+            for future in as_completed(futures):
+                aid, data = future.result()
+                results[aid] = data
+
+        return results
 
     def update_asset(self, asset_id: str, is_favorite: Optional[bool] = None,
                      is_archived: Optional[bool] = None, description: Optional[str] = None) -> bool:
@@ -477,3 +536,395 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to delete albums by prefix: {e}")
             return (0, 0)
+
+    # --- People / Faces ---
+
+    def get_people(self, with_hidden: bool = False) -> List[Dict]:
+        """
+        Get all recognized people.
+
+        Args:
+            with_hidden: Include hidden people
+
+        Returns:
+            List of person dictionaries
+        """
+        try:
+            params = {'withHidden': str(with_hidden).lower()}
+            response = self._get('/api/people', params=params)
+            data = response.json()
+            return data.get('people', data if isinstance(data, list) else [])
+        except Exception as e:
+            print(f"Failed to get people: {e}")
+            return []
+
+    def get_person(self, person_id: str) -> Optional[Dict]:
+        """
+        Get details for a specific person.
+
+        Args:
+            person_id: Person ID
+
+        Returns:
+            Person dictionary or None
+        """
+        try:
+            response = self._get(f'/api/people/{person_id}')
+            return response.json()
+        except Exception as e:
+            print(f"Failed to get person {person_id}: {e}")
+            return None
+
+    def get_person_assets(self, person_id: str, limit: Optional[int] = None) -> List[ImmichAsset]:
+        """
+        Get all photo assets for a specific person.
+
+        Args:
+            person_id: Person ID
+            limit: Maximum number of images to return
+
+        Returns:
+            List of ImmichAsset objects
+        """
+        try:
+            assets = []
+            page = 1
+            page_size = 1000
+
+            while True:
+                response = self._post('/api/search/metadata', json={
+                    'personIds': [person_id],
+                    'page': page,
+                    'size': page_size
+                })
+                data = response.json()
+
+                items = []
+                if 'assets' in data and 'items' in data['assets']:
+                    items = data['assets']['items']
+                elif 'items' in data:
+                    items = data['items']
+
+                if not items:
+                    break
+
+                for item in items:
+                    if item.get('type') == 'IMAGE':
+                        assets.append(ImmichAsset(item))
+                        if limit is not None and len(assets) >= limit:
+                            return assets
+
+                if len(items) < page_size:
+                    break
+                page += 1
+
+            return assets
+        except Exception as e:
+            print(f"Failed to get person assets for {person_id}: {e}")
+            return []
+
+    def get_asset_faces(self, asset_id: str) -> List[Dict]:
+        """
+        Get face bounding boxes and person links for an asset.
+
+        Args:
+            asset_id: Asset ID
+
+        Returns:
+            List of face dictionaries with bounding boxes and person info
+        """
+        try:
+            response = self._get('/api/faces', params={'id': asset_id})
+            return response.json()
+        except Exception as e:
+            print(f"Failed to get faces for asset {asset_id}: {e}")
+            return []
+
+    def get_person_thumbnail(self, person_id: str) -> Optional[bytes]:
+        """
+        Get face thumbnail for a person.
+
+        Args:
+            person_id: Person ID
+
+        Returns:
+            Binary image data or None
+        """
+        try:
+            response = self._get(f'/api/people/{person_id}/thumbnail')
+            return response.content
+        except Exception as e:
+            print(f"Failed to get person thumbnail {person_id}: {e}")
+            return None
+
+    # --- ML Features ---
+
+    def smart_search(self, query: str, page: int = 1, size: int = 100) -> List[ImmichAsset]:
+        """
+        CLIP semantic search for photos matching a text query.
+
+        Args:
+            query: Natural language search query
+            page: Page number (1-indexed)
+            size: Results per page
+
+        Returns:
+            List of matching ImmichAsset objects
+        """
+        try:
+            response = self._post('/api/search/smart', json={
+                'query': query,
+                'page': page,
+                'size': size
+            })
+            data = response.json()
+
+            items = []
+            if 'assets' in data and 'items' in data['assets']:
+                items = data['assets']['items']
+            elif 'items' in data:
+                items = data['items']
+
+            return [ImmichAsset(item) for item in items if item.get('type') == 'IMAGE']
+        except Exception as e:
+            print(f"Failed to perform smart search: {e}")
+            return []
+
+    def get_duplicates(self) -> List[Dict]:
+        """
+        Get server-side duplicate photo groups.
+
+        Returns:
+            List of duplicate group dictionaries, each with 'duplicateId' and 'assets'
+        """
+        try:
+            response = self._get('/api/duplicates')
+            return response.json()
+        except Exception as e:
+            print(f"Failed to get duplicates: {e}")
+            return []
+
+    # --- Bulk Operations ---
+
+    def bulk_update_assets(self, asset_ids: List[str], is_favorite: Optional[bool] = None,
+                           is_archived: Optional[bool] = None) -> bool:
+        """
+        Bulk update multiple assets at once.
+
+        Args:
+            asset_ids: List of asset IDs to update
+            is_favorite: Set favorite status
+            is_archived: Set archived status
+
+        Returns:
+            True if successful
+        """
+        try:
+            data = {'ids': asset_ids}
+            if is_favorite is not None:
+                data['isFavorite'] = is_favorite
+            if is_archived is not None:
+                data['isArchived'] = is_archived
+            self._put('/api/assets', json=data)
+            return True
+        except Exception as e:
+            print(f"Failed to bulk update assets: {e}")
+            return False
+
+    def bulk_delete_assets(self, asset_ids: List[str], force: bool = False) -> bool:
+        """
+        Bulk trash or permanently delete assets.
+
+        Args:
+            asset_ids: List of asset IDs
+            force: If True, permanently delete. If False, move to trash.
+
+        Returns:
+            True if successful
+        """
+        try:
+            self._delete('/api/assets', json={
+                'ids': asset_ids,
+                'force': force
+            })
+            return True
+        except Exception as e:
+            print(f"Failed to bulk delete assets: {e}")
+            return False
+
+    # --- Tag Management ---
+
+    def get_tags(self) -> List[Dict]:
+        """
+        Get all tags.
+
+        Returns:
+            List of tag dictionaries
+        """
+        try:
+            response = self._get('/api/tags')
+            return response.json()
+        except Exception as e:
+            print(f"Failed to get tags: {e}")
+            return []
+
+    def get_or_create_tag(self, tag_name: str) -> Optional[str]:
+        """
+        Find a tag by name or create it if it doesn't exist.
+
+        Args:
+            tag_name: Tag name (e.g., "photo-organizer/best")
+
+        Returns:
+            Tag ID if successful, None otherwise
+        """
+        try:
+            # Search existing tags
+            tags = self.get_tags()
+            for tag in tags:
+                if tag.get('name') == tag_name or tag.get('value') == tag_name:
+                    return tag.get('id')
+
+            # Create new tag
+            response = self._post('/api/tags', json={'name': tag_name})
+            return response.json().get('id')
+        except Exception as e:
+            print(f"Failed to get or create tag '{tag_name}': {e}")
+            return None
+
+    def tag_assets_by_tag_id(self, tag_id: str, asset_ids: List[str]) -> bool:
+        """
+        Assign assets to a tag by tag ID.
+
+        Args:
+            tag_id: Tag ID
+            asset_ids: List of asset IDs to tag
+
+        Returns:
+            True if successful
+        """
+        try:
+            self._put(f'/api/tags/{tag_id}/assets', json={
+                'ids': asset_ids
+            })
+            return True
+        except Exception as e:
+            print(f"Failed to tag assets with tag {tag_id}: {e}")
+            return False
+
+    def delete_tag(self, tag_id: str) -> bool:
+        """
+        Delete a tag by ID.
+
+        Args:
+            tag_id: Tag ID to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            self._delete(f'/api/tags/{tag_id}')
+            return True
+        except Exception as e:
+            print(f"Failed to delete tag {tag_id}: {e}")
+            return False
+
+    def delete_tags_by_prefix(self, prefix: str, dry_run: bool = True) -> tuple:
+        """
+        Delete all tags matching a prefix.
+
+        Args:
+            prefix: Tag name prefix to match (e.g., "photo-organizer/")
+            dry_run: If True, only show what would be deleted
+
+        Returns:
+            Tuple of (matched_count, deleted_count)
+        """
+        try:
+            tags = self.get_tags()
+            matched = [
+                t for t in tags
+                if (t.get('name') or t.get('value', '')).startswith(prefix)
+            ]
+
+            if not matched:
+                print(f"No tags found with prefix '{prefix}'")
+                return (0, 0)
+
+            print(f"\nFound {len(matched)} tag(s) with prefix '{prefix}':")
+            for tag in matched:
+                name = tag.get('name') or tag.get('value', 'Unknown')
+                print(f"  - {name} (ID: {tag.get('id', '?')})")
+
+            if dry_run:
+                print(f"\nDRY RUN: Would delete {len(matched)} tag(s)")
+                return (len(matched), 0)
+
+            deleted = 0
+            for tag in matched:
+                tag_id = tag.get('id')
+                name = tag.get('name') or tag.get('value', 'Unknown')
+                if tag_id and self.delete_tag(tag_id):
+                    deleted += 1
+                    print(f"  Deleted: {name}")
+                else:
+                    print(f"  Failed to delete: {name}")
+
+            print(f"\nDeleted {deleted} of {len(matched)} tag(s)")
+            return (len(matched), deleted)
+        except Exception as e:
+            print(f"Failed to delete tags by prefix: {e}")
+            return (0, 0)
+
+    def search_assets_by_tag(self, tag_name: str) -> List[str]:
+        """
+        Find all asset IDs that have a specific tag.
+
+        Args:
+            tag_name: Tag name to search for
+
+        Returns:
+            List of asset IDs
+        """
+        try:
+            # Find the tag ID
+            tags = self.get_tags()
+            tag_id = None
+            for tag in tags:
+                if (tag.get('name') or tag.get('value', '')) == tag_name:
+                    tag_id = tag.get('id')
+                    break
+
+            if not tag_id:
+                return []
+
+            # Search for assets with this tag
+            asset_ids = []
+            page = 1
+            while True:
+                response = self._post('/api/search/metadata', json={
+                    'tagIds': [tag_id],
+                    'page': page,
+                    'size': 1000
+                })
+                data = response.json()
+
+                items = []
+                if 'assets' in data and 'items' in data['assets']:
+                    items = data['assets']['items']
+                elif 'items' in data:
+                    items = data['items']
+
+                if not items:
+                    break
+
+                asset_ids.extend(item.get('id') for item in items if item.get('id'))
+
+                if len(items) < 1000:
+                    break
+                page += 1
+
+            return asset_ids
+        except Exception as e:
+            print(f"Failed to search assets by tag '{tag_name}': {e}")
+            return []

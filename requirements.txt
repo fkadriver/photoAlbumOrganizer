@@ -1,14 +1,21 @@
 # Image processing
 Pillow>=10.0.0
+pillow-heif>=0.13.0
 imagehash>=4.3.1
 opencv-python>=4.8.0
 
-# Face detection and recognition
+# Face detection and recognition (install ONE of the following groups):
+#
+# Option 1: face_recognition (dlib-based) - supports face encoding/identity matching
 # Note: dlib compilation requires python3.11-dev system package
 # Alternative: use 'pip install dlib-binary' for pre-built version
 face_recognition>=1.3.0
 face_recognition_models>=0.3.0
 dlib>=19.24.0
+#
+# Option 2: MediaPipe (Google) - lightweight, no compilation required
+# Requires downloading the model file (see README)
+# mediapipe>=0.10.0
 
 # Advanced face processing (optional - for face swapping feature)
 # face-alignment>=1.3.0
@@ -16,7 +23,7 @@ dlib>=19.24.0
 # Utilities
 numpy>=1.24.0
 scipy>=1.10.0
-click>=8.1.0
+setuptools<71  # face_recognition_models requires pkg_resources
 
 # Immich integration
 requests>=2.31.0

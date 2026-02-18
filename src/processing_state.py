@@ -4,7 +4,9 @@ Processing state management for resume capability.
 Allows long-running photo organization jobs to be interrupted and resumed.
 """
 
+import json
 import pickle
+import threading
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -22,8 +24,9 @@ class ProcessingState:
             state_file: Path to state file for persistence
         """
         self.state_file = Path(state_file)
+        self._lock = threading.Lock()
         self.state = {
-            'version': '1.0',
+            'version': '2.0',
             'started_at': None,
             'last_saved': None,
             'source_type': None,
@@ -49,7 +52,12 @@ class ProcessingState:
         }
 
     def save(self):
-        """Save current state to disk."""
+        """Save current state to disk (thread-safe)."""
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self):
+        """Save current state to disk (caller must hold self._lock)."""
         self.state['last_saved'] = datetime.now().isoformat()
 
         # Create parent directory if needed
@@ -58,8 +66,8 @@ class ProcessingState:
         # Save with atomic write (write to temp, then rename)
         temp_file = self.state_file.with_suffix('.tmp')
         try:
-            with open(temp_file, 'wb') as f:
-                pickle.dump(self.state, f)
+            with open(temp_file, 'w') as f:
+                json.dump(self.state, f, indent=2)
             temp_file.replace(self.state_file)
         except Exception as e:
             print(f"Warning: Failed to save state: {e}")
@@ -70,6 +78,9 @@ class ProcessingState:
         """
         Load state from disk.
 
+        Supports both JSON (v2.0) and legacy pickle (v1.0) formats.
+        Legacy pickle files are automatically migrated to JSON on load.
+
         Returns:
             True if state was loaded successfully, False otherwise
         """
@@ -77,20 +88,34 @@ class ProcessingState:
             return False
 
         try:
-            with open(self.state_file, 'rb') as f:
-                loaded_state = pickle.load(f)
-
-            # Verify version compatibility
-            if loaded_state.get('version') != '1.0':
-                print(f"Warning: State file version mismatch")
+            # Try JSON first
+            with open(self.state_file, 'r') as f:
+                loaded_state = json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Fall back to legacy pickle format
+            try:
+                with open(self.state_file, 'rb') as f:
+                    loaded_state = pickle.load(f)
+                print("Migrating state file from pickle to JSON format...")
+            except Exception as e:
+                print(f"Warning: Failed to load state: {e}")
                 return False
 
-            self.state = loaded_state
-            return True
-
-        except Exception as e:
-            print(f"Warning: Failed to load state: {e}")
+        # Verify version compatibility
+        version = loaded_state.get('version')
+        if version not in ('1.0', '2.0'):
+            print(f"Warning: State file version mismatch (got {version})")
             return False
+
+        self.state = loaded_state
+        self.state['version'] = '2.0'
+
+        # Re-save as JSON if migrated from pickle
+        if version == '1.0':
+            self.save()
+            print("State file migrated to JSON format.")
+
+        return True
 
     def initialize(self, source_type: str, source_path: Optional[str],
                    output_path: Optional[str], threshold: int,
@@ -130,16 +155,18 @@ class ProcessingState:
             photo_id: Photo identifier
             hash_value: Computed hash value
         """
-        self.state['processed_hashes'][photo_id] = str(hash_value)
-        self.state['photos_hashed'] += 1
+        with self._lock:
+            self.state['processed_hashes'][photo_id] = str(hash_value)
+            self.state['photos_hashed'] += 1
 
-        # Auto-save every 50 photos
-        if self.state['photos_hashed'] % 50 == 0:
-            self.save()
+            # Auto-save every 50 photos
+            if self.state['photos_hashed'] % 50 == 0:
+                self._save_unlocked()
 
     def get_cached_hash(self, photo_id: str) -> Optional[str]:
         """Get cached hash for a photo."""
-        return self.state['processed_hashes'].get(photo_id)
+        with self._lock:
+            return self.state['processed_hashes'].get(photo_id)
 
     def set_groups_found(self, count: int):
         """Set total number of groups found."""

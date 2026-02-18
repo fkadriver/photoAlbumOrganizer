@@ -13,6 +13,7 @@ import warnings
 from pathlib import Path
 import argparse
 
+
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -22,52 +23,62 @@ os.environ['MKL_NUM_THREADS'] = '1'
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# Import after path setup
+# Lightweight import only — heavy imports (cv2, face_recognition, etc.)
+# are deferred to main() so that interactive mode can run without them.
 from utils import setup_logging
-from photo_sources import LocalPhotoSource, ImmichPhotoSource
-from organizer import PhotoOrganizer
+
+
+class HintingArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that appends a tip about interactive mode on error."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"\n{self.prog}: error: {message}", file=sys.stderr)
+        print("\nTip: Run with -i or --interactive for a guided setup menu.",
+              file=sys.stderr)
+        sys.exit(2)
 
 
 def main():
     """Main entry point with argument parsing."""
-    parser = argparse.ArgumentParser(
+    parser = HintingArgumentParser(
         description='Organize photo albums by grouping similar photos',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Local photos
-  python photo_organizer.py -s ~/Photos -o ~/OrganizedPhotos
-  python photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --verbose
+  ./photo_organizer.py -s ~/Photos -o ~/OrganizedPhotos
+  ./photo_organizer.py -s ~/Photos -o ~/Organized -t 8 --verbose
 
   # Immich integration - tag duplicates
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     --tag-only
 
   # Immich integration - create albums
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     --create-albums \\
     --mark-best-favorite
 
   # Immich integration - download and organize
-  python photo_organizer.py --source-type immich \\
+  ./photo_organizer.py --source-type immich \\
     --immich-url http://immich:2283 \\
     --immich-api-key YOUR_KEY \\
     -o ~/Organized
 
   # HDR merging for bracketed exposures
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --hdr-gamma 2.2
 
   # Face swapping to fix closed eyes
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-face-swap
 
   # Both HDR and face swapping
-  python photo_organizer.py -s ~/Photos -o ~/Organized \\
+  ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --enable-face-swap
         """
     )
@@ -97,10 +108,13 @@ Examples:
                         help='Download full resolution (default: use thumbnails)')
 
     # Processing arguments
-    parser.add_argument('-t', '--threshold', type=int, default=5,
+    parser.add_argument('-t', '--threshold', type=int, default=5, choices=range(0, 65),
+                        metavar='N',
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
                         help='Time window in seconds for grouping (default=300, use 0 to disable time window)')
+    parser.add_argument('--min-group-size', type=int, default=3,
+                        help='Minimum photos per group (default: 3, min: 2)')
 
     # Immich action arguments
     parser.add_argument('--tag-only', action='store_true',
@@ -111,6 +125,18 @@ Examples:
                         help='Prefix for created albums (default: Organized-)')
     parser.add_argument('--mark-best-favorite', action='store_true',
                         help='Mark best photo in each group as favorite (Immich only)')
+    parser.add_argument('--immich-group-by-person', action='store_true',
+                        help='Group photos by recognized person (Immich only)')
+    parser.add_argument('--immich-person',
+                        help='Filter to specific person name (Immich only)')
+    parser.add_argument('--immich-use-server-faces', action='store_true',
+                        help='Use Immich face data for best-photo selection')
+    parser.add_argument('--archive-non-best', action='store_true',
+                        help='Archive non-best photos in each group (Immich only)')
+    parser.add_argument('--immich-use-duplicates', action='store_true',
+                        help='Use Immich server-side duplicate detection for grouping')
+    parser.add_argument('--immich-smart-search',
+                        help='Pre-filter photos using CLIP semantic search query (Immich only)')
 
     # Resume capability
     parser.add_argument('--resume', action='store_true',
@@ -125,6 +151,9 @@ Examples:
                         help='Enable HDR merging for bracketed exposure shots')
     parser.add_argument('--hdr-gamma', type=float, default=2.2,
                         help='HDR tone mapping gamma value (default: 2.2)')
+    parser.add_argument('--face-backend', choices=['auto', 'face_recognition', 'mediapipe'],
+                        default='auto',
+                        help='Face detection backend (default: auto)')
     parser.add_argument('--enable-face-swap', action='store_true',
                         help='Enable automatic face swapping to fix closed eyes/bad expressions')
     parser.add_argument('--swap-closed-eyes', action='store_true', default=True,
@@ -140,7 +169,81 @@ Examples:
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of threads for parallel processing (default: 2)')
 
+    # Cleanup mode
+    parser.add_argument('--cleanup', action='store_true',
+                        help='Launch Immich cleanup menu to undo organizer changes')
+
+    # Web viewer
+    parser.add_argument('--web-viewer', action='store_true',
+                        help='Launch web viewer for processing report')
+    parser.add_argument('--report',
+                        help='Path to processing report JSON (default: reports/latest.json)')
+    parser.add_argument('--report-dir', default='reports',
+                        help='Directory for timestamped reports (default: reports)')
+    parser.add_argument('--port', type=int, default=8080,
+                        help='Web viewer port (default: 8080)')
+    parser.add_argument('--live-viewer', action='store_true',
+                        help='Start web viewer in background during processing')
+
+    # Interactive mode
+    parser.add_argument('-i', '--interactive', action='store_true',
+                        help='Launch interactive setup menu')
+    parser.add_argument('-r', '--run-settings', nargs='?',
+                        const='.photo_organizer_settings.json', default=None,
+                        metavar='FILE',
+                        help='Run directly from a saved settings file '
+                             '(default: .photo_organizer_settings.json)')
+
     args = parser.parse_args()
+
+    # Handle --web-viewer early (no state file or validation needed)
+    if args.web_viewer:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from web_viewer import start_viewer
+        report_path = args.report
+        if not report_path:
+            # Try reports/latest.json first, fall back to processing_report.json
+            if os.path.exists(os.path.join(args.report_dir, 'latest.json')):
+                report_path = os.path.join(args.report_dir, 'latest.json')
+            elif os.path.exists('processing_report.json'):
+                report_path = 'processing_report.json'
+            else:
+                report_path = os.path.join(args.report_dir, 'latest.json')
+        immich_client = None
+        if args.immich_url and args.immich_api_key:
+            from immich_client import ImmichClient
+            immich_client = ImmichClient(
+                url=args.immich_url,
+                api_key=args.immich_api_key,
+                verify_ssl=not args.no_verify_ssl,
+            )
+        start_viewer(report_path, port=args.port, immich_client=immich_client)
+        sys.exit(0)
+
+    # Handle --cleanup early (no state file or validation needed)
+    if args.cleanup:
+        if not args.immich_url or not args.immich_api_key:
+            parser.error("--cleanup requires --immich-url and --immich-api-key (or use -i for interactive)")
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from immich_client import ImmichClient
+        from cleanup import run_cleanup_menu
+        client = ImmichClient(
+            url=args.immich_url,
+            api_key=args.immich_api_key,
+            verify_ssl=not args.no_verify_ssl,
+        )
+        run_cleanup_menu(client, album_prefix=args.album_prefix)
+        sys.exit(0)
+
+    # Early interception: replace args with interactive menu selections
+    if args.interactive:
+        from interactive import run_interactive_menu
+        args = run_interactive_menu()
+    elif args.run_settings:
+        from interactive import load_and_run_settings
+        args = load_and_run_settings(args.run_settings)
+        # -r is non-interactive: auto-start fresh instead of prompting
+        args.force_fresh = True
 
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:
@@ -148,9 +251,9 @@ Examples:
         if args.state_file:
             potential_state_file = Path(args.state_file)
         elif args.output:
-            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+            potential_state_file = Path(args.output) / '.photo_organizer_state.json'
         else:
-            potential_state_file = Path('.photo_organizer_state.pkl')
+            potential_state_file = Path('.photo_organizer_state.json')
 
         # Check if state file exists
         if potential_state_file.exists():
@@ -184,9 +287,9 @@ Examples:
         if args.state_file:
             potential_state_file = Path(args.state_file)
         elif args.output:
-            potential_state_file = Path(args.output) / '.photo_organizer_state.pkl'
+            potential_state_file = Path(args.output) / '.photo_organizer_state.json'
         else:
-            potential_state_file = Path('.photo_organizer_state.pkl')
+            potential_state_file = Path('.photo_organizer_state.json')
 
         if potential_state_file.exists():
             potential_state_file.unlink()
@@ -206,6 +309,20 @@ Examples:
             parser.error("--immich-api-key is required for immich source type")
         if not args.output and not args.tag_only and not args.create_albums:
             parser.error("--output, --tag-only, or --create-albums is required for immich source type")
+
+    # Deferred imports — these pull in cv2, face_recognition, etc.
+    # and require the Nix development environment for native libraries.
+    try:
+        from photo_sources import LocalPhotoSource, ImmichPhotoSource
+        from organizer import PhotoOrganizer
+    except ImportError as e:
+        print(f"\nError: Failed to import required libraries: {e}\n")
+        print("This usually means the development environment is not active.")
+        print("Try one of:")
+        print("  direnv allow        # if using direnv (recommended)")
+        print("  nix develop         # enter Nix dev shell manually")
+        print("  source venv/bin/activate  # if not on NixOS")
+        sys.exit(1)
 
     # Setup logging
     log_dir = Path(args.output) if args.output else None
@@ -241,6 +358,7 @@ Examples:
         similarity_threshold=args.threshold,
         time_window=args.time_window,
         use_time_window=(args.time_window > 0),
+        min_group_size=args.min_group_size,
         tag_only=args.tag_only,
         create_albums=args.create_albums,
         album_prefix=args.album_prefix,
@@ -252,11 +370,47 @@ Examples:
         hdr_gamma=args.hdr_gamma,
         enable_face_swap=args.enable_face_swap,
         swap_closed_eyes=args.swap_closed_eyes,
+        face_backend=args.face_backend,
         threads=args.threads,
-        verbose=args.verbose
+        verbose=args.verbose,
+        immich_group_by_person=getattr(args, 'immich_group_by_person', False),
+        immich_person=getattr(args, 'immich_person', None),
+        immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
+        archive_non_best=getattr(args, 'archive_non_best', False),
+        immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
+        immich_smart_search=getattr(args, 'immich_smart_search', None),
+        report_dir=getattr(args, 'report_dir', 'reports'),
     )
 
+    # Start live viewer if requested
+    if getattr(args, 'live_viewer', False):
+        from web_viewer import start_viewer_background
+        report_dir = getattr(args, 'report_dir', 'reports')
+        report_path = os.path.join(report_dir, 'latest.json')
+        # Write empty initial report so viewer can start
+        organizer._write_report([])
+        immich_client_for_viewer = None
+        if args.source_type == 'immich':
+            immich_client_for_viewer = photo_source.client
+        viewer_port = getattr(args, 'port', 8080)
+        start_viewer_background(report_path, port=viewer_port,
+                                immich_client=immich_client_for_viewer,
+                                report_dir=report_dir)
+        print(f"\nLive viewer running at http://localhost:{viewer_port}")
+        print(f"Report updates as processing progresses\n")
+
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
+
+    # If live viewer is running, keep the process alive so the daemon thread persists
+    if getattr(args, 'live_viewer', False):
+        print(f"\nProcessing complete. Viewer still running at http://localhost:{viewer_port}")
+        print("Press Ctrl+C to stop\n")
+        try:
+            while True:
+                import time
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nViewer stopped.")
 
 
 if __name__ == "__main__":

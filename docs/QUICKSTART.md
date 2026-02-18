@@ -1,194 +1,165 @@
-# Quick Start Guide - Immich Integration
+# Quick Start Guide
 
-## Installation
+## Prerequisites
 
-```bash
-# Install the new dependency
-pip install requests
-```
+- NixOS with direnv, or Python 3.11+ with pip
+- An [Immich](https://immich.app/) instance (for Immich features)
 
-## Get Your Immich API Key
+---
 
-1. Open your Immich web interface
-2. Navigate to: **Settings → Account Settings → API Keys**
-3. Click **"New API Key"**
-4. Give it a name (e.g., "Photo Organizer")
-5. Copy the API key (you'll need it for commands below)
+## Setup
 
-## Test Connection
+### NixOS with direnv (Recommended)
 
 ```bash
-# Test that everything works
-python ../scripts/test_immich_connection.py
+# Clone the repository
+git clone https://github.com/fkadriver/photoAlbumOrganizer.git
+cd photoAlbumOrganizer
+
+# Allow direnv (one-time)
+direnv allow
+
+# Install Python packages (first time only)
+pip install -r requirements.txt
+
+# Verify installation
+python scripts/verify_environment.py
 ```
 
-When prompted, enter:
-- Your Immich URL (e.g., `http://immich:2283` or `https://immich.example.com`)
-- Your API key
-
-## Three Ways to Use
-
-### 1. Tag Duplicates (Fastest, Safest)
-
-This scans your Immich library and tags similar photos without downloading anything.
+### Without direnv
 
 ```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --tag-only \
-  --threshold 5
+git clone https://github.com/fkadriver/photoAlbumOrganizer.git
+cd photoAlbumOrganizer
+nix develop   # or: python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-**Then:**
-- Open Immich web UI
-- Search for tag: `photo-organizer-duplicate`
-- Review and delete unwanted photos
+---
 
-### 2. Create Albums (Organized, Easy Review)
+## Configure Immich
 
-This creates Immich albums grouping similar photos together.
+Store credentials once — all tools read from the same config file:
 
 ```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --create-albums \
-  --mark-best-favorite \
-  --threshold 5
+mkdir -p ~/.config/photo-organizer
+cat > ~/.config/photo-organizer/immich.conf << 'EOF'
+IMMICH_URL="https://your-immich-url"
+IMMICH_API_KEY="your-api-key-here"
+EOF
+chmod 600 ~/.config/photo-organizer/immich.conf
 ```
 
-**Result:**
-- Albums named `Organized-0001`, `Organized-0002`, etc.
-- Best photo in each group marked as favorite
-- Easy to review in Immich
+Get your API key: Immich → **Settings → Account Settings → API Keys → New API Key**
 
-### 3. Download & Organize (Traditional Method)
+Test the connection:
+```bash
+scripts/immich.sh test
+```
 
-This downloads from Immich and creates organized local folders.
+---
+
+## Basic Workflows
+
+### Tag duplicates (safest first step)
 
 ```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --output ~/Organized \
-  --threshold 5
+scripts/immich.sh tag-only
 ```
 
-**Result:**
+Tags similar photos in Immich with `photo-organizer/best` and `photo-organizer/non-best` — nothing is deleted. Review in the Immich web UI.
+
+### Review results in the web viewer
+
+```bash
+scripts/viewer start
+# → http://localhost:8080
 ```
-~/Organized/
-├── group_0001/
-│   ├── originals/
-│   ├── metadata.txt
-│   └── best_photo.jpg
-├── group_0002/
-│   └── ...
+
+The viewer starts in the background and auto-stops when you leave the project directory. Browse groups, compare EXIF data, change best photos, and take bulk actions.
+
+### Create albums
+
+```bash
+scripts/immich.sh create-albums
 ```
+
+Creates `Organized-0001`, `Organized-0002`, etc. in Immich with best photos marked as favorites.
+
+### Interactive guided setup
+
+```bash
+./photo_organizer.py -i
+```
+
+Walks through every option step by step. Save your settings to skip the walkthrough next time.
+
+### Run with saved settings
+
+```bash
+./photo_organizer.py -r
+```
+
+Or choose `[r]` at the direnv prompt when you `cd` into the project.
+
+### Clean up (undo all organizer changes)
+
+```bash
+./photo_organizer.py --cleanup \
+  --immich-url "$IMMICH_URL" \
+  --immich-api-key "$IMMICH_API_KEY"
+
+# Or via the wrapper:
+scripts/immich.sh cleanup "Organized-" no
+```
+
+---
 
 ## Adjust the Threshold
 
-The `--threshold` parameter controls how similar photos must be:
-
-- `--threshold 3` - Very strict (only near-duplicates)
-- `--threshold 5` - **Recommended** (burst photos)
-- `--threshold 8` - Looser (similar compositions)
-
-## Process Specific Album
-
 ```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --immich-album "Vacation 2024" \
-  --create-albums
+# Strict — only near-duplicates
+scripts/immich.sh -t 3 tag-only  # Hmm: pass via --threshold flag
+./photo_organizer.py --source-type immich --immich-url "$IMMICH_URL" \
+  --immich-api-key "$IMMICH_API_KEY" --threshold 3 --tag-only
+
+# Default burst photos
+scripts/immich.sh tag-only          # default threshold is 5
+
+# Looser — similar compositions
+./photo_organizer.py --source-type immich --immich-url "$IMMICH_URL" \
+  --immich-api-key "$IMMICH_API_KEY" --threshold 8 --tag-only
 ```
 
-## Using Environment Variables
+See [CONFIGURATION.md](CONFIGURATION.md) for a full threshold guide.
 
-To avoid typing credentials repeatedly:
+---
 
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-export IMMICH_URL="http://immich:2283"
-export IMMICH_API_KEY="your-api-key-here"
-
-# Then use:
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url "$IMMICH_URL" \
-  --immich-api-key "$IMMICH_API_KEY" \
-  --tag-only
-```
-
-## Troubleshooting
-
-### Connection Failed
+## Local Photos (No Immich)
 
 ```bash
-# Test with curl
-curl -H "x-api-key: YOUR_KEY" http://immich:2283/api/server-info/ping
+./photo_organizer.py -s ~/Photos -o ~/Organized -t 5
 ```
 
-Should return: `{"res":"pong"}`
+---
 
-### SSL Certificate Error (Self-Signed Certificate)
-
-Add `--no-verify-ssl`:
+## Viewer Lifecycle
 
 ```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url https://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --no-verify-ssl \
-  --tag-only
+scripts/viewer start        # start (port 8080)
+scripts/viewer start 9090   # custom port
+scripts/viewer status       # check if running
+scripts/viewer stop          # manual stop
 ```
 
-### Need Better Quality Analysis
+The viewer auto-stops when your shell leaves the project directory.
 
-Use full resolution instead of thumbnails:
-
-```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --use-full-resolution \
-  --output ~/Organized
-```
+---
 
 ## Next Steps
 
-- Read [IMMICH.md](IMMICH.md) for detailed usage
-- Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-- Review [IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md) for architecture
-
-## Local Photos (Still Works!)
-
-The original local photo organization still works:
-
-```bash
-python ../src/photo_organizer.py -s ~/Photos -o ~/Organized -t 5
-```
-
-All the Immich features are additions - nothing was removed!
-
-## Summary
-
-**Start with tag-only mode** - it's the safest way to see what will be grouped:
-
-```bash
-python ../src/photo_organizer.py \
-  --source-type immich \
-  --immich-url http://YOUR_IMMICH:2283 \
-  --immich-api-key YOUR_API_KEY \
-  --tag-only \
-  --threshold 5
-```
-
-Then review the results in Immich and adjust the threshold if needed. Once you're happy with the grouping, try the other modes!
+- [IMMICH.md](IMMICH.md) — Full Immich integration guide
+- [CONFIGURATION.md](CONFIGURATION.md) — Threshold, time window, and settings
+- [FACE_BACKENDS.md](FACE_BACKENDS.md) — Face detection backend options
+- [GPU_ACCELERATION.md](GPU_ACCELERATION.md) — GPU setup (coming soon)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and fixes

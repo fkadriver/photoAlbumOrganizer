@@ -11,6 +11,7 @@ import hashlib
 import io
 import time
 import os
+import threading
 from PIL import Image
 from immich_client import ImmichClient
 
@@ -121,6 +122,26 @@ class PhotoSource(ABC):
         """
         pass
 
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Mark a photo as archived. Override in subclasses that support it."""
+        return False
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people. Override in subclasses that support it."""
+        return []
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None) -> List[Photo]:
+        """List photos of a specific person. Override in subclasses that support it."""
+        return []
+
+    def get_asset_face_data(self, photo: Photo) -> List[Dict]:
+        """Get face bounding boxes for a photo. Override in subclasses that support it."""
+        return []
+
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 4) -> int:
+        """Pre-download and cache photos concurrently. Override in subclasses that support it."""
+        return 0
+
 
 class LocalPhotoSource(PhotoSource):
     """Photo source for local filesystem."""
@@ -183,7 +204,7 @@ class LocalPhotoSource(PhotoSource):
                 metadata['format'] = img.format
 
                 # Extract EXIF
-                exif_data = img._getexif()
+                exif_data = img.getexif()
                 if exif_data:
                     for tag_id, value in exif_data.items():
                         tag = TAGS.get(tag_id, tag_id)
@@ -220,6 +241,7 @@ class PhotoCache:
         self.cache_dir = Path(cache_dir)
         self.max_size = max_size_mb * 1024 * 1024
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
         # Create metadata file for tracking cache
         self.metadata_file = self.cache_dir / 'cache_metadata.json'
@@ -324,19 +346,20 @@ class PhotoCache:
         safe_id = hashlib.md5(photo_id.encode()).hexdigest()
         cache_file = self.cache_dir / f"{safe_id}.jpg"
 
-        # Ensure we have space
-        self._evict_old_entries(len(data))
+        with self._lock:
+            # Ensure we have space
+            self._evict_old_entries(len(data))
 
-        # Write file
-        cache_file.write_bytes(data)
+            # Write file
+            cache_file.write_bytes(data)
 
-        # Update metadata
-        self.metadata[safe_id] = {
-            'photo_id': photo_id,
-            'cached_at': datetime.now().isoformat(),
-            'size': len(data)
-        }
-        self._save_metadata()
+            # Update metadata
+            self.metadata[safe_id] = {
+                'photo_id': photo_id,
+                'cached_at': datetime.now().isoformat(),
+                'size': len(data)
+            }
+            self._save_metadata()
 
         return cache_file
 
@@ -484,3 +507,81 @@ class ImmichPhotoSource(PhotoSource):
         """Mark photo as favorite in Immich."""
         asset_id = photo.metadata.get('asset_id', photo.id)
         return self.client.update_asset(asset_id, is_favorite=favorite)
+
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Mark photo as archived in Immich."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.update_asset(asset_id, is_archived=archived)
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people from Immich."""
+        return self.client.get_people()
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None) -> List[Photo]:
+        """List photos of a specific person from Immich."""
+        assets = self.client.get_person_assets(person_id, limit=limit)
+        photos = []
+        for asset in assets:
+            photo = Photo(
+                photo_id=asset.id,
+                source='immich',
+                metadata={
+                    'asset_id': asset.id,
+                    'filename': asset.original_file_name,
+                    'file_created_at': asset.file_created_at,
+                    'file_modified_at': asset.file_modified_at,
+                    'is_favorite': asset.is_favorite,
+                    'exif': asset.exif_info
+                }
+            )
+            photos.append(photo)
+        return photos
+
+    def get_asset_face_data(self, photo: Photo) -> List[Dict]:
+        """Get face bounding boxes for a photo from Immich."""
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        return self.client.get_asset_faces(asset_id)
+
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 8) -> int:
+        """Pre-download and cache photos concurrently using bulk parallel download."""
+        to_download = [p for p in photos if not self.cache.get_cached_photo(p.id)]
+
+        if not to_download:
+            return 0
+
+        print(f"Pre-fetching {len(to_download)} photos ({max_workers} parallel workers)...")
+
+        asset_ids = [p.metadata.get('asset_id', p.id) for p in to_download]
+        id_to_photo = {p.metadata.get('asset_id', p.id): p for p in to_download}
+
+        if self.use_thumbnails:
+            results = self.client.bulk_download_thumbnails(
+                asset_ids, max_workers=max_workers, size='preview'
+            )
+        else:
+            # Full resolution — parallel downloads using thread pool
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            results = {}
+
+            def _dl_full(aid):
+                return aid, self.client.download_asset(aid)
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_dl_full, aid): aid for aid in asset_ids}
+                for future in as_completed(futures):
+                    aid, data = future.result()
+                    results[aid] = data
+
+        downloaded = 0
+        for asset_id, data in results.items():
+            if data:
+                photo = id_to_photo.get(asset_id)
+                if photo:
+                    cached_path = self.cache.cache_photo(photo.id, data)
+                    photo.cached_path = cached_path
+                    downloaded += 1
+
+        pct = (downloaded / len(to_download)) * 100 if to_download else 100
+        print(f"  Pre-fetched {downloaded}/{len(to_download)} photos ({pct:.0f}%)")
+        return downloaded

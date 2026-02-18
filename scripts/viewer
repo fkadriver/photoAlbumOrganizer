@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+#
+# Web Viewer lifecycle manager
+#
+# Usage: scripts/viewer {start [PORT]|stop|status}
+#
+# Starts the photo organizer web viewer as a background process with a
+# watchdog that automatically stops it when you leave the project directory.
+#
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PID_FILE="${PROJECT_DIR}/.viewer.pid"
+WATCHDOG_PID_FILE="${PROJECT_DIR}/.viewer-watchdog.pid"
+DEFAULT_PORT=8080
+
+# ---------- helpers ----------
+
+_find_report() {
+    # Prefer reports/latest.json symlink, then fall back to processing_report.json
+    if [ -e "${PROJECT_DIR}/reports/latest.json" ]; then
+        echo "${PROJECT_DIR}/reports/latest.json"
+    elif [ -f "${PROJECT_DIR}/processing_report.json" ]; then
+        echo "${PROJECT_DIR}/processing_report.json"
+    else
+        return 1
+    fi
+}
+
+_is_running() {
+    # Check if viewer PID file exists and process is alive
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid=$(head -1 "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        # Stale PID file — clean up
+        rm -f "$PID_FILE"
+    fi
+    return 1
+}
+
+_read_port() {
+    if [ -f "$PID_FILE" ]; then
+        sed -n '2p' "$PID_FILE"
+    fi
+}
+
+_cleanup() {
+    # Kill watchdog if running
+    if [ -f "$WATCHDOG_PID_FILE" ]; then
+        local wpid
+        wpid=$(cat "$WATCHDOG_PID_FILE" 2>/dev/null || true)
+        if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
+            kill "$wpid" 2>/dev/null || true
+        fi
+        rm -f "$WATCHDOG_PID_FILE"
+    fi
+    # Kill viewer if running
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid=$(head -1 "$PID_FILE" 2>/dev/null || true)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+        rm -f "$PID_FILE"
+    fi
+}
+
+# ---------- watchdog ----------
+
+_watchdog() {
+    local viewer_pid="$1"
+    local parent_pid="$PPID"
+
+    while true; do
+        sleep 3
+
+        # Is the viewer still alive?
+        if ! kill -0 "$viewer_pid" 2>/dev/null; then
+            rm -f "$PID_FILE" "$WATCHDOG_PID_FILE"
+            exit 0
+        fi
+
+        # Is the parent shell still alive?
+        if ! kill -0 "$parent_pid" 2>/dev/null; then
+            kill "$viewer_pid" 2>/dev/null || true
+            rm -f "$PID_FILE" "$WATCHDOG_PID_FILE"
+            exit 0
+        fi
+
+        # Has the parent shell left the project directory?
+        local shell_cwd
+        shell_cwd=$(readlink "/proc/${parent_pid}/cwd" 2>/dev/null || true)
+        if [ -n "$shell_cwd" ]; then
+            case "$shell_cwd" in
+                "${PROJECT_DIR}"*) ;; # still inside project
+                *)
+                    kill "$viewer_pid" 2>/dev/null || true
+                    rm -f "$PID_FILE" "$WATCHDOG_PID_FILE"
+                    exit 0
+                    ;;
+            esac
+        fi
+    done
+}
+
+# ---------- subcommands ----------
+
+cmd_start() {
+    local port="${1:-$DEFAULT_PORT}"
+
+    # Already running?
+    if _is_running; then
+        local running_port
+        running_port=$(_read_port)
+        echo "  Viewer already running on port ${running_port}"
+        echo "  http://localhost:${running_port}"
+        return 0
+    fi
+
+    # Find a report to serve
+    local report_path
+    if ! report_path=$(_find_report); then
+        echo "  Error: No report found."
+        echo "  Run the organizer first to generate a processing report."
+        return 1
+    fi
+
+    # Load Immich config
+    local immich_url=""
+    local immich_api_key=""
+    local config_file="${HOME}/.config/photo-organizer/immich.conf"
+
+    if [ -n "${IMMICH_URL:-}" ]; then
+        immich_url="$IMMICH_URL"
+    fi
+    if [ -n "${IMMICH_API_KEY:-}" ]; then
+        immich_api_key="$IMMICH_API_KEY"
+    fi
+    if [ -f "$config_file" ]; then
+        # Source config for any values not already set via env
+        # shellcheck disable=SC1090
+        source "$config_file"
+        immich_url="${immich_url:-${IMMICH_URL:-}}"
+        immich_api_key="${immich_api_key:-${IMMICH_API_KEY:-}}"
+    fi
+
+    # Build the Python command
+    local immich_setup=""
+    local immich_ref="None"
+    if [ -n "$immich_url" ] && [ -n "$immich_api_key" ]; then
+        immich_setup="from immich_client import ImmichClient; client = ImmichClient('${immich_url}', '${immich_api_key}')"
+        immich_ref="client"
+    fi
+
+    # Start viewer in background
+    python -c "
+import sys, os
+sys.path.insert(0, '${PROJECT_DIR}/src')
+os.chdir('${PROJECT_DIR}')
+${immich_setup}
+from web_viewer import start_viewer
+start_viewer('${report_path}', port=${port}, immich_client=${immich_ref}, report_dir='${PROJECT_DIR}/reports')
+" &>/dev/null &
+
+    local viewer_pid=$!
+
+    # Give it a moment to start (or fail)
+    sleep 1
+    if ! kill -0 "$viewer_pid" 2>/dev/null; then
+        echo "  Error: Viewer failed to start."
+        return 1
+    fi
+
+    # Write PID file (line 1: PID, line 2: port)
+    printf '%s\n%s\n' "$viewer_pid" "$port" > "$PID_FILE"
+
+    # Spawn watchdog in background
+    _watchdog "$viewer_pid" &
+    local watchdog_pid=$!
+    echo "$watchdog_pid" > "$WATCHDOG_PID_FILE"
+    disown "$watchdog_pid"
+
+    echo "  Viewer started on port ${port}"
+    echo "  http://localhost:${port}"
+    echo "  Report: ${report_path}"
+    if [ -n "$immich_setup" ]; then
+        echo "  Immich: ${immich_url} (thumbnails enabled)"
+    fi
+}
+
+cmd_stop() {
+    if _is_running; then
+        local port
+        port=$(_read_port)
+        _cleanup
+        echo "  Viewer stopped (was on port ${port})"
+    else
+        _cleanup  # clean up any stale files
+        echo "  Viewer is not running"
+    fi
+}
+
+cmd_status() {
+    if _is_running; then
+        local port
+        port=$(_read_port)
+        echo "  Viewer running on port ${port}"
+        echo "  http://localhost:${port}"
+    else
+        echo "  Viewer is not running"
+    fi
+}
+
+# ---------- main ----------
+
+case "${1:-help}" in
+    start)
+        cmd_start "${2:-}"
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    status)
+        cmd_status
+        ;;
+    help|--help|-h)
+        echo "Usage: scripts/viewer {start [PORT]|stop|status}"
+        echo ""
+        echo "Commands:"
+        echo "  start [PORT]  Start the web viewer (default port: ${DEFAULT_PORT})"
+        echo "  stop          Stop the web viewer and watchdog"
+        echo "  status        Check if the viewer is running"
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Usage: scripts/viewer {start [PORT]|stop|status}"
+        exit 1
+        ;;
+esac

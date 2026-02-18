@@ -51,10 +51,18 @@ output/
 organized_photos/
 
 # Processing state files
+.photo_organizer_state.json
 .photo_organizer_state.pkl
 .photo_organizer_state.tmp
 *.pkl
 *.tmp
+
+# Interactive menu saved settings
+.photo_organizer_settings.json
+processing_report.json
+
+# Reports directory (timestamped run reports)
+reports/
 
 # Logs and debugging
 *.log
@@ -63,6 +71,13 @@ debug/
 # OS
 Thumbs.db
 .DS_Store
+
+# MediaPipe model files (downloaded at runtime)
+models/*.task
+
+# Web viewer PID files
+.viewer.pid
+.viewer-watchdog.pid
 
 # Nix
 result

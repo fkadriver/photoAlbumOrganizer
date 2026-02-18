@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# Resolve project root from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Configuration
 IMMICH_URL="${IMMICH_URL:-https://immich.warthog-royal.ts.net}"
 IMMICH_API_KEY="${IMMICH_API_KEY:-}"
@@ -21,13 +25,18 @@ FORCE_FRESH=0
 TEST_LIMIT=""
 THREADS=2
 THRESHOLD=5
+MIN_GROUP_SIZE=3
+ARCHIVE_NON_BEST=0
 VERBOSE=0
 
-# Load API key from config file if exists and not already set
+# Load config file if exists and not already set
 CONFIG_FILE="${HOME}/.config/photo-organizer/immich.conf"
 if [ -z "$IMMICH_API_KEY" ] && [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
+
+# Export for Python subprocesses
+export IMMICH_URL IMMICH_API_KEY
 
 # Check if API key is set
 if [ -z "$IMMICH_API_KEY" ]; then
@@ -81,6 +90,14 @@ while [[ $# -gt 0 ]]; do
             THRESHOLD="$2"
             shift 2
             ;;
+        --min-group-size)
+            MIN_GROUP_SIZE="$2"
+            shift 2
+            ;;
+        --archive-non-best)
+            ARCHIVE_NON_BEST=1
+            shift
+            ;;
         --verbose)
             VERBOSE=1
             shift
@@ -101,6 +118,7 @@ COMMON_ARGS=(
     --immich-url "$IMMICH_URL"
     --immich-api-key "$IMMICH_API_KEY"
     --threshold "$THRESHOLD"
+    --min-group-size "$MIN_GROUP_SIZE"
 )
 
 # Add --time-window 0 flag if requested (ignore timestamp)
@@ -138,6 +156,11 @@ fi
 # Add --threads flag
 COMMON_ARGS+=(--threads "$THREADS")
 
+# Add --archive-non-best flag if requested
+if [ "$ARCHIVE_NON_BEST" = "1" ]; then
+    COMMON_ARGS+=(--archive-non-best)
+fi
+
 # Add --verbose flag if requested
 if [ "$VERBOSE" = "1" ]; then
     COMMON_ARGS+=(--verbose)
@@ -149,6 +172,7 @@ FEATURES=()
 [ "$ENABLE_HDR" = "1" ] && FEATURES+=("HDR")
 [ "$ENABLE_FACE_SWAP" = "1" ] && FEATURES+=("face-swap")
 [ "$RESUME" = "1" ] && FEATURES+=("resume")
+[ "$ARCHIVE_NON_BEST" = "1" ] && FEATURES+=("archive-non-best")
 
 if [ ${#FEATURES[@]} -gt 0 ]; then
     echo "✨ Active features: ${FEATURES[*]}"
@@ -160,7 +184,7 @@ case "$MODE" in
     tag-only|tag|"")
         echo "🏷️  Tagging potential duplicates in Immich..."
         echo ""
-        python photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
+        ./photo_organizer.py "${COMMON_ARGS[@]}" --tag-only
         ;;
 
     albums|create-albums)
@@ -172,13 +196,13 @@ case "$MODE" in
             OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
             echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
             echo ""
-            python photo_organizer.py "${COMMON_ARGS[@]}" \
+            ./photo_organizer.py "${COMMON_ARGS[@]}" \
                 --create-albums \
                 --mark-best-favorite \
                 --album-prefix "Organized-" \
                 --output "$OUTPUT_DIR"
         else
-            python photo_organizer.py "${COMMON_ARGS[@]}" \
+            ./photo_organizer.py "${COMMON_ARGS[@]}" \
                 --create-albums \
                 --mark-best-favorite \
                 --album-prefix "Organized-"
@@ -189,7 +213,7 @@ case "$MODE" in
         OUTPUT_DIR="${1:-$HOME/Organized/Immich}"
         echo "⬇️  Downloading and organizing photos to: $OUTPUT_DIR"
         echo ""
-        python photo_organizer.py "${COMMON_ARGS[@]}" \
+        ./photo_organizer.py "${COMMON_ARGS[@]}" \
             --output "$OUTPUT_DIR"
         ;;
 
@@ -207,7 +231,7 @@ case "$MODE" in
 
         case "$ALBUM_MODE" in
             tag)
-                python photo_organizer.py "${COMMON_ARGS[@]}" \
+                ./photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --tag-only
                 ;;
@@ -217,13 +241,13 @@ case "$MODE" in
                     OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
                     echo "⬇️  Also downloading to: $OUTPUT_DIR (required for HDR/face-swap)"
                     echo ""
-                    python photo_organizer.py "${COMMON_ARGS[@]}" \
+                    ./photo_organizer.py "${COMMON_ARGS[@]}" \
                         --immich-album "$ALBUM_NAME" \
                         --create-albums \
                         --mark-best-favorite \
                         --output "$OUTPUT_DIR"
                 else
-                    python photo_organizer.py "${COMMON_ARGS[@]}" \
+                    ./photo_organizer.py "${COMMON_ARGS[@]}" \
                         --immich-album "$ALBUM_NAME" \
                         --create-albums \
                         --mark-best-favorite
@@ -231,7 +255,7 @@ case "$MODE" in
                 ;;
             download)
                 OUTPUT_DIR="${3:-$HOME/Organized/Immich/$ALBUM_NAME}"
-                python photo_organizer.py "${COMMON_ARGS[@]}" \
+                ./photo_organizer.py "${COMMON_ARGS[@]}" \
                     --immich-album "$ALBUM_NAME" \
                     --output "$OUTPUT_DIR"
                 ;;
@@ -256,36 +280,70 @@ case "$MODE" in
             echo ""
         fi
 
-        # Export variables so Python subprocess can access them
-        export IMMICH_URL
-        export IMMICH_API_KEY
+        "${PROJECT_ROOT}/venv/bin/python" -c "
+import sys, os, traceback
+sys.path.insert(0, os.path.join('${PROJECT_ROOT}', 'src'))
 
-        python -c "
-import sys
-sys.path.insert(0, 'src')
-from immich_client import ImmichClient
-import os
+try:
+    from immich_client import ImmichClient
 
-url = os.environ.get('IMMICH_URL', 'https://immich.warthog-royal.ts.net')
-api_key = os.environ.get('IMMICH_API_KEY')
+    url = os.environ.get('IMMICH_URL', 'https://immich.warthog-royal.ts.net')
+    api_key = os.environ.get('IMMICH_API_KEY')
 
-if not api_key:
-    print('Error: IMMICH_API_KEY not set')
-    exit(1)
+    if not api_key:
+        print('Error: IMMICH_API_KEY not set')
+        sys.exit(1)
 
-client = ImmichClient(url, api_key)
-dry_run = '$DRY_RUN' == 'yes'
-matched, deleted = client.delete_albums_by_prefix('$PREFIX', dry_run=dry_run)
+    client = ImmichClient(url, api_key)
+    dry_run = '$DRY_RUN' == 'yes'
+    prefix = '$PREFIX'
 
-if not dry_run and deleted > 0:
-    print(f'\n✓ Successfully cleaned up {deleted} album(s)')
+    # Find matching albums
+    albums = client.get_albums()
+    matched_albums = [a for a in albums if a.get('albumName', '').startswith(prefix)]
+
+    if not matched_albums:
+        print(f'No albums found with prefix \"{prefix}\"')
+        sys.exit(0)
+
+    print(f'Found {len(matched_albums)} album(s) with prefix \"{prefix}\":')
+    for album in matched_albums:
+        name = album.get('albumName', 'Unknown')
+        aid = album.get('id', 'Unknown')
+        count = album.get('assetCount', 0)
+        print(f'  - {name} (ID: {aid}, {count} assets)')
+
+    if dry_run:
+        print(f'\nDRY RUN: Would delete {len(matched_albums)} album(s)')
+        print('Run with dry_run=no to actually perform cleanup')
+        sys.exit(0)
+
+    # Delete albums (photos are NOT deleted, only album grouping is removed)
+    deleted = 0
+    total = len(matched_albums)
+    for i, album in enumerate(matched_albums, 1):
+        name = album.get('albumName', 'Unknown')
+        aid = album.get('id')
+        if aid and client.delete_album(aid):
+            deleted += 1
+            if deleted % 50 == 0 or deleted == total:
+                print(f'  Progress: {deleted}/{total} albums deleted')
+        else:
+            print(f'  ✗ Failed to delete: {name}')
+
+    print(f'\n✓ Deleted {deleted} of {total} album(s)')
+
+except Exception as e:
+    print(f'Error during cleanup: {e}')
+    traceback.print_exc()
+    sys.exit(1)
 "
         ;;
 
     test)
         echo "🧪 Testing connection to Immich..."
         echo ""
-        python scripts/test_immich_connection.py
+        "${PROJECT_ROOT}/venv/bin/python" scripts/test_immich_connection.py
         ;;
 
     help|--help|-h)
@@ -303,6 +361,8 @@ OPTIONS:
   --limit N             Limit processing to first N photos (for testing)
   --threads N           Number of threads for parallel processing (default: 2)
   --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
+  --min-group-size N    Minimum photos per group (default: 3, min: 2)
+  --archive-non-best    Archive non-best photos (hides without deleting)
   --verbose             Show detailed error messages on console
 
 MODES:
@@ -310,7 +370,7 @@ MODES:
   albums, create-albums  Create albums for similar photo groups [OUTPUT_DIR]
   download [OUTPUT_DIR]  Download and organize photos locally
   album NAME [MODE]      Process specific album
-  cleanup [PREFIX] [yes|no]  Delete albums by prefix (default: "Organized-", dry-run: yes)
+  cleanup [PREFIX] [yes|no]  Delete albums by prefix and unfavorite assets (default: "Organized-", dry-run: yes)
   test                   Test Immich connection
   help                   Show this help message
 
@@ -413,7 +473,7 @@ THRESHOLD:
 NOTE: HDR and face-swap require downloading photos, so they automatically
       enable download mode when used with 'create-albums' mode.
 
-For more options, see: python photo_organizer.py --help
+For more options, see: ./photo_organizer.py --help
 EOF
         ;;
 
