@@ -538,32 +538,46 @@ class ImmichPhotoSource(PhotoSource):
         asset_id = photo.metadata.get('asset_id', photo.id)
         return self.client.get_asset_faces(asset_id)
 
-    def prefetch_photos(self, photos: List[Photo], max_workers: int = 4) -> int:
-        """Pre-download and cache photos concurrently."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        downloaded = 0
+    def prefetch_photos(self, photos: List[Photo], max_workers: int = 8) -> int:
+        """Pre-download and cache photos concurrently using bulk parallel download."""
         to_download = [p for p in photos if not self.cache.get_cached_photo(p.id)]
 
         if not to_download:
             return 0
 
-        print(f"Pre-fetching {len(to_download)} photos...")
+        print(f"Pre-fetching {len(to_download)} photos ({max_workers} parallel workers)...")
 
-        def _fetch(photo):
-            try:
-                self.get_photo_data(photo)
-                return True
-            except Exception:
-                return False
+        asset_ids = [p.metadata.get('asset_id', p.id) for p in to_download]
+        id_to_photo = {p.metadata.get('asset_id', p.id): p for p in to_download}
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_fetch, p): p for p in to_download}
-            for future in as_completed(futures):
-                if future.result():
+        if self.use_thumbnails:
+            results = self.client.bulk_download_thumbnails(
+                asset_ids, max_workers=max_workers, size='preview'
+            )
+        else:
+            # Full resolution — parallel downloads using thread pool
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            results = {}
+
+            def _dl_full(aid):
+                return aid, self.client.download_asset(aid)
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_dl_full, aid): aid for aid in asset_ids}
+                for future in as_completed(futures):
+                    aid, data = future.result()
+                    results[aid] = data
+
+        downloaded = 0
+        for asset_id, data in results.items():
+            if data:
+                photo = id_to_photo.get(asset_id)
+                if photo:
+                    cached_path = self.cache.cache_photo(photo.id, data)
+                    photo.cached_path = cached_path
                     downloaded += 1
-                pct = (downloaded / len(to_download)) * 100
-                print(f"\r  Prefetch: {downloaded}/{len(to_download)} ({pct:.0f}%)", end='', flush=True)
 
-        print()
+        pct = (downloaded / len(to_download)) * 100 if to_download else 100
+        print(f"  Pre-fetched {downloaded}/{len(to_download)} photos ({pct:.0f}%)")
         return downloaded

@@ -167,6 +167,31 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
            background: var(--card); border: 1px solid var(--accent); padding: 0.6rem 1.2rem;
            border-radius: 6px; font-size: 0.85rem; z-index: 300; display: none; }
   .toast.show { display: block; }
+
+  /* Merge / reprocess bulk bar buttons */
+  .btn-merge { background: #2980b9; color: #fff; }
+  .btn-reprocess { background: #16a085; color: #fff; }
+
+  /* Reprocess modal */
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+           z-index: 150; justify-content: center; align-items: center; }
+  .modal.show { display: flex; }
+  .modal-box { background: var(--card); border-radius: 8px; padding: 1.5rem;
+               max-width: 420px; width: 90%; }
+  .modal-box h3 { margin-bottom: 1rem; font-size: 1.1rem; }
+  .radio-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.2rem; }
+  .radio-group label { cursor: pointer; display: flex; align-items: center; gap: 0.5rem;
+                       padding: 0.4rem 0.6rem; border-radius: 4px; }
+  .radio-group label:hover { background: #333; }
+  .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+
+  /* Photo selection checkboxes in detail view (for split) */
+  .photo-checkbox { position: absolute; top: 4px; left: 4px; width: 18px; height: 18px;
+                    cursor: pointer; z-index: 5; accent-color: var(--accent); }
+  .split-bar { margin-top: 0.8rem; display: none; align-items: center; gap: 0.8rem; }
+  .split-bar.show { display: flex; }
+  .btn-split { background: #8e44ad; color: #fff; border: none; padding: 0.5rem 1rem;
+               border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -213,7 +238,29 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   <button class="btn-delete" id="bulkDelete">Delete non-best</button>
   <button class="btn-discard" id="bulkDiscard">Discard changes</button>
   <div class="sep"></div>
+  <button class="btn-merge" id="bulkMerge" style="display:none" onclick="mergeGroups()">Merge groups</button>
+  <button class="btn-reprocess" id="bulkReprocess" onclick="showReprocessModal()">Reprocess...</button>
+  <div class="sep"></div>
   <button class="btn-cancel" id="bulkCancel">Cancel</button>
+</div>
+
+<!-- Reprocess modal -->
+<div class="modal" id="reprocessModal">
+  <div class="modal-box">
+    <h3>Reprocess: Pick Best Photo By</h3>
+    <div class="radio-group">
+      <label><input type="radio" name="criteria" value="filesize" checked> Largest file size</label>
+      <label><input type="radio" name="criteria" value="dimensions"> Largest dimensions (resolution)</label>
+      <label><input type="radio" name="criteria" value="date_oldest"> Oldest date (first in burst)</label>
+      <label><input type="radio" name="criteria" value="date_newest"> Newest date (last in burst)</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" style="padding:0.5rem 1rem;border:none;border-radius:4px;cursor:pointer"
+              onclick="document.getElementById('reprocessModal').classList.remove('show')">Cancel</button>
+      <button style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer"
+              onclick="reprocessGroups()">Apply to Selected</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -315,6 +362,8 @@ function handleCardClick(e, group) {
     }
     document.getElementById('bulkCount').textContent = selectedGroups.size + ' selected';
     document.getElementById('bulkBar').classList.toggle('show', selectedGroups.size > 0);
+    // Show merge button only when 2+ groups selected
+    document.getElementById('bulkMerge').style.display = selectedGroups.size >= 2 ? '' : 'none';
     render();
     return;
   }
@@ -350,6 +399,8 @@ function showDetail(g) {
 
   let photosHtml = g.photos.map(p => `
     <div class="detail-photo ${p.is_best ? 'is-best' : ''}">
+      <input type="checkbox" class="photo-checkbox" value="${p.asset_id}"
+             onchange="updateSplitBtn(${g.group_index})">
       <img src="/api/preview/${p.asset_id}" alt="${p.filename}"
            onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}')">
       ${p.is_best ? '<span class="badge">BEST</span>' : ''}
@@ -382,7 +433,11 @@ function showDetail(g) {
   detail.innerHTML = `
     <h2>Group ${g.group_index}${g.person_name ? ' &mdash; ' + g.person_name : ''}</h2>
     <div class="detail-photos">${photosHtml}</div>
-    <div class="actions-list">Actions: ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}</div>
+    <div class="split-bar" id="splitBar">
+      <button class="btn-split" onclick="splitSelectedPhotos(${g.group_index})">Split selected to new group</button>
+      <span id="splitCount" style="font-size:0.8rem;opacity:0.7"></span>
+    </div>
+    <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
   document.getElementById('overlay').classList.add('show');
@@ -471,8 +526,95 @@ document.getElementById('bulkDiscard').onclick = () => bulkAction('discard');
 document.getElementById('bulkCancel').onclick = () => {
   selectedGroups.clear();
   document.getElementById('bulkBar').classList.remove('show');
+  document.getElementById('bulkMerge').style.display = 'none';
   render();
 };
+
+/* Merge selected groups into one */
+async function mergeGroups() {
+  const indices = Array.from(selectedGroups);
+  if (indices.length < 2) return;
+  if (!confirm(`Merge ${indices.length} groups into one? The lowest-numbered group will absorb the others.`)) return;
+  try {
+    const resp = await fetch('/api/actions/merge-groups', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_indices: indices})
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      toast('Groups merged into group ' + result.merged_index);
+      selectedGroups.clear();
+      document.getElementById('bulkBar').classList.remove('show');
+      document.getElementById('bulkMerge').style.display = 'none';
+      await load();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+    }
+  } catch(e) { alert('Request failed: ' + e); }
+}
+
+/* Reprocess modal */
+function showReprocessModal() {
+  if (!selectedGroups.size) return;
+  document.getElementById('reprocessModal').classList.add('show');
+}
+
+async function reprocessGroups() {
+  const criteria = document.querySelector('input[name="criteria"]:checked').value;
+  const indices = Array.from(selectedGroups);
+  document.getElementById('reprocessModal').classList.remove('show');
+  try {
+    const resp = await fetch('/api/actions/reprocess', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_indices: indices, criteria: criteria})
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      toast(`Reprocessed ${result.updated} group(s) — best photos updated`);
+      selectedGroups.clear();
+      document.getElementById('bulkBar').classList.remove('show');
+      document.getElementById('bulkMerge').style.display = 'none';
+      await load();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown'));
+    }
+  } catch(e) { alert('Request failed: ' + e); }
+}
+
+/* Split: track photo checkbox selections in detail view */
+function updateSplitBtn(groupIndex) {
+  const checked = document.querySelectorAll('.photo-checkbox:checked');
+  const bar = document.getElementById('splitBar');
+  if (bar) {
+    bar.classList.toggle('show', checked.length > 0);
+    const countEl = document.getElementById('splitCount');
+    if (countEl) countEl.textContent = checked.length + ' photo(s) selected to split';
+  }
+}
+
+async function splitSelectedPhotos(groupIndex) {
+  const selectedIds = Array.from(document.querySelectorAll('.photo-checkbox:checked'))
+    .map(cb => cb.value);
+  if (!selectedIds.length) return;
+  if (!confirm(`Split ${selectedIds.length} photo(s) into a new group?`)) return;
+  try {
+    const resp = await fetch('/api/actions/split-group', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_index: groupIndex, photo_asset_ids: selectedIds})
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      toast('Split complete — new group ' + result.new_group_index + ' created');
+      document.getElementById('overlay').classList.remove('show');
+      await load();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown'));
+    }
+  } catch(e) { alert('Request failed: ' + e); }
+}
 
 document.getElementById('search').oninput = render;
 document.getElementById('bulkMode').onchange = () => {
@@ -772,6 +914,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._handle_set_best(body)
         elif path == "/api/actions/bulk":
             self._handle_bulk(body)
+        elif path == "/api/actions/merge-groups":
+            self._handle_merge_groups(body)
+        elif path == "/api/actions/split-group":
+            self._handle_split_group(body)
+        elif path == "/api/actions/reprocess":
+            self._handle_reprocess(body)
         else:
             self.send_error(404)
 
@@ -873,6 +1021,181 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "discard": f"Discarded changes for {affected} group(s) ({asset_count} assets unfavorited/unarchived)",
         }
         self._send_json({"ok": True, "message": messages.get(action, "Done")})
+
+    def _handle_merge_groups(self, body):
+        """Merge multiple groups into the lowest-indexed one."""
+        indices = set(body.get("group_indices", []))
+        if len(indices) < 2:
+            self._send_json({"ok": False, "error": "Need at least 2 groups to merge"}, 400)
+            return
+
+        report = _load_report()
+        groups = report.get("groups", [])
+
+        to_merge = [g for g in groups if g["group_index"] in indices]
+        if len(to_merge) < 2:
+            self._send_json({"ok": False, "error": "Groups not found"}, 404)
+            return
+
+        # Sort so we merge into the lowest-indexed group
+        to_merge.sort(key=lambda g: g["group_index"])
+        primary = to_merge[0]
+        merged_index = primary["group_index"]
+
+        # Combine all photos into primary; keep primary's current best
+        current_best_id = primary["best_photo"]["asset_id"]
+        all_photos = list(primary["photos"])
+        merged_actions = set(primary["actions_taken"])
+        for g in to_merge[1:]:
+            for p in g["photos"]:
+                p["is_best"] = False
+                all_photos.append(p)
+            merged_actions.update(g["actions_taken"])
+
+        primary["photos"] = all_photos
+        primary["photo_count"] = len(all_photos)
+        primary["actions_taken"] = list(merged_actions)
+        for p in primary["photos"]:
+            p["is_best"] = (p["asset_id"] == current_best_id)
+
+        # Remove the absorbed groups
+        absorbed = {g["group_index"] for g in to_merge[1:]}
+        report["groups"] = [g for g in groups if g["group_index"] not in absorbed]
+        report.setdefault("metadata", {})["total_groups"] = len(report["groups"])
+
+        _save_report(report)
+        self._send_json({"ok": True, "merged_index": merged_index})
+
+    def _handle_split_group(self, body):
+        """Split selected photos out of a group into a new group."""
+        group_index = body.get("group_index")
+        split_ids = set(body.get("photo_asset_ids", []))
+
+        if not split_ids:
+            self._send_json({"ok": False, "error": "No photos selected to split"}, 400)
+            return
+
+        report = _load_report()
+        groups = report.get("groups", [])
+
+        source_group = next((g for g in groups if g["group_index"] == group_index), None)
+        if not source_group:
+            self._send_json({"ok": False, "error": "Group not found"}, 404)
+            return
+
+        remaining = [p for p in source_group["photos"] if p["asset_id"] not in split_ids]
+        new_photos = [p for p in source_group["photos"] if p["asset_id"] in split_ids]
+
+        if not remaining:
+            self._send_json({"ok": False, "error": "Cannot split: group would become empty"}, 400)
+            return
+        if not new_photos:
+            self._send_json({"ok": False, "error": "None of the specified photos found in group"}, 404)
+            return
+
+        # Update source group
+        source_group["photos"] = remaining
+        source_group["photo_count"] = len(remaining)
+        orig_best_id = source_group["best_photo"]["asset_id"]
+        if not any(p["asset_id"] == orig_best_id for p in remaining):
+            # Original best was split away — pick first remaining as new best
+            remaining[0]["is_best"] = True
+            for p in remaining[1:]:
+                p["is_best"] = False
+            source_group["best_photo"] = {
+                "id": remaining[0]["asset_id"],
+                "asset_id": remaining[0]["asset_id"],
+                "filename": remaining[0].get("filename", remaining[0]["asset_id"]),
+            }
+
+        # Create new group
+        new_index = max(g["group_index"] for g in groups) + 1
+        for p in new_photos:
+            p["is_best"] = False
+        new_photos[0]["is_best"] = True
+
+        new_group = {
+            "group_index": new_index,
+            "photo_count": len(new_photos),
+            "person_name": source_group.get("person_name"),
+            "best_photo": {
+                "id": new_photos[0]["asset_id"],
+                "asset_id": new_photos[0]["asset_id"],
+                "filename": new_photos[0].get("filename", new_photos[0]["asset_id"]),
+            },
+            "photos": new_photos,
+            "actions_taken": [f"split_from_group_{group_index}"],
+        }
+        report["groups"].append(new_group)
+        report.setdefault("metadata", {})["total_groups"] = len(report["groups"])
+
+        _save_report(report)
+        self._send_json({"ok": True, "new_group_index": new_index})
+
+    def _handle_reprocess(self, body):
+        """Re-pick the best photo in each selected group using a given criterion."""
+        indices = set(body.get("group_indices", []))
+        criteria = body.get("criteria", "filesize")
+        updated = 0
+
+        report = _load_report()
+
+        for g in report.get("groups", []):
+            if g["group_index"] not in indices:
+                continue
+
+            photos = g["photos"]
+            if len(photos) < 2:
+                continue
+
+            best_photo = None
+            if criteria == "filesize":
+                def _size(p):
+                    s = p.get("filesize") or p.get("exif_fileSizeInByte", "0")
+                    try:
+                        return float(str(s).replace(",", ""))
+                    except (ValueError, TypeError):
+                        return 0.0
+                best_photo = max(photos, key=_size)
+
+            elif criteria == "dimensions":
+                def _pixels(p):
+                    dim = p.get("dimensions", "0x0")
+                    try:
+                        w, h = str(dim).split("x")
+                        return int(w) * int(h)
+                    except (ValueError, AttributeError):
+                        return 0
+                best_photo = max(photos, key=_pixels)
+
+            elif criteria == "date_oldest":
+                def _date_asc(p):
+                    return str(p.get("exif_dateTimeOriginal") or p.get("exif_DateTime") or "9999")
+                best_photo = min(photos, key=_date_asc)
+
+            elif criteria == "date_newest":
+                def _date_desc(p):
+                    return str(p.get("exif_dateTimeOriginal") or p.get("exif_DateTime") or "")
+                best_photo = max(photos, key=_date_desc)
+
+            if best_photo:
+                new_best_id = best_photo["asset_id"]
+                old_best_id = g.get("best_photo", {}).get("asset_id")
+                for p in photos:
+                    p["is_best"] = (p["asset_id"] == new_best_id)
+                g["best_photo"] = {
+                    "id": new_best_id,
+                    "asset_id": new_best_id,
+                    "filename": best_photo.get("filename", new_best_id),
+                }
+                # Update Immich favorites if client is available
+                if _immich_client and old_best_id and old_best_id != new_best_id:
+                    _immich_client.update_asset(old_best_id, is_favorite=False)
+                    _immich_client.update_asset(new_best_id, is_favorite=True)
+                updated += 1
+
+        _save_report(report)
+        self._send_json({"ok": True, "updated": updated})
 
 
 def start_viewer_background(report_path, port=8080, immich_client=None, report_dir="reports"):

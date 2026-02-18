@@ -15,7 +15,8 @@
 | Timestamped Reports | ✅ COMPLETED |
 | Additional Face Backends + ML Quality Scoring | 🔧 IN PROGRESS |
 | GPU Acceleration | 🔧 IN PROGRESS |
-| Async Immich Downloads | ⏳ PLANNED |
+| Web Viewer Group Combine/Split + Reprocess | ✅ COMPLETED |
+| Async / Parallel Immich Downloads | ✅ COMPLETED |
 | Immich Phase 3 (real-time sync) | ⏳ PLANNED |
 | Video Support | ⏳ PLANNED |
 | Apple / Google Photos | ⏳ PLANNED |
@@ -81,6 +82,26 @@ Apple HEIC format processed via `pillow-heif`.
 ### Timestamped Reports
 Reports saved to `reports/report_YYYY-MM-DD_HHMMSS.json` with a `reports/latest.json` symlink. Web viewer dropdown lists all historical reports.
 
+### Web Viewer Group Combine / Split / Reprocess
+
+Three new actions in the web viewer:
+
+- **Merge groups**: Enable bulk select, pick 2+ groups, click "Merge groups" — all photos combined into the lowest-numbered group.
+- **Split group**: Open a group detail, check photos to extract, click "Split selected to new group" — a new group is created with those photos.
+- **Reprocess best selection**: Select groups, click "Reprocess..." — choose a criterion to re-pick the best photo: largest file, largest dimensions, oldest date, or newest date.
+
+All three modify the report JSON on disk. Immich favorites are updated automatically when a client is configured.
+
+### Async / Parallel Immich Downloads
+
+`ImmichClient.bulk_download_thumbnails()` downloads multiple thumbnails concurrently via a `ThreadPoolExecutor`. `ImmichPhotoSource.prefetch_photos()` now uses this method (default: 8 parallel workers, up from 4 sequential). Expected 4–8× speedup for download-heavy workflows on a typical connection.
+
+```python
+# Direct API
+results = client.bulk_download_thumbnails(asset_ids, max_workers=8, size='preview')
+# {asset_id: bytes_or_None}
+```
+
 ---
 
 ## 🔧 In Progress
@@ -127,9 +148,6 @@ See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for full design, file structure, 
 ---
 
 ## ⏳ Planned
-
-### Async / Parallel Immich Downloads
-Replace synchronous `requests` in `immich_client.py` with `aiohttp` for concurrent fetching. Expected 3–5× speedup for download-heavy workflows.
 
 ### Immich Phase 3: Stream Processing
 - Real-time sync (process new photos as they arrive in Immich)

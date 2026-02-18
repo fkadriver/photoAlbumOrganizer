@@ -293,6 +293,34 @@ class ImmichClient:
             print(f"Failed to download asset {asset_id}: {e}")
             return None
 
+    def bulk_download_thumbnails(self, asset_ids: List[str], max_workers: int = 8,
+                                  size: str = 'preview') -> Dict[str, Optional[bytes]]:
+        """
+        Download multiple thumbnails concurrently using a thread pool.
+
+        Args:
+            asset_ids: List of asset IDs to download
+            max_workers: Number of concurrent download threads (default: 8)
+            size: Thumbnail size ('preview' or 'thumbnail')
+
+        Returns:
+            Dict mapping asset_id -> bytes (or None if download failed)
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: Dict[str, Optional[bytes]] = {}
+
+        def _fetch(asset_id: str):
+            return asset_id, self.get_asset_thumbnail(asset_id, size=size)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_fetch, aid): aid for aid in asset_ids}
+            for future in as_completed(futures):
+                aid, data = future.result()
+                results[aid] = data
+
+        return results
+
     def update_asset(self, asset_id: str, is_favorite: Optional[bool] = None,
                      is_archived: Optional[bool] = None, description: Optional[str] = None) -> bool:
         """
