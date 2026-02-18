@@ -13,9 +13,13 @@ Install:
 
 import sys
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
+    from PIL import Image as PILImage
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -142,7 +146,7 @@ class MLQualityScorer:
         except Exception as e:
             return False
 
-    def _encode_texts(self, texts: List[str]) -> "torch.Tensor":
+    def _encode_texts(self, texts: List[str]) -> Any:
         """Encode text prompts using CLIP."""
         inputs = self._processor(
             text=texts,
@@ -203,7 +207,7 @@ class MLQualityScorer:
         else:
             return self._score_mobilenet(pil_image)
 
-    def _score_clip(self, image: "PIL.Image.Image") -> float:
+    def _score_clip(self, image: Any) -> float:
         """Score image using CLIP aesthetic prompts."""
         # Encode image
         inputs = self._processor(
@@ -228,7 +232,7 @@ class MLQualityScorer:
 
         return float(np.clip(score, 0.0, 1.0))
 
-    def _score_mobilenet(self, image: "PIL.Image.Image") -> float:
+    def _score_mobilenet(self, image: Any) -> float:
         """Score image using MobileNetV2 feature analysis.
 
         Uses activation statistics as a proxy for image quality.
