@@ -69,7 +69,7 @@ pip install -r requirements.txt
 **Ubuntu/Debian:**
 ```bash
 sudo apt-get install python3.11 python3.11-venv cmake build-essential \
-  libopenblas-dev liblapack-dev libgl1-mesa-glx libglib2.0-0
+  libopenblas-dev liblapack-dev libgl1 libglib2.0-0
 python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 pip install git+https://github.com/ageitgey/face_recognition_models
