@@ -226,12 +226,33 @@ def _prompt_missing_secrets(settings):
         settings["immich_api_key"] = api_key
 
 
-# --- Path validator ---
+# --- Path validators ---
 
 def _validate_source_path(path):
     """Return error string if path doesn't exist, else None."""
     if not os.path.exists(path):
         return f"Path does not exist: {path}"
+    return None
+
+
+def _validate_output_path(path):
+    """Return error string if path doesn't exist or isn't writable, else None."""
+    if not path:
+        return None  # Empty is OK for optional fields
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        # Check if parent exists and is writable (so we can create it)
+        parent = os.path.dirname(path) or "."
+        if not os.path.exists(parent):
+            return f"Parent directory does not exist: {parent}"
+        if not os.access(parent, os.W_OK):
+            return f"No write permission on parent directory: {parent}"
+        # Parent exists and is writable, we can create this directory
+        return None
+    if not os.path.isdir(path):
+        return f"Path exists but is not a directory: {path}"
+    if not os.access(path, os.W_OK):
+        return f"No write permission on directory: {path}"
     return None
 
 
@@ -256,8 +277,7 @@ def _prompt_local_options():
     """Step 2a: local source paths."""
     _print_section("Step 2: Local Source Options")
     source = _prompt_text("Source directory", required=True, validator=_validate_source_path)
-    output = _prompt_text("Output directory", required=True)
-    # Ensure output dir path is expanded
+    output = _prompt_text("Output directory", required=True, validator=_validate_output_path)
     output = os.path.expanduser(output)
     return {"source": source, "output": output}
 
@@ -401,11 +421,11 @@ def _prompt_immich_actions():
     need_output = not tag_only and not create_albums
     output = None
     if need_output:
-        output = _prompt_text("Output directory for downloads", required=True)
+        output = _prompt_text("Output directory for downloads", required=True, validator=_validate_output_path)
         output = os.path.expanduser(output)
     elif not tag_only:
         # Optional output when creating albums
-        output = _prompt_text("Output directory (optional, leave blank to skip)")
+        output = _prompt_text("Output directory (optional, leave blank to skip)", validator=_validate_output_path)
         output = os.path.expanduser(output) if output else None
 
     return {
