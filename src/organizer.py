@@ -779,7 +779,8 @@ class PhotoOrganizer:
                 # Include all exif_* keys and select other metadata
                 meta = pd.get('metadata', {})
                 for key, value in meta.items():
-                    if key.startswith('exif_') or key in ('dimensions', 'filesize'):
+                    if key.startswith('exif_') or key in ('dimensions', 'filesize',
+                                                           'filepath', 'local_path'):
                         if value is not None and str(value) not in ('', 'None', '0'):
                             photo_entry[key] = str(value)
                 group_report["photos"].append(photo_entry)

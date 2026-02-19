@@ -164,7 +164,7 @@ class SyncDaemon:
         photos = []
         for asset in assets:
             photo = Photo(
-                id=asset.id,
+                photo_id=asset.id,
                 source='immich',
                 metadata={
                     'asset_id': asset.id,

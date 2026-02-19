@@ -17,6 +17,54 @@ from pathlib import Path
 _report_path = None
 _report_dir = None
 _immich_client = None
+_local_file_cache = {}  # {asset_id: filepath}
+
+
+def _build_local_file_cache():
+    """Build a mapping of asset_id -> local filepath from the report."""
+    global _local_file_cache
+    _local_file_cache = {}
+    try:
+        with open(_report_path) as f:
+            report = json.load(f)
+        for group in report.get('groups', []):
+            for photo in group.get('photos', []):
+                asset_id = photo.get('asset_id')
+                filepath = photo.get('filepath') or photo.get('local_path')
+                if asset_id and filepath:
+                    _local_file_cache[asset_id] = filepath
+    except Exception:
+        pass
+
+
+def _get_local_filepath(asset_id: str):
+    """Get local filepath for an asset_id if available."""
+    if not _local_file_cache:
+        _build_local_file_cache()
+    return _local_file_cache.get(asset_id)
+
+
+def _generate_thumbnail(filepath: str, max_size: int = 250):
+    """Generate a thumbnail from a local image file."""
+    try:
+        from PIL import Image
+        import io
+
+        img = Image.open(filepath)
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+        # Handle RGBA images (convert to RGB for JPEG)
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=85)
+        return buffer.getvalue()
+    except ImportError:
+        # PIL not available - return full file
+        return Path(filepath).read_bytes() if Path(filepath).exists() else None
+    except Exception:
+        return None
 
 
 def _load_report():
@@ -789,24 +837,55 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _proxy_image(self, asset_id, size):
-        """Proxy an Immich thumbnail/preview to avoid CORS."""
-        if not _immich_client:
-            self.send_error(503, "No Immich client configured")
-            return
-        data = _immich_client.get_asset_thumbnail(asset_id, size=size)
+        """Proxy an Immich thumbnail/preview, with fallback to local files."""
+        data = None
+
+        # Try Immich first
+        if _immich_client:
+            data = _immich_client.get_asset_thumbnail(asset_id, size=size)
+
+        # Fall back to local file if available
+        if not data:
+            filepath = _get_local_filepath(asset_id)
+            if filepath and Path(filepath).exists():
+                max_size = 250 if size == 'thumbnail' else 1440
+                data = _generate_thumbnail(filepath, max_size)
+
         if data:
             self._send_image(data)
         else:
             self.send_error(404, "Thumbnail not found")
 
     def _proxy_full(self, asset_id):
-        """Proxy full-resolution download from Immich."""
-        if not _immich_client:
-            self.send_error(503, "No Immich client configured")
-            return
-        data = _immich_client.download_asset(asset_id)
+        """Proxy full-resolution download, with fallback to local files."""
+        data = None
+
+        # Try Immich first
+        if _immich_client:
+            data = _immich_client.download_asset(asset_id)
+
+        # Fall back to local file if available
+        if not data:
+            filepath = _get_local_filepath(asset_id)
+            if filepath and Path(filepath).exists():
+                try:
+                    data = Path(filepath).read_bytes()
+                except Exception:
+                    pass
+
         if data:
-            self._send_image(data, content_type="image/jpeg")
+            # Detect content type from file extension
+            content_type = "image/jpeg"
+            filepath = _get_local_filepath(asset_id)
+            if filepath:
+                ext = Path(filepath).suffix.lower()
+                content_types = {
+                    '.png': 'image/png', '.gif': 'image/gif',
+                    '.webp': 'image/webp', '.heic': 'image/heic',
+                    '.mp4': 'video/mp4', '.mov': 'video/quicktime',
+                }
+                content_type = content_types.get(ext, 'image/jpeg')
+            self._send_image(data, content_type=content_type)
         else:
             self.send_error(404, "Asset not found")
 
@@ -1218,6 +1297,9 @@ def start_viewer_background(report_path, port=8080, immich_client=None, report_d
     _immich_client = immich_client
     _report_dir = str(report_dir)
 
+    # Build local file cache for fallback serving
+    _build_local_file_cache()
+
     server = HTTPServer(("0.0.0.0", port), ViewerHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -1244,13 +1326,19 @@ def start_viewer(report_path, port=8080, immich_client=None, report_dir="reports
         print("Run the organizer first to generate a processing report.")
         sys.exit(1)
 
+    # Build local file cache for fallback serving
+    _build_local_file_cache()
+    local_files_count = len(_local_file_cache)
+
     server = HTTPServer(("0.0.0.0", port), ViewerHandler)
     print(f"\nPhoto Organizer Viewer running at http://localhost:{port}")
     print(f"Report: {_report_path}")
     if _immich_client:
         print(f"Immich: {_immich_client.url} (thumbnails + full photos enabled)")
+    elif local_files_count > 0:
+        print(f"Local files: {local_files_count} photos with local paths (serving directly)")
     else:
-        print("Note: No Immich client — thumbnails will not load")
+        print("Note: No Immich client or local paths — thumbnails will not load")
     print("Press Ctrl+C to stop\n")
 
     try:
