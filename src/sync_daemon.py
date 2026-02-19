@@ -181,21 +181,40 @@ class SyncDaemon:
         """Process photos using PhotoOrganizer."""
         # Lazy import to avoid circular dependencies
         from .organizer import PhotoOrganizer
+        from .grouping import group_similar_photos
 
         # Create a mini-organizer for this batch
         organizer = PhotoOrganizer(
             photo_source=self.photo_source,
             output_dir=self.organizer_config.get('output_dir'),
-            threshold=self.organizer_config.get('threshold', 5),
+            similarity_threshold=self.organizer_config.get('threshold', 5),
             time_window=self.organizer_config.get('time_window', 300),
             use_time_window=self.organizer_config.get('use_time_window', True),
             min_group_size=self.organizer_config.get('min_group_size', 3),
-            dry_run=self.organizer_config.get('dry_run', False),
+            tag_only=self.organizer_config.get('tag_only', False),
+            verbose=self.organizer_config.get('verbose', False),
         )
 
-        # Group and process
+        # Mark photos as discovered
+        for photo in photos:
+            organizer.state.mark_photo_discovered()
+
+        # Group and process using the grouping module directly
         try:
-            groups = organizer._organize_by_hash_subset(photos)
+            groups = group_similar_photos(
+                photos=photos,
+                photo_source=self.photo_source,
+                state=organizer.state,
+                extract_metadata_func=organizer.extract_metadata,
+                get_datetime_func=organizer.get_datetime_from_metadata,
+                similarity_threshold=organizer.similarity_threshold,
+                use_time_window=organizer.use_time_window,
+                time_window=organizer.time_window,
+                min_group_size=organizer.min_group_size,
+                threads=self.organizer_config.get('threads', 2),
+                interrupted_flag=lambda: False,
+                media_type=self.organizer_config.get('media_type', 'image'),
+            )
             if groups:
                 print(f"Found {len(groups)} group(s) in new assets")
                 organizer._process_groups(groups)
