@@ -19,7 +19,7 @@
 | Web Viewer Group Combine/Split + Reprocess | ✅ COMPLETED |
 | Async / Parallel Immich Downloads | ✅ COMPLETED |
 | Video Support | ✅ COMPLETED |
-| Immich Phase 3 (real-time sync) | ⏳ PLANNED |
+| Immich Phase 3 (real-time sync) | ✅ COMPLETED |
 | Apple / Google Photos | ⏳ PLANNED |
 
 ---
@@ -219,14 +219,52 @@ Dedicated video processing mode that groups similar videos together using key fr
 **Options:**
 - `--video-max-frames N`: Maximum key frames to extract per video (default: 10)
 
+### Immich Phase 3: Real-Time Sync
+
+Daemon mode for continuous monitoring and bi-directional sync with Immich.
+
+```bash
+# Start daemon mode - poll every 60 seconds
+./photo_organizer.py --source-type hybrid \
+  --immich-library-path /mnt/photos/immich-app/library \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --daemon --poll-interval 60
+
+# Enable bi-directional sync (detect Immich UI changes)
+./photo_organizer.py --source-type immich \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --daemon --enable-bidir-sync --conflict-strategy remote_wins
+
+# Skip local hashing, use only Immich duplicate detection
+./photo_organizer.py --source-type immich \
+  --immich-url http://localhost:2283 \
+  --immich-api-key YOUR_KEY \
+  --daemon --skip-local-hashing
+```
+
+**Features:**
+- **Real-time sync**: Polls Immich for new/modified assets at configurable intervals
+- **Bi-directional sync**: Detects changes made in Immich UI (favorites, archives)
+- **Conflict resolution**: Three strategies - `remote_wins`, `local_wins`, `manual`
+- **Graceful shutdown**: Ctrl+C saves state for resume on next start
+- **ML capability detection**: Auto-detects available Immich ML features
+
+**Options:**
+- `--daemon`: Enable daemon mode (continuous monitoring)
+- `--poll-interval N`: Seconds between polls (default: 60)
+- `--enable-bidir-sync`: Enable bi-directional sync
+- `--conflict-strategy`: How to resolve conflicts (default: remote_wins)
+- `--skip-local-hashing`: Use only Immich duplicate detection
+
+**New files:**
+- `src/sync_daemon.py`: SyncDaemon class for continuous monitoring
+- `src/sync_reconciler.py`: Bi-directional sync and conflict resolution
+
 ---
 
 ## ⏳ Planned
-
-### Immich Phase 3: Stream Processing
-- Real-time sync (process new photos as they arrive in Immich)
-- Bi-directional sync
-- Use Immich ML models directly
 
 ### Apple / Google Photos Integration
 - Apple Photos via `osxphotos` (macOS only)

@@ -210,6 +210,20 @@ Examples:
     parser.add_argument('--no-ml-quality', action='store_true',
                         help='Disable ML-based aesthetic quality scoring')
 
+    # Daemon mode (Phase 3)
+    parser.add_argument('--daemon', action='store_true',
+                        help='Run as daemon, continuously monitoring for new photos')
+    parser.add_argument('--poll-interval', type=int, default=60,
+                        help='Daemon poll interval in seconds (default: 60)')
+    parser.add_argument('--enable-bidir-sync', action='store_true',
+                        help='Enable bi-directional sync with Immich')
+    parser.add_argument('--conflict-strategy',
+                        choices=['remote_wins', 'local_wins', 'manual'],
+                        default='remote_wins',
+                        help='Bi-directional sync conflict resolution (default: remote_wins)')
+    parser.add_argument('--skip-local-hashing', action='store_true',
+                        help='Use only Immich duplicate detection (skip local hashing)')
+
     # Other arguments
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose output')
@@ -472,6 +486,36 @@ Examples:
                                 report_dir=report_dir)
         print(f"\nLive viewer running at http://localhost:{viewer_port}")
         print(f"Report updates as processing progresses\n")
+
+    # Daemon mode - continuous sync
+    if getattr(args, 'daemon', False):
+        if args.source_type == 'local':
+            print("Error: Daemon mode requires --source-type immich or hybrid")
+            sys.exit(1)
+
+        from src.sync_daemon import run_daemon
+        from pathlib import Path
+
+        # Use sync state file
+        state_file = Path(args.output or '.') / '.photo_organizer_sync_state.json'
+
+        print("Starting sync daemon...")
+        run_daemon(
+            photo_source=photo_source,
+            state_file=state_file,
+            poll_interval=getattr(args, 'poll_interval', 60),
+            enable_bidir_sync=getattr(args, 'enable_bidir_sync', False),
+            conflict_strategy=getattr(args, 'conflict_strategy', 'remote_wins'),
+            # Organizer config
+            output_dir=args.output,
+            threshold=args.threshold,
+            time_window=args.time_window,
+            use_time_window=(args.time_window > 0),
+            min_group_size=args.min_group_size,
+            media_type=getattr(args, 'media_type', 'image'),
+            dry_run=args.dry_run,
+        )
+        return  # Daemon handles its own loop
 
     organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
 

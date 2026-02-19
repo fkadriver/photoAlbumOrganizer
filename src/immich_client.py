@@ -241,6 +241,69 @@ class ImmichClient:
             print(f"Failed to get assets: {e}")
             return []
 
+    def get_modified_assets(self, since: str, skip_archived: bool = True,
+                            media_type: str = 'image',
+                            limit: Optional[int] = None) -> List[ImmichAsset]:
+        """
+        Get assets modified after a specific timestamp.
+
+        Args:
+            since: ISO timestamp (e.g., '2024-01-15T10:30:00.000Z')
+            skip_archived: Skip archived assets
+            media_type: 'image' or 'video'
+            limit: Maximum number of assets to return
+
+        Returns:
+            List of ImmichAsset objects modified since the timestamp
+        """
+        try:
+            assets = []
+            page = 1
+            page_size = 1000
+            type_filter = 'IMAGE' if media_type == 'image' else 'VIDEO'
+
+            while True:
+                # Build search query with updatedAfter filter
+                query = {
+                    'updatedAfter': since,
+                    'page': page,
+                    'size': page_size
+                }
+                if skip_archived:
+                    query['isArchived'] = False
+
+                response = self._post('/api/search/metadata', json=query)
+                data = response.json()
+
+                # Extract items from response
+                items = []
+                if 'assets' in data and 'items' in data['assets']:
+                    items = data['assets']['items']
+                elif 'items' in data:
+                    items = data['items']
+
+                if not items:
+                    break
+
+                # Filter by media type
+                for item in items:
+                    if item.get('type') == type_filter:
+                        assets.append(ImmichAsset(item))
+
+                        if limit is not None and len(assets) >= limit:
+                            return assets
+
+                if len(items) < page_size:
+                    break
+
+                page += 1
+
+            return assets
+
+        except Exception as e:
+            print(f"Failed to get modified assets: {e}")
+            return []
+
     def get_asset_info(self, asset_id: str) -> Optional[ImmichAsset]:
         """
         Get detailed info for a specific asset.
@@ -703,6 +766,48 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to get duplicates: {e}")
             return []
+
+    def check_ml_capabilities(self) -> Dict[str, bool]:
+        """
+        Check which ML features are available on this Immich instance.
+
+        Returns:
+            Dict mapping feature name to availability:
+            - 'clip_search': CLIP semantic search available
+            - 'face_detection': Face recognition available
+            - 'duplicate_detection': Server-side duplicate detection available
+        """
+        capabilities = {
+            'clip_search': False,
+            'face_detection': False,
+            'duplicate_detection': False,
+        }
+
+        # Test CLIP search
+        try:
+            response = self._post('/api/search/smart', json={'query': 'test', 'page': 1, 'size': 1})
+            if response.status_code == 200:
+                capabilities['clip_search'] = True
+        except Exception:
+            pass
+
+        # Test face detection (people endpoint)
+        try:
+            response = self._get('/api/people', params={'withHidden': 'false'})
+            if response.status_code == 200:
+                capabilities['face_detection'] = True
+        except Exception:
+            pass
+
+        # Test duplicate detection
+        try:
+            response = self._get('/api/duplicates')
+            if response.status_code == 200:
+                capabilities['duplicate_detection'] = True
+        except Exception:
+            pass
+
+        return capabilities
 
     # --- Bulk Operations ---
 

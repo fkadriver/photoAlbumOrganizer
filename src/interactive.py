@@ -574,6 +574,55 @@ def _prompt_run_options():
             "live_viewer": live_viewer}
 
 
+def _prompt_daemon_options(source_type):
+    """Step 6: Daemon/sync mode configuration (Immich/hybrid only)."""
+    if source_type == "local":
+        # Daemon mode not available for local source
+        return {
+            "daemon_mode": False,
+            "poll_interval": 60,
+            "enable_bidir_sync": False,
+            "conflict_strategy": "remote_wins",
+        }
+
+    _print_section("Step 6: Continuous Sync (Optional)")
+    print("  Daemon mode continuously monitors Immich for new photos.")
+    print()
+
+    daemon_mode = _prompt_bool("Enable daemon mode (continuous monitoring)?", default=False)
+    if not daemon_mode:
+        return {
+            "daemon_mode": False,
+            "poll_interval": 60,
+            "enable_bidir_sync": False,
+            "conflict_strategy": "remote_wins",
+        }
+
+    poll_interval = _prompt_int("Poll interval (seconds)", default=60, min_val=10, max_val=3600)
+
+    enable_bidir = _prompt_bool("Enable bi-directional sync (detect Immich UI changes)?", default=False)
+
+    conflict_strategy = "remote_wins"
+    if enable_bidir:
+        conflict_strategy = _prompt_choice(
+            "Conflict resolution strategy:",
+            ["remote_wins", "local_wins", "manual"],
+            default="remote_wins",
+            descriptions=[
+                "Immich UI changes override local changes",
+                "Local organizer changes override Immich UI",
+                "Pause and ask for manual resolution",
+            ],
+        )
+
+    return {
+        "daemon_mode": daemon_mode,
+        "poll_interval": poll_interval,
+        "enable_bidir_sync": enable_bidir,
+        "conflict_strategy": conflict_strategy,
+    }
+
+
 # --- Summary / confirmation ---
 
 # Settings grouped by section for display.  Each entry is
@@ -609,6 +658,9 @@ _SECTION_LAYOUT = [
     ]),
     (5, "Run Options", [
         "dry_run", "verbose", "limit", "live_viewer",
+    ]),
+    (6, "Daemon Mode", [
+        "daemon_mode", "poll_interval", "enable_bidir_sync", "conflict_strategy",
     ]),
 ]
 
@@ -698,6 +750,10 @@ def _build_namespace(settings):
     ns.threads = settings.get("threads", 2)
     ns.report_dir = settings.get("report_dir", "reports")
     ns.live_viewer = settings.get("live_viewer", False)
+    ns.daemon = settings.get("daemon_mode", False)
+    ns.poll_interval = settings.get("poll_interval", 60)
+    ns.enable_bidir_sync = settings.get("enable_bidir_sync", False)
+    ns.conflict_strategy = settings.get("conflict_strategy", "remote_wins")
     ns.interactive = True
     return ns
 
@@ -718,6 +774,8 @@ def _edit_section(section_num, settings):
         settings.update(_prompt_advanced())
     elif section_num == 5:
         settings.update(_prompt_run_options())
+    elif section_num == 6:
+        settings.update(_prompt_daemon_options(settings.get("source_type", "local")))
 
 
 def _collect_source_options(settings):
@@ -833,6 +891,9 @@ def run_interactive_menu():
 
             # Step 5
             settings.update(_prompt_run_options())
+
+            # Step 6 (only for immich/hybrid)
+            settings.update(_prompt_daemon_options(settings["source_type"]))
 
         # Summary & confirmation loop
         while True:

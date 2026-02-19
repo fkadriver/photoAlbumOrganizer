@@ -222,3 +222,107 @@ class ProcessingState:
             'groups_processed': self.state['groups_processed'],
             'groups_found': self.state['groups_found'],
         }
+
+
+class SyncState(ProcessingState):
+    """Extended state management for sync daemon.
+
+    Adds sync-specific tracking for:
+    - Last sync timestamp for incremental fetching
+    - Per-asset sync records for bi-directional sync
+    - Conflict tracking for manual resolution
+    """
+
+    def __init__(self, state_file: Path):
+        """Initialize sync state with additional sync-specific fields."""
+        super().__init__(state_file)
+        # Add sync-specific fields
+        self.state.update({
+            'sync_version': '1.0',
+            'last_sync_time': None,  # ISO timestamp of last successful sync
+            'sync_mode': 'daemon',   # 'daemon' or 'manual'
+            'poll_interval': 60,
+            'total_sync_cycles': 0,
+            'last_error': None,
+            'asset_sync_state': {},  # {asset_id: SyncRecord}
+            'pending_conflicts': [],  # List of conflict records
+        })
+
+    def load(self) -> bool:
+        """Load sync state, ensuring sync-specific fields exist."""
+        if not super().load():
+            return False
+
+        # Ensure sync-specific fields exist (for migration from ProcessingState)
+        defaults = {
+            'sync_version': '1.0',
+            'last_sync_time': None,
+            'sync_mode': 'daemon',
+            'poll_interval': 60,
+            'total_sync_cycles': 0,
+            'last_error': None,
+            'asset_sync_state': {},
+            'pending_conflicts': [],
+        }
+        for key, value in defaults.items():
+            if key not in self.state:
+                self.state[key] = value
+
+        return True
+
+    def get_last_sync_time(self) -> Optional[str]:
+        """Get timestamp of last successful sync."""
+        return self.state.get('last_sync_time')
+
+    def set_last_sync_time(self, timestamp: str):
+        """Set last sync timestamp and increment cycle count."""
+        self.state['last_sync_time'] = timestamp
+        self.state['total_sync_cycles'] += 1
+
+    def get_asset_sync_record(self, asset_id: str) -> Optional[Dict[str, Any]]:
+        """Get sync record for a specific asset."""
+        return self.state['asset_sync_state'].get(asset_id)
+
+    def update_asset_sync_record(self, asset_id: str, record: Dict[str, Any]):
+        """Update sync record for an asset."""
+        self.state['asset_sync_state'][asset_id] = record
+
+    def add_conflict(self, conflict: Dict[str, Any]):
+        """Record a conflict for later manual resolution."""
+        conflict['detected_at'] = datetime.now().isoformat()
+        self.state['pending_conflicts'].append(conflict)
+
+    def get_pending_conflicts(self) -> List[Dict[str, Any]]:
+        """Get all pending conflicts."""
+        return self.state['pending_conflicts']
+
+    def resolve_conflict(self, asset_id: str):
+        """Remove a conflict from the pending list."""
+        self.state['pending_conflicts'] = [
+            c for c in self.state['pending_conflicts']
+            if c.get('asset_id') != asset_id
+        ]
+
+    def record_error(self, error: str):
+        """Record the last error that occurred."""
+        self.state['last_error'] = {
+            'message': error,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    def clear_error(self):
+        """Clear the last error."""
+        self.state['last_error'] = None
+
+    def get_sync_summary(self) -> str:
+        """Get human-readable sync summary."""
+        lines = ["Sync Status:"]
+        lines.append(f"  Last sync: {self.state.get('last_sync_time', 'Never')}")
+        lines.append(f"  Total cycles: {self.state.get('total_sync_cycles', 0)}")
+        lines.append(f"  Tracked assets: {len(self.state.get('asset_sync_state', {}))}")
+        lines.append(f"  Pending conflicts: {len(self.state.get('pending_conflicts', []))}")
+
+        if self.state.get('last_error'):
+            lines.append(f"  Last error: {self.state['last_error']['message']}")
+
+        return '\n'.join(lines)
