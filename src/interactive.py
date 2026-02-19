@@ -426,27 +426,77 @@ def _prompt_immich_actions():
 def _prompt_processing():
     """Step 3: processing tuning."""
     _print_section("Step 3: Processing Options")
+
+    # Media type selection
+    media_type = _prompt_choice(
+        "What type of media to process?",
+        ["image", "video"],
+        default="image",
+        descriptions=[
+            "Process photos/images",
+            "Process video files (extracts key frames)",
+        ],
+    )
+
+    # Video-specific options
+    video_strategy = "scene_change"
+    video_max_frames = 10
+    if media_type == "video":
+        video_strategy = _prompt_choice(
+            "Video key frame extraction strategy:",
+            ["scene_change", "fixed_interval", "iframe"],
+            default="scene_change",
+            descriptions=[
+                "Detect scene changes (recommended)",
+                "Extract at fixed time intervals",
+                "Use video I-frames only",
+            ],
+        )
+        video_max_frames = _prompt_int(
+            "Maximum key frames per video", default=10, min_val=1, max_val=100
+        )
+
     threshold = _prompt_int("Similarity threshold (lower=stricter)", default=5, min_val=0, max_val=64)
     time_window = _prompt_int(
         "Time window in seconds (0 to disable)", default=300, min_val=0
     )
     min_group_size = _prompt_int("Minimum photos per group", default=3, min_val=2)
     threads = _prompt_int("Number of threads", default=2, min_val=1)
-    return {"threshold": threshold, "time_window": time_window,
-            "min_group_size": min_group_size, "threads": threads}
+
+    return {
+        "media_type": media_type,
+        "video_strategy": video_strategy,
+        "video_max_frames": video_max_frames,
+        "threshold": threshold,
+        "time_window": time_window,
+        "min_group_size": min_group_size,
+        "threads": threads,
+    }
 
 
 def _prompt_advanced():
-    """Step 4: HDR / face-swap (opt-in)."""
+    """Step 4: HDR / face-swap / GPU (opt-in)."""
     _print_section("Step 4: Advanced Options")
-    if not _prompt_bool("Configure advanced options (HDR, face-swap)?", default=False):
+    if not _prompt_bool("Configure advanced options (GPU, HDR, face-swap)?", default=False):
         return {
+            "gpu": False,
+            "gpu_device": 0,
+            "no_ml_quality": False,
             "enable_hdr": False,
             "hdr_gamma": 2.2,
             "enable_face_swap": False,
             "swap_closed_eyes": True,
             "face_backend": "auto",
         }
+
+    # GPU acceleration
+    gpu = _prompt_bool("Enable GPU acceleration (CUDA/MPS)?", default=False)
+    gpu_device = 0
+    no_ml_quality = False
+    if gpu:
+        gpu_device = _prompt_int("GPU device index (for multi-GPU systems)", default=0, min_val=0)
+    else:
+        no_ml_quality = _prompt_bool("Disable ML-based quality scoring (faster on CPU)?", default=False)
 
     enable_hdr = _prompt_bool("Enable HDR merging for bracketed exposures?", default=False)
     hdr_gamma = 2.2
@@ -460,11 +510,22 @@ def _prompt_advanced():
         swap_closed_eyes = _prompt_bool("Swap faces with closed eyes?", default=True)
         face_backend = _prompt_choice(
             "Face detection backend:",
-            ["auto", "face_recognition", "mediapipe"],
+            ["auto", "face_recognition", "mediapipe", "facenet", "insightface", "yolov8"],
             default="auto",
+            descriptions=[
+                "Auto-select best available",
+                "CPU-based (dlib)",
+                "CPU-based (Google MediaPipe)",
+                "GPU: CUDA/MPS (FaceNet)",
+                "GPU: CUDA (InsightFace)",
+                "GPU: CUDA/MPS (YOLOv8)",
+            ],
         )
 
     return {
+        "gpu": gpu,
+        "gpu_device": gpu_device,
+        "no_ml_quality": no_ml_quality,
         "enable_hdr": enable_hdr,
         "hdr_gamma": hdr_gamma,
         "enable_face_swap": enable_face_swap,
@@ -518,9 +579,11 @@ _SECTION_LAYOUT = [
         "immich_smart_search",
     ]),
     (3, "Processing", [
+        "media_type", "video_strategy", "video_max_frames",
         "threshold", "time_window", "min_group_size", "threads",
     ]),
     (4, "Advanced", [
+        "gpu", "gpu_device", "no_ml_quality",
         "enable_hdr", "hdr_gamma",
         "enable_face_swap", "swap_closed_eyes", "face_backend",
     ]),
@@ -582,6 +645,9 @@ def _build_namespace(settings):
     ns.immich_library_path = settings.get("immich_library_path")
     ns.no_verify_ssl = settings.get("no_verify_ssl", False)
     ns.use_full_resolution = settings.get("use_full_resolution", False)
+    ns.media_type = settings.get("media_type", "image")
+    ns.video_strategy = settings.get("video_strategy", "scene_change")
+    ns.video_max_frames = settings.get("video_max_frames", 10)
     ns.threshold = settings.get("threshold", 5)
     ns.time_window = settings.get("time_window", 300)
     ns.min_group_size = settings.get("min_group_size", 3)
@@ -598,6 +664,9 @@ def _build_namespace(settings):
     ns.resume = False
     ns.force_fresh = False
     ns.state_file = None
+    ns.gpu = settings.get("gpu", False)
+    ns.gpu_device = settings.get("gpu_device", 0)
+    ns.no_ml_quality = settings.get("no_ml_quality", False)
     ns.enable_hdr = settings.get("enable_hdr", False)
     ns.hdr_gamma = settings.get("hdr_gamma", 2.2)
     ns.face_backend = settings.get("face_backend", "auto")
