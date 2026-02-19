@@ -208,7 +208,7 @@ def _load_settings(path):
 
 def _prompt_missing_secrets(settings):
     """Re-prompt for any secret values that were stripped during save."""
-    if settings.get("source_type") == "immich" and not settings.get("immich_api_key"):
+    if settings.get("source_type") in ("immich", "hybrid") and not settings.get("immich_api_key"):
         # Try the config file first
         conf = _load_immich_config()
         conf_key = conf.get("IMMICH_API_KEY", "")
@@ -238,13 +238,17 @@ def _validate_source_path(path):
 # --- Section prompts ---
 
 def _prompt_source_type():
-    """Step 1: choose local or immich."""
+    """Step 1: choose local, immich, or hybrid."""
     _print_section("Step 1: Source Type")
     return _prompt_choice(
         "Where are your photos?",
-        ["local", "immich"],
+        ["local", "immich", "hybrid"],
         default="local",
-        descriptions=["Photos on your local filesystem", "Immich photo management server"],
+        descriptions=[
+            "Photos on your local filesystem",
+            "Immich photo management server (downloads via HTTP)",
+            "Immich on same machine (direct filesystem + API)",
+        ],
     )
 
 
@@ -302,6 +306,71 @@ def _prompt_immich_options():
         "immich_cache_size": cache_size,
         "no_verify_ssl": not verify_ssl,
         "use_full_resolution": full_res,
+    }
+
+
+def _prompt_hybrid_options():
+    """Step 2c: Hybrid mode (local filesystem + Immich API)."""
+    _print_section("Step 2: Hybrid Mode Configuration")
+    print("  Hybrid mode uses direct filesystem access for photos")
+    print("  while using the Immich API for tagging, albums, and favorites.")
+    print()
+
+    # Load defaults from config file
+    conf = _load_immich_config()
+    if conf:
+        print(f"  Loaded defaults from {_IMMICH_CONFIG_FILE}")
+        if conf.get("IMMICH_URL"):
+            print(f"    IMMICH_URL = {conf['IMMICH_URL']}")
+        if conf.get("IMMICH_API_KEY"):
+            print(f"    IMMICH_API_KEY = ****")
+        if conf.get("IMMICH_LIBRARY_PATH"):
+            print(f"    IMMICH_LIBRARY_PATH = {conf['IMMICH_LIBRARY_PATH']}")
+        print()
+
+    default_url = conf.get("IMMICH_URL", "http://localhost:2283")
+    default_key = conf.get("IMMICH_API_KEY", "")
+    default_library = conf.get("IMMICH_LIBRARY_PATH", "/mnt/photos/immich-app/library")
+
+    # Immich connection
+    url = _prompt_text("Immich server URL", default=default_url, required=True)
+    print()
+    if default_key:
+        use_default = _prompt_bool(f"Use API key from config file?", default=True)
+        api_key = default_key if use_default else ""
+    else:
+        api_key = ""
+    if not api_key:
+        api_key = getpass.getpass("  Immich API key (hidden): ").strip()
+        while not api_key:
+            print("  API key is required.")
+            api_key = getpass.getpass("  Immich API key (hidden): ").strip()
+    print()
+
+    # Library path
+    print("  Common Immich library paths:")
+    print("    - /mnt/photos/immich-app/library")
+    print("    - /var/lib/immich/library")
+    print("    - ~/immich/library")
+    library_path = _prompt_text(
+        "Immich library path",
+        default=default_library,
+        required=True,
+        validator=_validate_source_path
+    )
+    library_path = os.path.expanduser(library_path)
+
+    # Album filter
+    album = _prompt_text("Process specific album (leave blank for all)")
+
+    verify_ssl = _prompt_bool("Verify SSL certificates?", default=True)
+
+    return {
+        "immich_url": url,
+        "immich_api_key": api_key,
+        "immich_library_path": library_path,
+        "immich_album": album or None,
+        "no_verify_ssl": not verify_ssl,
     }
 
 
@@ -439,6 +508,7 @@ _SECTION_LAYOUT = [
         # immich connection
         "immich_url", "immich_api_key", "immich_album",
         "immich_cache_dir", "immich_cache_size",
+        "immich_library_path",  # hybrid mode
         "no_verify_ssl", "use_full_resolution",
         # immich actions
         "tag_only", "create_albums", "album_prefix",
@@ -509,6 +579,7 @@ def _build_namespace(settings):
     ns.immich_album = settings.get("immich_album")
     ns.immich_cache_dir = settings.get("immich_cache_dir")
     ns.immich_cache_size = settings.get("immich_cache_size", 5000)
+    ns.immich_library_path = settings.get("immich_library_path")
     ns.no_verify_ssl = settings.get("no_verify_ssl", False)
     ns.use_full_resolution = settings.get("use_full_resolution", False)
     ns.threshold = settings.get("threshold", 5)
@@ -570,14 +641,40 @@ def _collect_source_options(settings):
                      "immich_cache_dir", "immich_cache_size",
                      "no_verify_ssl", "use_full_resolution",
                      "tag_only", "create_albums", "album_prefix",
-                     "mark_best_favorite"):
+                     "mark_best_favorite", "immich_library_path"):
             settings.setdefault(key, None if "cache_size" not in key else 5000)
         settings.setdefault("tag_only", False)
         settings.setdefault("create_albums", False)
         settings.setdefault("mark_best_favorite", False)
         settings.setdefault("no_verify_ssl", False)
         settings.setdefault("use_full_resolution", False)
+    elif settings["source_type"] == "hybrid":
+        # Hybrid mode: local filesystem + Immich API
+        hybrid_opts = _prompt_hybrid_options()
+        settings.update(hybrid_opts)
+        action_opts = _prompt_immich_actions()
+        # Merge output from actions
+        if action_opts.get("output"):
+            settings["output"] = action_opts["output"]
+        elif "output" not in settings:
+            settings["output"] = action_opts.get("output")
+        settings["tag_only"] = action_opts["tag_only"]
+        settings["create_albums"] = action_opts["create_albums"]
+        settings["album_prefix"] = action_opts["album_prefix"]
+        settings["mark_best_favorite"] = action_opts["mark_best_favorite"]
+        settings["immich_group_by_person"] = action_opts.get("immich_group_by_person", False)
+        settings["immich_person"] = action_opts.get("immich_person")
+        settings["immich_use_server_faces"] = action_opts.get("immich_use_server_faces", False)
+        settings["archive_non_best"] = action_opts.get("archive_non_best", False)
+        settings["immich_use_duplicates"] = action_opts.get("immich_use_duplicates", False)
+        settings["immich_smart_search"] = action_opts.get("immich_smart_search")
+        # Clear standard immich-specific keys not used in hybrid
+        settings.setdefault("immich_cache_dir", None)
+        settings.setdefault("immich_cache_size", 5000)
+        settings.setdefault("use_full_resolution", False)
+        settings.setdefault("source", None)
     else:
+        # Standard Immich mode
         immich_opts = _prompt_immich_options()
         settings.update(immich_opts)
         action_opts = _prompt_immich_actions()
@@ -598,6 +695,7 @@ def _collect_source_options(settings):
         settings["immich_smart_search"] = action_opts.get("immich_smart_search")
         # Clear local-specific keys
         settings.setdefault("source", None)
+        settings.setdefault("immich_library_path", None)
 
 
 # --- Main entry point ---
@@ -653,7 +751,7 @@ def run_interactive_menu():
             print("\n  [c] Confirm and run")
             print("  [s] Save settings and run")
             print("  [e] Edit a section")
-            if settings.get("source_type") == "immich":
+            if settings.get("source_type") in ("immich", "hybrid"):
                 print("  [u] Undo / cleanup previous Immich changes")
             has_report = (os.path.exists(os.path.join("reports", "latest.json"))
                           or os.path.exists("processing_report.json"))
@@ -686,7 +784,7 @@ def run_interactive_menu():
                     if not os.path.exists(report_file):
                         report_file = "processing_report.json"
                     immich_client = None
-                    if settings.get("source_type") == "immich" and settings.get("immich_api_key"):
+                    if settings.get("source_type") in ("immich", "hybrid") and settings.get("immich_api_key"):
                         from immich_client import ImmichClient
                         immich_client = ImmichClient(
                             url=settings["immich_url"],
@@ -698,7 +796,7 @@ def run_interactive_menu():
                     print("\n  Viewer stopped.")
                 except Exception as exc:
                     print(f"  Viewer error: {exc}")
-            elif choice in ("u", "undo") and settings.get("source_type") == "immich":
+            elif choice in ("u", "undo") and settings.get("source_type") in ("immich", "hybrid"):
                 try:
                     from immich_client import ImmichClient
                     from cleanup import run_cleanup_menu
@@ -747,7 +845,7 @@ def load_and_run_settings(path):
         sys.exit(1)
 
     # Fill in secrets from config file / environment
-    if settings.get("source_type") == "immich" and not settings.get("immich_api_key"):
+    if settings.get("source_type") in ("immich", "hybrid") and not settings.get("immich_api_key"):
         # Try environment first, then config file
         api_key = os.environ.get("IMMICH_API_KEY")
         if not api_key:
