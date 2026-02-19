@@ -494,7 +494,6 @@ Examples:
             sys.exit(1)
 
         from src.sync_daemon import run_daemon
-        from pathlib import Path
 
         # Use sync state file
         state_file = Path(args.output or '.') / '.photo_organizer_sync_state.json'
