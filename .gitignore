@@ -57,6 +57,9 @@ organized_photos/
 *.pkl
 *.tmp
 
+# JSON files (reports, state, settings)
+*.json
+
 # Interactive menu saved settings
 .photo_organizer_settings.json
 processing_report.json
