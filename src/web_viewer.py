@@ -1277,6 +1277,24 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self._send_json({"ok": True, "updated": updated})
 
 
+class _ReuseAddrHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+
+def _bind_server(port):
+    """Try to bind to port, auto-incrementing up to 10 times if in use."""
+    import socket
+    for p in range(port, port + 10):
+        try:
+            server = _ReuseAddrHTTPServer(("0.0.0.0", p), ViewerHandler)
+            return server, p
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                continue
+            raise
+    raise OSError(f"Could not bind to any port in range {port}-{port + 9}")
+
+
 def start_viewer_background(report_path, port=8080, immich_client=None, report_dir="reports"):
     """
     Start the web viewer server in a background daemon thread.
@@ -1300,7 +1318,9 @@ def start_viewer_background(report_path, port=8080, immich_client=None, report_d
     # Build local file cache for fallback serving
     _build_local_file_cache()
 
-    server = HTTPServer(("0.0.0.0", port), ViewerHandler)
+    server, bound_port = _bind_server(port)
+    if bound_port != port:
+        print(f"Port {port} in use, using port {bound_port}")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return thread
@@ -1330,7 +1350,7 @@ def start_viewer(report_path, port=8080, immich_client=None, report_dir="reports
     _build_local_file_cache()
     local_files_count = len(_local_file_cache)
 
-    server = HTTPServer(("0.0.0.0", port), ViewerHandler)
+    server, port = _bind_server(port)
     print(f"\nPhoto Organizer Viewer running at http://localhost:{port}")
     print(f"Report: {_report_path}")
     if _immich_client:

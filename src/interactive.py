@@ -350,7 +350,7 @@ def _prompt_hybrid_options():
 
     default_url = conf.get("IMMICH_URL", "http://localhost:2283")
     default_key = conf.get("IMMICH_API_KEY", "")
-    default_library = conf.get("IMMICH_LIBRARY_PATH", "/mnt/photos/immich-app/library")
+    default_library = conf.get("IMMICH_LIBRARY_PATH", "/mnt/immich/library/library/")
 
     # Immich connection
     url = _prompt_text("Immich server URL", default=default_url, required=True)

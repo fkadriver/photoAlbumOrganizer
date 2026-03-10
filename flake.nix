@@ -10,13 +10,13 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        python = pkgs.python311;
+        python = pkgs.python312;
         pythonPackages = python.pkgs;
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Python 3.11
+            # Python 3.12
             python
             pythonPackages.pip
             pythonPackages.virtualenv
