@@ -538,7 +538,8 @@ class PhotoOrganizer:
         print(f"  {len(all_groups)} group(s) meet minimum size of {self.min_group_size}")
         return all_groups
 
-    def _apply_structured_tags(self, group, best_photo, group_index, person_name=None):
+    def _apply_structured_tags(self, group, best_photo, group_index, person_name=None,
+                               modifications=None):
         """Apply structured tags to a group using the Immich tag API."""
         if not hasattr(self.photo_source, 'client'):
             # Fall back to simple tagging for non-Immich sources
@@ -577,6 +578,12 @@ class PhotoOrganizer:
             person_tag_id = client.get_or_create_tag(f"photo-organizer/person-{person_name}")
             if person_tag_id:
                 client.tag_assets_by_tag_id(person_tag_id, all_ids)
+
+        # Modification tags on best photo
+        for mod in (modifications or []):
+            mod_tag_id = client.get_or_create_tag(f"photo-organizer/modified/{mod}")
+            if mod_tag_id:
+                client.tag_assets_by_tag_id(mod_tag_id, [best_id])
 
         print(f"  Tagged {len(group)} photos (best: {best_id[:8]}...)")
 
@@ -645,10 +652,18 @@ class PhotoOrganizer:
                 best_photo_data = find_best_photo(group, self.photo_source)
             best_photo = best_photo_data['photo']
 
+            # Determine which modifications apply to this group
+            modifications = []
+            if should_merge_hdr(group, self.enable_hdr):
+                modifications.append("hdr-merged")
+            if self.enable_face_swap and image_processing.FACE_DETECTION_ENABLED:
+                modifications.append("face-swapped")
+
             # Structured tagging (for Immich with tag API)
             if self.tag_only or self.create_albums:
                 self._apply_structured_tags(group, best_photo, i,
-                                           group[0].get('person_name'))
+                                           group[0].get('person_name'),
+                                           modifications=modifications)
 
             # Create albums mode (for Immich)
             if self.create_albums:
@@ -728,12 +743,16 @@ class PhotoOrganizer:
                 else:
                     best_dst.write_bytes(data)
 
+                hdr_applied = False
+                face_swap_applied = False
+
                 if should_merge_hdr(group, self.enable_hdr):
                     hdr_image = merge_exposures_hdr(group, self.photo_source, self.hdr_gamma)
                     if hdr_image is not None:
                         hdr_dst = group_dir / "hdr_merged.jpg"
                         cv2.imwrite(str(hdr_dst), hdr_image)
                         print(f"  HDR: Saved merged image: {hdr_dst.name}")
+                        hdr_applied = True
 
                 if self.enable_face_swap and image_processing.FACE_DETECTION_ENABLED:
                     face_swapped = create_face_swapped_image(group, best_dst, self.enable_face_swap)
@@ -741,6 +760,22 @@ class PhotoOrganizer:
                         swap_dst = group_dir / "face_swapped.jpg"
                         cv2.imwrite(str(swap_dst), face_swapped)
                         print(f"  Face swap: Saved improved image: {swap_dst.name}")
+                        face_swap_applied = True
+
+                # Tag applied modifications in Immich when not already tagged above
+                if (hdr_applied or face_swap_applied) and \
+                        not (self.tag_only or self.create_albums) and \
+                        hasattr(self.photo_source, 'client'):
+                    client = self.photo_source.client
+                    best_id = best_photo.metadata.get('asset_id', best_photo.id)
+                    if hdr_applied:
+                        tag_id = client.get_or_create_tag("photo-organizer/modified/hdr-merged")
+                        if tag_id:
+                            client.tag_assets_by_tag_id(tag_id, [best_id])
+                    if face_swap_applied:
+                        tag_id = client.get_or_create_tag("photo-organizer/modified/face-swapped")
+                        if tag_id:
+                            client.tag_assets_by_tag_id(tag_id, [best_id])
 
                 print(f"Group {i} complete: {group_dir}")
 
@@ -754,6 +789,8 @@ class PhotoOrganizer:
                 actions_taken.append("best_favorited")
             if self.archive_non_best:
                 actions_taken.append("non_best_archived")
+            for mod in modifications:
+                actions_taken.append(f"modified:{mod}")
 
             group_report = {
                 "group_index": i,
