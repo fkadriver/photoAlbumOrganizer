@@ -1295,7 +1295,7 @@ def _bind_server(port):
     raise OSError(f"Could not bind to any port in range {port}-{port + 9}")
 
 
-def start_viewer_background(report_path, port=8080, immich_client=None, report_dir="reports"):
+def start_viewer_background(report_path, port=8888, immich_client=None, report_dir="reports"):
     """
     Start the web viewer server in a background daemon thread.
 
@@ -1326,7 +1326,7 @@ def start_viewer_background(report_path, port=8080, immich_client=None, report_d
     return thread
 
 
-def start_viewer(report_path, port=8080, immich_client=None, report_dir="reports"):
+def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports"):
     """
     Start the web viewer server.
 

@@ -245,8 +245,8 @@ Examples:
                         help='Path to processing report JSON (default: reports/latest.json)')
     parser.add_argument('--report-dir', default='reports',
                         help='Directory for timestamped reports (default: reports)')
-    parser.add_argument('--port', type=int, default=8080,
-                        help='Web viewer port (default: 8080)')
+    parser.add_argument('--port', type=int, default=8888,
+                        help='Web viewer port (default: 8888)')
     parser.add_argument('--live-viewer', action='store_true',
                         help='Start web viewer in background during processing')
 
@@ -480,7 +480,7 @@ Examples:
         immich_client_for_viewer = None
         if args.source_type == 'immich':
             immich_client_for_viewer = photo_source.client
-        viewer_port = getattr(args, 'port', 8080)
+        viewer_port = getattr(args, 'port', 8888)
         start_viewer_background(report_path, port=viewer_port,
                                 immich_client=immich_client_for_viewer,
                                 report_dir=report_dir)
