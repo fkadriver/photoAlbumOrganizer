@@ -168,6 +168,9 @@ Examples:
                         help='Mark best photo in each group as favorite (Immich only)')
     parser.add_argument('--immich-group-by-person', action='store_true',
                         help='Group photos by recognized person (Immich only)')
+    parser.add_argument('--immich-group-by-people', action='store_true',
+                        help='Group photos by combination of favorite named people present '
+                             '(e.g. Scott+Steph+Connor). Groups of >5 named as "N people".')
     parser.add_argument('--immich-person',
                         help='Filter to specific person name (Immich only)')
     parser.add_argument('--immich-use-server-faces', action='store_true',
@@ -461,6 +464,7 @@ Examples:
         threads=args.threads,
         verbose=args.verbose,
         immich_group_by_person=getattr(args, 'immich_group_by_person', False),
+        immich_group_by_people=getattr(args, 'immich_group_by_people', False),
         immich_person=getattr(args, 'immich_person', None),
         immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
         archive_non_best=getattr(args, 'archive_non_best', False),

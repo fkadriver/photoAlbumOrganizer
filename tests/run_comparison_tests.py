@@ -67,6 +67,11 @@ CONFIGS = [
         "flags": ["--immich-group-by-person", "--immich-use-server-faces"],
     },
     {
+        "name": "group_by_people",
+        "label": "Group by People Combos (favorites only)",
+        "flags": ["--immich-group-by-people"],
+    },
+    {
         "name": "all_features",
         "label": "All Features Combined",
         "flags": [

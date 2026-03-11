@@ -212,7 +212,8 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   .person-card:hover { transform: translateY(-2px); border-color: var(--accent); }
   .person-card img { width: 100%; height: 160px; object-fit: cover; }
   .person-card .person-info { padding: 0.5rem; }
-  .person-card .person-name { font-weight: 600; font-size: 0.9rem; }
+  .person-card .person-name { font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 0.3rem; justify-content: center; }
+  .person-card .person-fav { color: gold; font-size: 0.9rem; }
   .person-card .person-count { font-size: 0.75rem; opacity: 0.6; }
   .person-photos { padding: 1.5rem 2rem; }
   .person-photos h3 { margin-bottom: 1rem; }
@@ -762,8 +763,8 @@ async function loadPeople() {
     card.innerHTML = `
       <img src="/api/people/${p.id}/thumbnail" alt="${p.name}" loading="lazy">
       <div class="person-info">
-        <div class="person-name">${p.name}</div>
-        <div class="person-count">${p.assetCount} photo${p.assetCount !== 1 ? 's' : ''}</div>
+        <div class="person-name">${p.name}${p.isFavorite ? '<span class="person-fav">★</span>' : ''}</div>
+        <div class="person-count">${p.assetCount ? p.assetCount + ' photo' + (p.assetCount !== 1 ? 's' : '') : '—'}</div>
       </div>`;
     grid.appendChild(card);
   });
@@ -944,7 +945,18 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "No Immich client configured"}, 503)
             return
         people = _immich_client.get_people()
-        # Filter to named people and format response
+
+        # Build photo counts per person name from the current report
+        name_counts: dict = {}
+        try:
+            report = _load_report()
+            for group in report.get('groups', []):
+                pname = group.get('person_name')
+                if pname:
+                    name_counts[pname] = name_counts.get(pname, 0) + group.get('photo_count', 0)
+        except Exception:
+            pass
+
         result = []
         for p in people:
             name = p.get('name', '').strip()
@@ -954,7 +966,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 "id": p.get('id'),
                 "name": name,
                 "thumbnailPath": p.get('thumbnailPath', ''),
-                "assetCount": p.get('assetCount', 0),
+                "assetCount": name_counts.get(name, p.get('assetCount', 0)),
+                "isFavorite": p.get('isFavorite', False),
             })
         result.sort(key=lambda x: x['name'].lower())
         self._send_json(result)

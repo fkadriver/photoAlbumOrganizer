@@ -41,6 +41,7 @@ class PhotoOrganizer:
                  archive_non_best=False,
                  immich_use_duplicates=False,
                  immich_smart_search=None,
+                 immich_group_by_people=False,
                  report_dir="reports",
                  media_type='image', video_strategy='scene_change', video_max_frames=10):
         """
@@ -107,6 +108,7 @@ class PhotoOrganizer:
         self.archive_non_best = archive_non_best
         self.immich_use_duplicates = immich_use_duplicates
         self.immich_smart_search = immich_smart_search
+        self.immich_group_by_people = immich_group_by_people
         self.report_dir = Path(report_dir) if report_dir else Path("reports")
 
         # Processing report for web viewer
@@ -142,6 +144,7 @@ class PhotoOrganizer:
             "archive_non_best": archive_non_best,
             "immich_use_duplicates": immich_use_duplicates,
             "immich_smart_search": immich_smart_search,
+            "immich_group_by_people": immich_group_by_people,
             "media_type": media_type,
             "video_strategy": video_strategy,
             "video_max_frames": video_max_frames,
@@ -349,6 +352,8 @@ class PhotoOrganizer:
 
             if self.immich_use_duplicates:
                 groups = self._organize_by_immich_duplicates(album)
+            elif self.immich_group_by_people:
+                groups = self._organize_by_people_combinations(album)
             elif self.immich_group_by_person:
                 groups = self._organize_by_person(album)
             else:
@@ -476,6 +481,97 @@ class PhotoOrganizer:
                         photo_data['person_name'] = person_name
                 all_groups.extend(groups)
                 print(f"  Found {len(groups)} group(s) for {person_name}")
+
+        return all_groups
+
+    def _organize_by_people_combinations(self, album: str = None):
+        """Group photos by the combination of *favorite* named people present in each photo.
+
+        Algorithm:
+          1. Get all favorite named people from Immich.
+          2. For each person, fetch their assets and build an inverted index:
+               asset_id → frozenset of person names
+          3. Group assets that share the same set of people.
+          4. Name each group by the sorted people names (or "N people" when >5).
+          5. Run similarity grouping within each combo group.
+        """
+        if not hasattr(self.photo_source, 'client'):
+            print("--immich-group-by-people requires an Immich source.")
+            return []
+
+        people = self.photo_source.list_people()
+        if not people:
+            print("No recognized people found in Immich.")
+            return []
+
+        # Only use favorite named people
+        fav_people = [p for p in people if p.get('name') and p.get('isFavorite')]
+        if not fav_people:
+            print("No favorite named people found. Mark people as favorite in Immich first.")
+            return []
+
+        print(f"Building people-combination index from {len(fav_people)} favorite named people...")
+
+        # asset_id → set of person names
+        asset_to_people: dict = {}
+        # asset_id → Photo object (built lazily from first encounter)
+        asset_to_photo: dict = {}
+
+        for person in fav_people:
+            if self._interrupted:
+                break
+            person_name = person['name']
+            person_id = person['id']
+            photos = self.photo_source.list_photos_by_person(person_id, limit=self.limit)
+            print(f"  {person_name}: {len(photos)} photos")
+            for photo in photos:
+                asset_id = photo.metadata.get('asset_id', photo.id)
+                if asset_id not in asset_to_people:
+                    asset_to_people[asset_id] = set()
+                    asset_to_photo[asset_id] = photo
+                asset_to_people[asset_id].add(person_name)
+
+        # Group asset IDs by frozenset of people
+        combo_buckets: dict = {}  # frozenset → list of Photos
+        for asset_id, pset in asset_to_people.items():
+            key = frozenset(pset)
+            if key not in combo_buckets:
+                combo_buckets[key] = []
+            combo_buckets[key].append(asset_to_photo[asset_id])
+
+        print(f"Found {len(combo_buckets)} unique people combinations")
+
+        all_groups = []
+        for people_set, photos in combo_buckets.items():
+            if self._interrupted:
+                break
+            if len(photos) < self.min_group_size:
+                continue
+
+            sorted_names = sorted(people_set)
+            if len(sorted_names) > 5:
+                group_name = f"{len(sorted_names)} people"
+            else:
+                group_name = ", ".join(sorted_names)
+
+            print(f"\nProcessing combo: {group_name} ({len(photos)} photos)")
+            for photo in photos:
+                self.state.mark_photo_discovered()
+
+            groups = group_similar_photos(
+                photos, self.photo_source, self.state,
+                self.extract_metadata, self.get_datetime_from_metadata,
+                self.similarity_threshold, self.use_time_window, self.time_window,
+                self.min_group_size, self.threads,
+                lambda: self._interrupted
+            )
+
+            if groups:
+                for group in groups:
+                    for photo_data in group:
+                        photo_data['person_name'] = group_name
+                all_groups.extend(groups)
+                print(f"  Found {len(groups)} group(s) for [{group_name}]")
 
         return all_groups
 
