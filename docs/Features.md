@@ -6,19 +6,16 @@ All features listed here are fully implemented and available.
 
 - [Resume Capability](#resume-capability)
 - [Multi-threaded Processing](#multi-threaded-processing)
-- [Immich Integration (Phase 1 + 2)](#immich-integration-phase-1--2)
+- [Immich Integration](#immich-integration)
 - [HDR / Exposure Blending](#hdr--exposure-blending)
 - [Advanced Face Swapping](#advanced-face-swapping)
 - [Web Viewer](#web-viewer)
 - [HEIC Support](#heic-support)
 - [Timestamped Reports](#timestamped-reports)
 - [Web Viewer Group Combine / Split / Reprocess](#web-viewer-group-combine--split--reprocess)
-- [Async / Parallel Immich Downloads](#async--parallel-immich-downloads)
 - [Additional Face Backends + ML Quality Scoring](#additional-face-backends--ml-quality-scoring)
 - [GPU Acceleration](#gpu-acceleration)
-- [Hybrid Local+Immich Mode](#hybrid-localimmich-mode)
 - [Video Support](#video-support)
-- [Immich Phase 3: Real-Time Sync](#immich-phase-3-real-time-sync)
 
 ---
 
@@ -48,11 +45,20 @@ Parallel hash computation via `--threads N`. Speeds up hashing 2–4× on multi-
 
 ---
 
-## Immich Integration (Phase 1 + 2)
+## Immich Integration
 
-Full read and write integration with Immich — tag duplicates, create albums, mark favorites, archive non-best, and undo all changes via the cleanup menu. Supports tag-only mode (no downloads), album-specific processing, and CLIP semantic search grouping.
+Full read/write integration with [Immich](https://immich.app/):
 
-See [Immich.md](Immich.md) for full details.
+- **Tag duplicates** in Immich without downloading (tag-only mode)
+- **Create albums** grouping similar photos together
+- **Mark best photo** as favorite; archive non-best
+- **Hybrid mode** — direct filesystem access on the same server as Immich (no HTTP download overhead)
+- **Group by person / people** — use Immich's recognized faces to group photos by who appears in them
+- **Parallel downloads** — 8 concurrent thumbnail workers for 4–8× faster processing
+- **Real-time sync** — daemon mode (`--daemon`) polls for new photos; bi-directional sync detects Immich UI changes
+- **Cleanup menu** — undo all tags, albums, and favorites created by the organizer
+
+See [Immich.md](Immich.md) for full configuration and usage details.
 
 ---
 
@@ -114,18 +120,6 @@ All three modify the report JSON on disk. Immich favorites are updated automatic
 
 ---
 
-## Async / Parallel Immich Downloads
-
-`ImmichClient.bulk_download_thumbnails()` downloads multiple thumbnails concurrently via a `ThreadPoolExecutor`. `ImmichPhotoSource.prefetch_photos()` now uses this method (default: 8 parallel workers, up from 4 sequential). Expected 4–8× speedup for download-heavy workflows on a typical connection.
-
-```python
-# Direct API
-results = client.bulk_download_thumbnails(asset_ids, max_workers=8, size='preview')
-# {asset_id: bytes_or_None}
-```
-
----
-
 ## Additional Face Backends + ML Quality Scoring
 
 Three GPU-capable backends (InsightFace, FaceNet/PyTorch, YOLOv8-Face) plus a CLIP-based aesthetic quality scorer are available alongside the default `face_recognition` and `MediaPipe` backends. Install GPU backends with `pip install -r requirements-gpu.txt`.
@@ -139,40 +133,6 @@ See [Face-Backends.md](Face-Backends.md) for full details, install instructions,
 10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). Activated via `--gpu` with automatic device detection and CPU fallback. Auto-detection order: FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
 
 See [Gpu-Acceleration.md](Gpu-Acceleration.md) for install instructions and benchmarks.
-
----
-
-## Hybrid Local+Immich Mode
-
-For users running the photo organizer on the same machine as Immich (e.g., same server or Docker host), this mode provides:
-
-- **Direct filesystem access** to full-resolution photos (no HTTP download overhead)
-- **Immich API integration** for tagging, albums, favorites, and archive operations
-
-Ideal for large photo libraries where downloading over HTTP would be slow.
-
-```bash
-./photo_organizer.py --source-type hybrid \
-  --immich-library-path /mnt/photos/immich-app/library \
-  --immich-url http://localhost:2283 \
-  --immich-api-key YOUR_KEY \
-  --tag-only
-
-# With GPU acceleration:
-./photo_organizer.py --source-type hybrid \
-  --immich-library-path /mnt/photos/immich-app/library \
-  --immich-url http://localhost:2283 \
-  --immich-api-key YOUR_KEY \
-  --gpu --create-albums
-```
-
-**Default library path:** `/mnt/photos/immich-app/library` (common Docker mount point)
-
-**How it works:**
-1. Scans local filesystem for photos (like `--source-type local`)
-2. Queries Immich API to build a mapping of `originalPath` → `asset_id`
-3. Processes photos locally (hashing, face detection, grouping)
-4. Updates Immich via API (tags, albums, favorites) using mapped asset IDs
 
 ---
 
@@ -224,10 +184,3 @@ Dedicated video processing mode that groups similar videos together using key fr
 **Options:**
 - `--video-max-frames N`: Maximum key frames to extract per video (default: 10)
 
----
-
-## Immich Phase 3: Real-Time Sync
-
-Daemon mode (`--daemon`) for continuous monitoring of Immich, with bi-directional sync (`--enable-bidir-sync`) to detect changes made in the Immich UI. Supports three conflict resolution strategies (`remote_wins`, `local_wins`, `manual`) and graceful shutdown with state preservation for resume.
-
-See [Immich.md](Immich.md) for full configuration and usage details.
