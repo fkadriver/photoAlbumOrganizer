@@ -77,7 +77,7 @@ CONFIGS = [
         "flags": [
             "--enable-face-swap",
             "--enable-hdr",
-            "--immich-group-by-person",
+            "--immich-group-by-people",
             "--immich-use-server-faces",
         ],
     },
@@ -99,7 +99,7 @@ def load_immich_config():
     return url, api_key
 
 
-def run_config(cfg, url, api_key, limit, common_flags):
+def run_config(cfg, url, api_key, limit, common_flags, download=False):
     """Run photo_organizer.py for a single configuration."""
     out_dir = BASE_DIR / cfg["name"]
     report_dir = out_dir / "reports"
@@ -116,9 +116,11 @@ def run_config(cfg, url, api_key, limit, common_flags):
         "--limit", str(limit),
         "--min-group-size", "2",
         "--threads", "2",
-        "--tag-only",
         "--force-fresh",
-    ] + common_flags + cfg["flags"]
+    ]
+    if not download:
+        photo_args.append("--tag-only")
+    photo_args += common_flags + cfg["flags"]
 
     # Use direnv exec if available so the Nix LD_LIBRARY_PATH is inherited
     if shutil.which("direnv"):
@@ -171,6 +173,8 @@ def main():
     parser.add_argument("--runs", nargs="*", help="Run only these config names (default: all)")
     parser.add_argument("--viewer-only", action="store_true",
                         help="Skip processing, only launch viewers for existing reports")
+    parser.add_argument("--download", action="store_true",
+                        help="Download photos and produce HDR/face-swap output files (disables --tag-only)")
     args = parser.parse_args()
 
     url, api_key = load_immich_config()
@@ -197,7 +201,7 @@ def main():
 
     if not args.viewer_only:
         for cfg in configs:
-            ok, report = run_config(cfg, url, api_key, args.limit, [])
+            ok, report = run_config(cfg, url, api_key, args.limit, [], download=args.download)
             results.append((cfg, ok, report))
     else:
         for cfg in configs:

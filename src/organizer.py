@@ -803,6 +803,10 @@ class PhotoOrganizer:
                                        if self.photo_source.set_archived(p, True))
                         print(f"  Archived {archived}/{len(non_best)} non-best photo(s)")
 
+            # Track which modifications were actually applied
+            hdr_applied = False
+            face_swap_applied = False
+
             # Full organization mode (download and organize)
             if self.output_dir and not self.tag_only:
                 group_dir = self.output_dir / f"group_{i:04d}"
@@ -849,9 +853,6 @@ class PhotoOrganizer:
                 else:
                     best_dst.write_bytes(data)
 
-                hdr_applied = False
-                face_swap_applied = False
-
                 if should_merge_hdr(group, self.enable_hdr):
                     hdr_image = merge_exposures_hdr(group, self.photo_source, self.hdr_gamma)
                     if hdr_image is not None:
@@ -895,8 +896,10 @@ class PhotoOrganizer:
                 actions_taken.append("best_favorited")
             if self.archive_non_best:
                 actions_taken.append("non_best_archived")
-            for mod in modifications:
-                actions_taken.append(f"modified:{mod}")
+            if hdr_applied:
+                actions_taken.append("modified:hdr-merged")
+            if face_swap_applied:
+                actions_taken.append("modified:face-swapped")
 
             group_report = {
                 "group_index": i,
