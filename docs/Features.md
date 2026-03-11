@@ -22,6 +22,10 @@ All features listed here are fully implemented and available.
 
 ---
 
+The Photo Album Organizer detects near-duplicate and similar photos in your library, groups them, selects the best shot from each group, and integrates with [Immich](https://immich.app/) for tagging, album creation, and real-time sync. It supports local filesystem sources, remote Immich libraries, and a hybrid mode for on-server deployments. All features are flag-gated and backward compatible.
+
+---
+
 ## Resume Capability
 
 Interrupt and resume long-running jobs without losing progress. State saved to `.photo_organizer_state.json` every 50 photos with hash caching.
@@ -46,14 +50,9 @@ Parallel hash computation via `--threads N`. Speeds up hashing 2–4× on multi-
 
 ## Immich Integration (Phase 1 + 2)
 
-Full read and write integration. See [IMMICH.md](IMMICH.md).
+Full read and write integration with Immich — tag duplicates, create albums, mark favorites, archive non-best, and undo all changes via the cleanup menu. Supports tag-only mode (no downloads), album-specific processing, and CLIP semantic search grouping.
 
-- Tag/untag duplicates with structured Immich tags
-- Create / delete albums
-- Mark best photos as favorites, archive non-best
-- Group by recognized person, CLIP semantic search
-- Server-side duplicate detection, bulk API operations
-- Full cleanup/undo menu
+See [Immich.md](Immich.md) for full details.
 
 ---
 
@@ -129,41 +128,17 @@ results = client.bulk_download_thumbnails(asset_ids, max_workers=8, size='previe
 
 ## Additional Face Backends + ML Quality Scoring
 
-Three GPU-capable backends added alongside `face_recognition` and `MediaPipe`:
+Three GPU-capable backends (InsightFace, FaceNet/PyTorch, YOLOv8-Face) plus a CLIP-based aesthetic quality scorer are available alongside the default `face_recognition` and `MediaPipe` backends. Install GPU backends with `pip install -r requirements-gpu.txt`.
 
-| Backend / Scorer | `--face-backend` | Key Advantage |
-|-----------------|-----------------|---------------|
-| InsightFace | `insightface` | Best accuracy, 512-d ArcFace, CUDA |
-| FaceNet/PyTorch | `facenet` | Modern dlib replacement, CUDA/MPS, batch |
-| YOLOv8-Face | `yolov8` | Fastest detection, GPU-capable |
-| CLIP Quality Scorer | *(auto when `--gpu`)* | Aesthetic scoring: sharpness, composition, exposure |
-
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend facenet --gpu
-./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend insightface --gpu
-./photo_organizer.py -s ~/Photos -o ~/Organized --face-backend yolov8 --gpu
-```
-
-Install GPU backends: `pip install -r requirements-gpu.txt`
-
-See [FACE_BACKENDS.md](FACE_BACKENDS.md) for details.
+See [Face-Backends.md](Face-Backends.md) for full details, install instructions, and benchmarks.
 
 ---
 
 ## GPU Acceleration
 
-10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). Activated via `--gpu` flag with automatic device detection and CPU fallback.
+10–50× faster face detection using PyTorch (CUDA/MPS) or ONNX Runtime (CUDA). Activated via `--gpu` with automatic device detection and CPU fallback. Auto-detection order: FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
 
-```bash
-./photo_organizer.py -s ~/Photos -o ~/Organized --gpu
-./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --face-backend facenet
-./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --gpu-device 1
-./photo_organizer.py -s ~/Photos -o ~/Organized --gpu --no-ml-quality  # disable ML scorer
-```
-
-**Auto-detection order:** FacenetBackend (CUDA → MPS → CPU) → InsightFaceBackend (CUDA → CPU) → existing CPU backends.
-
-See [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for install instructions and benchmarks.
+See [Gpu-Acceleration.md](Gpu-Acceleration.md) for install instructions and benchmarks.
 
 ---
 
@@ -253,43 +228,6 @@ Dedicated video processing mode that groups similar videos together using key fr
 
 ## Immich Phase 3: Real-Time Sync
 
-Daemon mode for continuous monitoring and bi-directional sync with Immich.
+Daemon mode (`--daemon`) for continuous monitoring of Immich, with bi-directional sync (`--enable-bidir-sync`) to detect changes made in the Immich UI. Supports three conflict resolution strategies (`remote_wins`, `local_wins`, `manual`) and graceful shutdown with state preservation for resume.
 
-```bash
-# Start daemon mode - poll every 60 seconds
-./photo_organizer.py --source-type hybrid \
-  --immich-library-path /mnt/photos/immich-app/library \
-  --immich-url http://localhost:2283 \
-  --immich-api-key YOUR_KEY \
-  --daemon --poll-interval 60
-
-# Enable bi-directional sync (detect Immich UI changes)
-./photo_organizer.py --source-type immich \
-  --immich-url http://localhost:2283 \
-  --immich-api-key YOUR_KEY \
-  --daemon --enable-bidir-sync --conflict-strategy remote_wins
-
-# Skip local hashing, use only Immich duplicate detection
-./photo_organizer.py --source-type immich \
-  --immich-url http://localhost:2283 \
-  --immich-api-key YOUR_KEY \
-  --daemon --skip-local-hashing
-```
-
-**Features:**
-- **Real-time sync**: Polls Immich for new/modified assets at configurable intervals
-- **Bi-directional sync**: Detects changes made in Immich UI (favorites, archives)
-- **Conflict resolution**: Three strategies - `remote_wins`, `local_wins`, `manual`
-- **Graceful shutdown**: Ctrl+C saves state for resume on next start
-- **ML capability detection**: Auto-detects available Immich ML features
-
-**Options:**
-- `--daemon`: Enable daemon mode (continuous monitoring)
-- `--poll-interval N`: Seconds between polls (default: 60)
-- `--enable-bidir-sync`: Enable bi-directional sync
-- `--conflict-strategy`: How to resolve conflicts (default: remote_wins)
-- `--skip-local-hashing`: Use only Immich duplicate detection
-
-**New files:**
-- `src/sync_daemon.py`: SyncDaemon class for continuous monitoring
-- `src/sync_reconciler.py`: Bi-directional sync and conflict resolution
+See [Immich.md](Immich.md) for full configuration and usage details.

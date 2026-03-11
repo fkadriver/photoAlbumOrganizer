@@ -239,6 +239,49 @@ export LOG_LEVEL=verbose
 PATH_add ./scripts
 ```
 
+## Performance Optimization
+
+The `shellHook` in `flake.nix` uses a marker file (`.direnv/.check-done`) to cache package checks so they only run once:
+
+1. **First time** entering the directory — full check runs (~2-3 seconds)
+2. **Subsequent times** — instant activation (<100ms)
+3. **After installing packages** — force a recheck with `FORCE_CHECK=1`
+
+### Commands Reference
+
+```bash
+# Allow direnv (one-time)
+direnv allow
+
+# Reload environment
+direnv reload
+
+# Force full package check after installing new packages
+FORCE_CHECK=1 direnv reload
+
+# Disable direnv for current shell
+direnv deny
+
+# Clear all cache and reload from scratch
+rm -rf .direnv && direnv reload
+```
+
+### Troubleshooting: Packages Not Detected After Installation
+
+```bash
+# Force recheck
+FORCE_CHECK=1 direnv reload
+```
+
+### Want to Always Run Checks
+
+Remove the caching mechanism:
+
+```bash
+# Delete the marker file (it will be recreated on next successful check)
+rm .direnv/.check-done
+```
+
 ## Learn More
 
 - [direnv documentation](https://direnv.net/)

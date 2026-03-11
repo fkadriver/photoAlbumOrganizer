@@ -659,7 +659,7 @@ chmod 600 ~/.config/photo-organizer/immich.conf
 
 **Error: Permission denied**
 - Verify API key has required permissions
-- See [IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md) for permission requirements
+- See the [Architecture](#architecture) section for permission requirements
 
 ### Script Not Executable
 
@@ -768,11 +768,59 @@ Or press `[u]` at the interactive mode summary screen. Options:
 
 Each operation shows a dry-run preview with counts before confirming.
 
+## Architecture
+
+The integration is implemented across three source files:
+
+- **`immich_client.py`** — Immich API client wrapper
+- **`photo_sources.py`** — Photo source abstraction layer
+- **`photo_organizer.py`** — Main organizer with Immich support
+
+```
+PhotoSource (ABC)
+├── LocalPhotoSource (filesystem)
+└── ImmichPhotoSource (Immich API)
+    ├── ImmichClient (API wrapper)
+    └── PhotoCache (LRU cache, default 5GB)
+```
+
+### Required API Key Permissions
+
+The Photo Organizer requires different permissions depending on the mode:
+
+**For tag-only mode (minimum):**
+- `asset.read` — Read asset metadata, search assets, get thumbnails
+- `asset.update` — Update tags on assets
+
+**For create-albums mode:**
+- `asset.read`, `asset.update` — Read metadata, mark favorites
+- `album.read`, `album.create`, `albumAsset.create` — Manage albums
+
+**For cleanup mode:**
+- `album.read`, `album.delete`
+
+**For download mode:**
+- `asset.read`, `asset.download`
+
+**Note:** If running Immich before v1.138.0, enable the **"all"** permission — granular permissions were added in later versions.
+
+### API Endpoints Used
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/server-info/ping` | GET | Test connection |
+| `/api/search/metadata` | POST | Search assets |
+| `/api/assets/{id}/thumbnail` | GET | Get thumbnail |
+| `/api/assets/{id}/original` | GET | Download full resolution |
+| `/api/assets/{id}` | PUT | Update asset (favorite, tags) |
+| `/api/albums` | GET/POST | List / create albums |
+| `/api/albums/{id}` | DELETE | Delete album |
+| `/api/albums/{id}/assets` | PUT | Add assets to album |
+
 ## See Also
 
-- [IMMICH_INTEGRATION.md](IMMICH_INTEGRATION.md) - Technical implementation details
 - [README.md](README.md) - Main project documentation
-- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [Quickstart.md](Quickstart.md) - Quick start guide
 - [Immich Documentation](https://immich.app/docs) - Official Immich docs
 - [Immich API](https://immich.app/docs/api) - API reference
 

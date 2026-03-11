@@ -6,8 +6,8 @@ A Python tool to organize large photo collections by automatically grouping simi
 
 - **Intelligent Grouping**: Perceptual hashing finds visually similar photos even with timestamp errors
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
-- **Face Quality Detection**: Scores faces for smiles and open eyes — pluggable backends (face_recognition, MediaPipe, InsightFace, FaceNet — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md))
-- **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md)
+- **Face Quality Detection**: Scores faces for smiles and open eyes — pluggable backends (face_recognition, MediaPipe, InsightFace, FaceNet — see [Face-Backends.md](docs/Face-Backends.md))
+- **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [Gpu-Acceleration.md](docs/Gpu-Acceleration.md)
 - **Immich Integration**: Full integration with Immich — tag, album, favorite, archive, cleanup, people view
 - **Web Viewer**: Built-in review interface with thumbnails, EXIF comparison, bulk actions, report switcher, and people view
 - **Viewer Lifecycle**: `scripts/viewer` manages background start/stop with watchdog auto-stop on directory exit
@@ -55,7 +55,7 @@ pip install -r requirements.txt
 python scripts/verify_environment.py
 ```
 
-direnv will prompt you on every `cd` into the project. See [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md).
+direnv will prompt you on every `cd` into the project. See [docs/Direnv-Setup.md](docs/Direnv-Setup.md).
 
 **Without direnv:**
 ```bash
@@ -159,7 +159,7 @@ scripts/immich.sh create-albums
 scripts/immich.sh help
 ```
 
-See [docs/IMMICH.md](docs/IMMICH.md) for the full guide.
+See [docs/Immich.md](docs/Immich.md) for the full guide.
 
 ### Web Viewer
 
@@ -210,7 +210,7 @@ scripts/immich.sh cleanup "Organized-" no
 ./photo_organizer.py -s ~/Photos -o ~/Organized --dry-run --verbose
 ```
 
-See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for a full threshold and time-window guide.
+See [docs/Configuration.md](docs/Configuration.md) for a full threshold and time-window guide.
 
 ---
 
@@ -337,15 +337,15 @@ photoAlbumOrganizer/
 │   ├── test_immich_connection.py
 │   └── verify_environment.py
 ├── docs/
-│   ├── IMMICH.md               # Immich integration guide
-│   ├── CONFIGURATION.md        # Threshold, time window, settings guide
-│   ├── FACE_BACKENDS.md        # Face detection backends + GPU-capable backends
-│   ├── GPU_ACCELERATION.md     # GPU setup and design
-│   ├── PERFORMANCE.md          # Performance tuning and supported formats
-│   ├── TROUBLESHOOTING.md      # Common issues and fixes
-│   ├── DIRENV_SETUP.md         # direnv configuration guide
-│   ├── QUICKSTART.md           # Quick start guide
-│   └── ENHANCEMENT_ROADMAP.md  # Feature roadmap and status
+│   ├── Immich.md               # Immich integration guide
+│   ├── Configuration.md        # Threshold, time window, settings guide
+│   ├── Face-Backends.md        # Face detection backends + GPU-capable backends
+│   ├── Gpu-Acceleration.md     # GPU setup and design
+│   ├── Performance.md          # Performance tuning and supported formats
+│   ├── Troubleshooting.md      # Common issues and fixes
+│   ├── Direnv-Setup.md         # direnv configuration guide
+│   ├── Quickstart.md           # Quick start guide
+│   └── Roadmap.md              # Feature roadmap and status
 ├── models/                     # Downloaded model files (not tracked in git)
 ├── requirements.txt
 ├── flake.nix                   # NixOS development environment
@@ -366,10 +366,10 @@ photoAlbumOrganizer/
 
 ### Future Enhancements
 
-- [x] GPU acceleration for face detection — see [GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md)
-- [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face — see [FACE_BACKENDS.md](docs/FACE_BACKENDS.md)
+- [x] GPU acceleration for face detection — see [Gpu-Acceleration.md](docs/Gpu-Acceleration.md)
+- [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face — see [Face-Backends.md](docs/Face-Backends.md)
 - [x] Async/parallel Immich downloads
-- [x] Video support — see [ENHANCEMENT_ROADMAP.md](docs/ENHANCEMENT_ROADMAP.md)
+- [x] Video support — see [Roadmap.md](docs/Roadmap.md)
 - [x] ML-based photo quality scoring (CLIP/MobileNetV2)
 - [x] Hybrid local+Immich mode for same-server deployments
 - [ ] Apple Photos integration (macOS, `osxphotos`)
@@ -382,16 +382,16 @@ photoAlbumOrganizer/
 
 | Document | Description |
 |----------|-------------|
-| [docs/IMMICH.md](docs/IMMICH.md) | Full Immich integration guide |
-| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Quick start guide |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Threshold, time window, settings |
-| [docs/FACE_BACKENDS.md](docs/FACE_BACKENDS.md) | Face detection backends |
-| [docs/GPU_ACCELERATION.md](docs/GPU_ACCELERATION.md) | GPU acceleration design |
-| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Performance tuning, supported formats |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and fixes |
-| [docs/DIRENV_SETUP.md](docs/DIRENV_SETUP.md) | direnv configuration |
-| [docs/NIXOS_SETUP.md](docs/NIXOS_SETUP.md) | NixOS-specific setup |
-| [docs/ENHANCEMENT_ROADMAP.md](docs/ENHANCEMENT_ROADMAP.md) | Feature roadmap |
+| [docs/Immich.md](docs/Immich.md) | Full Immich integration guide |
+| [docs/Quickstart.md](docs/Quickstart.md) | Quick start guide |
+| [docs/Configuration.md](docs/Configuration.md) | Threshold, time window, settings |
+| [docs/Face-Backends.md](docs/Face-Backends.md) | Face detection backends |
+| [docs/Gpu-Acceleration.md](docs/Gpu-Acceleration.md) | GPU acceleration design |
+| [docs/Performance.md](docs/Performance.md) | Performance tuning, supported formats |
+| [docs/Troubleshooting.md](docs/Troubleshooting.md) | Common issues and fixes |
+| [docs/Direnv-Setup.md](docs/Direnv-Setup.md) | direnv configuration |
+| [docs/Nixos-Setup.md](docs/Nixos-Setup.md) | NixOS-specific setup |
+| [docs/Roadmap.md](docs/Roadmap.md) | Feature roadmap |
 
 ---
 
