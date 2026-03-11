@@ -169,6 +169,19 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   .lightbox .lb-download { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--accent);
                            color: #fff; border: none; padding: 8px 16px; border-radius: 4px;
                            cursor: pointer; font-size: 0.85rem; text-decoration: none; z-index: 210; }
+  .lightbox .lb-nav { position: fixed; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15);
+                      color: #fff; border: none; width: 48px; height: 64px; border-radius: 4px;
+                      cursor: pointer; font-size: 1.6rem; z-index: 210; display: none;
+                      transition: background 0.15s; user-select: none; }
+  .lightbox .lb-nav:hover { background: rgba(255,255,255,0.35); }
+  .lightbox.has-nav .lb-nav { display: flex; align-items: center; justify-content: center; }
+  .lightbox .lb-prev { left: 0.75rem; }
+  .lightbox .lb-next { right: 0.75rem; }
+  .lightbox .lb-counter { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+                          color: rgba(255,255,255,0.7); font-size: 0.85rem; z-index: 210;
+                          background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 12px;
+                          display: none; pointer-events: none; }
+  .lightbox.has-nav .lb-counter { display: block; }
 
   /* Bulk bar */
   .bulk-bar { display: none; position: fixed; bottom: 0; left: 0; right: 0;
@@ -275,7 +288,10 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
 
 <div class="lightbox" id="lightbox">
   <button class="lb-close" id="lbClose">&times;</button>
+  <button class="lb-nav lb-prev" id="lbPrev" onclick="lbNavigate(-1)">&#8592;</button>
   <img id="lbImg" src="">
+  <button class="lb-nav lb-next" id="lbNext" onclick="lbNavigate(1)">&#8594;</button>
+  <span class="lb-counter" id="lbCounter"></span>
   <a class="lb-download" id="lbDownload" href="#" download>Download Full</a>
 </div>
 
@@ -445,12 +461,13 @@ function showDetail(g) {
     'dimensions': 'Dimensions',
   };
 
+  const _lbList = JSON.stringify(g.photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id})));
   let photosHtml = g.photos.map(p => `
     <div class="detail-photo ${p.is_best ? 'is-best' : ''}">
       <input type="checkbox" class="photo-checkbox" value="${p.asset_id}"
              onchange="updateSplitBtn(${g.group_index})">
       <img src="/api/preview/${p.asset_id}" alt="${p.filename}"
-           onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}')">
+           onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${_lbList})">
       ${p.is_best ? '<span class="badge">BEST</span>' : ''}
       <div class="photo-actions">
         ${!p.is_best ? `<button onclick="setBest(event, ${g.group_index}, '${p.asset_id}')">Set Best</button>` : ''}
@@ -492,13 +509,38 @@ function showDetail(g) {
 }
 
 /* Lightbox for full-resolution photo viewing */
-function openLightbox(assetId, filename) {
-  const lb = document.getElementById('lightbox');
+let _lbPhotos = [];   // [{assetId, filename}, ...]
+let _lbIdx = 0;
+
+function _lbShow(idx) {
+  const p = _lbPhotos[idx];
   const img = document.getElementById('lbImg');
-  const dl = document.getElementById('lbDownload');
-  img.src = '/api/preview/' + assetId;
-  dl.href = '/api/full/' + assetId;
-  dl.download = filename || 'photo.jpg';
+  const dl  = document.getElementById('lbDownload');
+  img.src   = '/api/preview/' + p.assetId;
+  dl.href   = '/api/full/'    + p.assetId;
+  dl.download = p.filename || 'photo.jpg';
+  _lbIdx = idx;
+  document.getElementById('lbCounter').textContent = (idx + 1) + ' / ' + _lbPhotos.length;
+}
+
+function lbNavigate(dir) {
+  if (!_lbPhotos.length) return;
+  _lbShow((_lbIdx + dir + _lbPhotos.length) % _lbPhotos.length);
+}
+
+function openLightbox(assetId, filename, photos) {
+  const lb = document.getElementById('lightbox');
+  if (photos && photos.length > 1) {
+    _lbPhotos = photos;
+    _lbIdx = photos.findIndex(p => p.assetId === assetId);
+    if (_lbIdx < 0) _lbIdx = 0;
+    lb.classList.add('has-nav');
+  } else {
+    _lbPhotos = [{assetId, filename}];
+    _lbIdx = 0;
+    lb.classList.remove('has-nav');
+  }
+  _lbShow(_lbIdx);
   lb.classList.add('show');
 }
 
@@ -507,7 +549,8 @@ document.getElementById('lbClose').onclick = (e) => {
   document.getElementById('lightbox').classList.remove('show');
 };
 document.getElementById('lightbox').onclick = (e) => {
-  if (e.target === document.getElementById('lightbox'))
+  const t = e.target;
+  if (t === document.getElementById('lightbox') || t === document.getElementById('lbImg'))
     document.getElementById('lightbox').classList.remove('show');
 };
 
@@ -519,8 +562,13 @@ document.getElementById('overlay').onclick = (e) => {
     document.getElementById('overlay').classList.remove('show');
 };
 document.addEventListener('keydown', (e) => {
+  const lb = document.getElementById('lightbox');
+  if (lb.classList.contains('show')) {
+    if (e.key === 'ArrowLeft')  { lbNavigate(-1); return; }
+    if (e.key === 'ArrowRight') { lbNavigate(1);  return; }
+    if (e.key === 'Escape')     { lb.classList.remove('show'); return; }
+  }
   if (e.key === 'Escape') {
-    document.getElementById('lightbox').classList.remove('show');
     document.getElementById('overlay').classList.remove('show');
   }
 });
@@ -738,10 +786,11 @@ async function showPersonPhotos(person) {
   try {
     const resp = await fetch('/api/people/' + person.id + '/photos');
     const photos = await resp.json();
+    const lbList = photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id}));
     let photoGrid = '<div class="person-photo-grid">';
-    photos.forEach(p => {
+    photos.forEach((p, i) => {
       photoGrid += `<img src="/api/thumbnail/${p.asset_id}" alt="${p.filename || ''}"
-                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}')">`;
+                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${JSON.stringify(lbList)})">`;
     });
     photoGrid += '</div>';
     container.innerHTML = `

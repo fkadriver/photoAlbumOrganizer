@@ -19,6 +19,7 @@ Override with IMMICH_URL / IMMICH_API_KEY env vars.
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -99,8 +100,8 @@ def run_config(cfg, url, api_key, limit, common_flags):
     report_dir = out_dir / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        sys.executable, str(SCRIPT),
+    photo_args = [
+        str(SCRIPT),
         "--source-type", "hybrid",
         "--immich-url", url,
         "--immich-api-key", api_key,
@@ -113,6 +114,12 @@ def run_config(cfg, url, api_key, limit, common_flags):
         "--tag-only",
         "--force-fresh",
     ] + common_flags + cfg["flags"]
+
+    # Use direnv exec if available so the Nix LD_LIBRARY_PATH is inherited
+    if shutil.which("direnv"):
+        cmd = ["direnv", "exec", str(REPO_ROOT), sys.executable] + photo_args
+    else:
+        cmd = [sys.executable] + photo_args
 
     print(f"\n{'='*60}")
     print(f"  Running: {cfg['label']}")

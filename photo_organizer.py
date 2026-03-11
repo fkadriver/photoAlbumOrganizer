@@ -200,7 +200,9 @@ Examples:
     parser.add_argument('--enable-face-swap', action='store_true',
                         help='Enable automatic face swapping to fix closed eyes/bad expressions')
     parser.add_argument('--swap-closed-eyes', action='store_true', default=True,
-                        help='Swap faces with closed eyes (default: True, use --no-swap-closed-eyes to disable)')
+                        help='Swap faces with closed eyes (default: True)')
+    parser.add_argument('--no-swap-closed-eyes', dest='swap_closed_eyes', action='store_false',
+                        help='Keep closed eyes when face swapping is enabled')
 
     # GPU acceleration
     parser.add_argument('--gpu', action='store_true',
