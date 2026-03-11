@@ -11,6 +11,7 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 | Dynamic CPU Throttling | ⏳ Planned |
 | Default to GPU When Available | ⏳ Planned |
 | People vs. Non-People Separation | ⏳ Planned |
+| Pet Detection | ⏳ Planned |
 | Viewer: Save Original Alongside Modified | ⏳ Planned |
 | Viewer: Per-Group Reprocessing | ⏳ Planned |
 | Apple / Google Photos Integration | ⏳ Planned |
@@ -34,6 +35,12 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 - Non-people groups: skip face swap and blending entirely; only select best photo based on quality metrics
 - People groups: apply full processing pipeline (face swap, blending, ML scoring)
 - Flag: `--separate-non-people` or auto-applied when grouping by person/people
+
+### Pet Detection
+- Detect pets (dogs, cats, etc.) in photos using a pre-trained object detection model (e.g., YOLOv8 or COCO-trained detector)
+- Tag pet photos in Immich (`photo-organizer/pet/dog`, `photo-organizer/pet/cat`, etc.)
+- Group pet photos separately from people photos, or alongside them when both appear
+- Integrates with People vs. Non-People separation: pet groups get their own processing pipeline (no face swap, quality-based best selection)
 
 ### Viewer: Save Original Alongside Modified Photo
 - When face swap or HDR merge is applied, keep both `best_<original>` and `face_swapped.jpg`/`hdr_merged.jpg` visible in the viewer
