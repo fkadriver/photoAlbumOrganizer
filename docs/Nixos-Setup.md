@@ -9,7 +9,7 @@ The fastest way to get started - the environment activates automatically when yo
 ### Prerequisites
 
 1. **NixOS with flakes enabled** (see below if not enabled)
-2. **direnv installed and configured** (see [DIRENV_SETUP.md](DIRENV_SETUP.md))
+2. **direnv installed and configured** (see [Direnv-Setup.md](Direnv-Setup.md))
 
 ### Setup
 
@@ -363,7 +363,7 @@ Plug 'direnv/direnv.vim'
 
 ## See Also
 
-- [DIRENV_SETUP.md](DIRENV_SETUP.md) - Complete direnv configuration guide
+- [Direnv-Setup.md](Direnv-Setup.md) - Complete direnv configuration guide
 - [README.md](README.md) - Main project documentation
 - [migration_guide.md](migration_guide.md) - Migrating to pure NixOS setup
 

@@ -160,6 +160,6 @@ onnxruntime-gpu>=1.17.0
 
 ## See Also
 
-- [FACE_BACKENDS.md](FACE_BACKENDS.md) — All face backend details and comparison
-- [PERFORMANCE.md](PERFORMANCE.md) — General performance tuning
-- [CONFIGURATION.md](CONFIGURATION.md) — CLI flag reference
+- [Face-Backends.md](Face-Backends.md) — All face backend details and comparison
+- [Performance.md](Performance.md) — General performance tuning
+- [Configuration.md](Configuration.md) — CLI flag reference

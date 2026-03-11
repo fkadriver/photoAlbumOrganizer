@@ -131,7 +131,7 @@ scripts/immich.sh tag-only          # default threshold is 5
   --immich-api-key "$IMMICH_API_KEY" --threshold 8 --tag-only
 ```
 
-See [CONFIGURATION.md](CONFIGURATION.md) for a full threshold guide.
+See [Configuration.md](Configuration.md) for a full threshold guide.
 
 ---
 
@@ -158,8 +158,8 @@ The viewer auto-stops when your shell leaves the project directory.
 
 ## Next Steps
 
-- [IMMICH.md](IMMICH.md) — Full Immich integration guide
-- [CONFIGURATION.md](CONFIGURATION.md) — Threshold, time window, and settings
-- [FACE_BACKENDS.md](FACE_BACKENDS.md) — Face detection backend options
-- [GPU_ACCELERATION.md](GPU_ACCELERATION.md) — GPU setup (coming soon)
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and fixes
+- [Immich.md](Immich.md) — Full Immich integration guide
+- [Configuration.md](Configuration.md) — Threshold, time window, and settings
+- [Face-Backends.md](Face-Backends.md) — Face detection backend options
+- [Gpu-Acceleration.md](Gpu-Acceleration.md) — GPU setup (coming soon)
+- [Troubleshooting.md](Troubleshooting.md) — Common issues and fixes

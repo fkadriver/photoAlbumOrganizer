@@ -49,7 +49,7 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 - Apple Photos via `osxphotos` (macOS only)
 - Google Photos via OAuth2 (read-only)
 
-See [CLOUD_INTEGRATION_DESIGN.md](CLOUD_INTEGRATION_DESIGN.md) for design details.
+See [Cloud-Integration.md](Cloud-Integration.md) for design details.
 
 ---
 

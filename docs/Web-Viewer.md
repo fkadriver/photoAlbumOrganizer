@@ -460,4 +460,4 @@ async def get_groups(credentials: HTTPBearer = Depends(security)):
 
 - [API Documentation](API.md)
 - [Development Guide](DEVELOPMENT.md)
-- [Immich Integration](IMMICH_INTEGRATION.md)
+- [Immich Integration](Immich.md)

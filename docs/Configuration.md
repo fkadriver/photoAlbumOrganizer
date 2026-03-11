@@ -162,6 +162,6 @@ In interactive mode (`-i`), press `s` at the summary screen to save your configu
 
 ## See Also
 
-- [IMMICH.md](IMMICH.md) — Full Immich integration guide
-- [FACE_BACKENDS.md](FACE_BACKENDS.md) — Face detection backend configuration
-- [GPU_ACCELERATION.md](GPU_ACCELERATION.md) — GPU setup and configuration
+- [Immich.md](Immich.md) — Full Immich integration guide
+- [Face-Backends.md](Face-Backends.md) — Face detection backend configuration
+- [Gpu-Acceleration.md](Gpu-Acceleration.md) — GPU setup and configuration

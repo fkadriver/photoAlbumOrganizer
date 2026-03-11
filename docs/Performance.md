@@ -113,7 +113,7 @@ The Immich client uses concurrent photo prefetching automatically. Adjust cache 
 
 ## GPU Acceleration
 
-GPU-accelerated face detection is planned — see [GPU_ACCELERATION.md](GPU_ACCELERATION.md) for the design and installation instructions. Expected speedup: **10–50× for face detection** on NVIDIA GPUs.
+GPU-accelerated face detection is planned — see [Gpu-Acceleration.md](Gpu-Acceleration.md) for the design and installation instructions. Expected speedup: **10–50× for face detection** on NVIDIA GPUs.
 
 ---
 

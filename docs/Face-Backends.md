@@ -286,6 +286,6 @@ Then register it in `get_face_backend()` in `face_backend.py`.
 
 ## See Also
 
-- [GPU_ACCELERATION.md](GPU_ACCELERATION.md) — GPU setup and configuration
-- [CONFIGURATION.md](CONFIGURATION.md) — General configuration options
-- [PERFORMANCE.md](PERFORMANCE.md) — Performance tuning
+- [Gpu-Acceleration.md](Gpu-Acceleration.md) — GPU setup and configuration
+- [Configuration.md](Configuration.md) — General configuration options
+- [Performance.md](Performance.md) — Performance tuning
