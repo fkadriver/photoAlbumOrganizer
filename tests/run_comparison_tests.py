@@ -143,19 +143,25 @@ def run_config(cfg, url, api_key, limit, common_flags):
 
 
 def launch_viewer(report_path, port, url, api_key):
-    """Launch a web viewer for a report in a background thread."""
-    sys.path.insert(0, str(REPO_ROOT / "src"))
-    from web_viewer import start_viewer_background
-    from immich_client import ImmichClient
-
-    client = ImmichClient(url=url, api_key=api_key, verify_ssl=False)
-    report_dir = str(report_path.parent)
-    start_viewer_background(
-        str(report_path),
+    """Launch a web viewer for a report as a separate subprocess for isolated module state."""
+    script = (
+        "import sys; sys.path.insert(0, {src!r})\n"
+        "from web_viewer import start_viewer\n"
+        "from immich_client import ImmichClient\n"
+        "client = ImmichClient(url={url!r}, api_key={api_key!r}, verify_ssl=False)\n"
+        "start_viewer({report!r}, port={port}, immich_client=client, report_dir={rdir!r})\n"
+    ).format(
+        src=str(REPO_ROOT / "src"),
+        url=url,
+        api_key=api_key,
+        report=str(report_path),
         port=port,
-        immich_client=client,
-        report_dir=report_dir,
+        rdir=str(report_path.parent),
     )
+    cmd = [sys.executable, "-c", script]
+    if shutil.which("direnv"):
+        cmd = ["direnv", "exec", str(REPO_ROOT)] + cmd
+    subprocess.Popen(cmd, cwd=str(REPO_ROOT))
 
 
 def main():

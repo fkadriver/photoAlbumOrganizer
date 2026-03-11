@@ -462,7 +462,8 @@ function showDetail(g) {
     'dimensions': 'Dimensions',
   };
 
-  const _lbList = JSON.stringify(g.photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id})));
+  const _lbPhotosData = g.photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id}));
+  const _lbList = JSON.stringify(_lbPhotosData).replace(/"/g, '&quot;');
   let photosHtml = g.photos.map(p => `
     <div class="detail-photo ${p.is_best ? 'is-best' : ''}">
       <input type="checkbox" class="photo-checkbox" value="${p.asset_id}"
@@ -787,11 +788,11 @@ async function showPersonPhotos(person) {
   try {
     const resp = await fetch('/api/people/' + person.id + '/photos');
     const photos = await resp.json();
-    const lbList = photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id}));
+    const lbList = JSON.stringify(photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id}))).replace(/"/g, '&quot;');
     let photoGrid = '<div class="person-photo-grid">';
     photos.forEach((p, i) => {
       photoGrid += `<img src="/api/thumbnail/${p.asset_id}" alt="${p.filename || ''}"
-                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${JSON.stringify(lbList)})">`;
+                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${lbList})">`;
     });
     photoGrid += '</div>';
     container.innerHTML = `
@@ -929,12 +930,23 @@ class ViewerHandler(BaseHTTPRequestHandler):
             filepath = _get_local_filepath(asset_id)
             if filepath:
                 ext = Path(filepath).suffix.lower()
-                content_types = {
-                    '.png': 'image/png', '.gif': 'image/gif',
-                    '.webp': 'image/webp', '.heic': 'image/heic',
-                    '.mp4': 'video/mp4', '.mov': 'video/quicktime',
-                }
-                content_type = content_types.get(ext, 'image/jpeg')
+                # Raw formats browsers cannot display — fall back to Immich preview JPEG
+                raw_formats = {'.dng', '.cr2', '.nef', '.arw', '.raf', '.orf', '.rw2', '.cr3'}
+                if ext in raw_formats:
+                    if _immich_client:
+                        preview = _immich_client.get_asset_thumbnail(asset_id, size='preview')
+                        if preview:
+                            self._send_image(preview, content_type='image/jpeg')
+                            return
+                    # No preview available — serve raw bytes as octet-stream for download
+                    content_type = 'application/octet-stream'
+                else:
+                    content_types = {
+                        '.png': 'image/png', '.gif': 'image/gif',
+                        '.webp': 'image/webp', '.heic': 'image/heic',
+                        '.mp4': 'video/mp4', '.mov': 'video/quicktime',
+                    }
+                    content_type = content_types.get(ext, 'image/jpeg')
             self._send_image(data, content_type=content_type)
         else:
             self.send_error(404, "Asset not found")

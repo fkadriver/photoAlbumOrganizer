@@ -522,7 +522,9 @@ class PhotoOrganizer:
                 break
             person_name = person['name']
             person_id = person['id']
-            photos = self.photo_source.list_photos_by_person(person_id, limit=self.limit)
+            # No per-person limit: applying limit here would break combination detection
+            # (photos of Scott+Steph would only be indexed for whoever's top-N they land in)
+            photos = self.photo_source.list_photos_by_person(person_id, limit=None)
             print(f"  {person_name}: {len(photos)} photos")
             for photo in photos:
                 asset_id = photo.metadata.get('asset_id', photo.id)
@@ -541,6 +543,10 @@ class PhotoOrganizer:
 
         print(f"Found {len(combo_buckets)} unique people combinations")
 
+        # Cap per-combination bucket to avoid O(n²) similarity on huge buckets
+        # (e.g. two people who appear in 1000+ photos together)
+        max_combo = max(50, (self.limit or 50) * 3)
+
         all_groups = []
         for people_set, photos in combo_buckets.items():
             if self._interrupted:
@@ -553,6 +559,10 @@ class PhotoOrganizer:
                 group_name = f"{len(sorted_names)} people"
             else:
                 group_name = ", ".join(sorted_names)
+
+            if len(photos) > max_combo:
+                print(f"\nSkipping combo: {group_name} ({len(photos)} photos > cap {max_combo})")
+                continue
 
             print(f"\nProcessing combo: {group_name} ({len(photos)} photos)")
             for photo in photos:
