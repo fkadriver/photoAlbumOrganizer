@@ -35,7 +35,7 @@ class PhotoOrganizer:
                  enable_hdr=False, hdr_gamma=2.2,
                  enable_face_swap=False, swap_closed_eyes=True,
                  face_backend='auto', gpu=False, gpu_device=0, enable_ml_quality=True,
-                 threads=2, verbose=False,
+                 threads=2, cpu_limit=None, verbose=False,
                  immich_group_by_person=False, immich_person=None,
                  immich_use_server_faces=False,
                  archive_non_best=False,
@@ -101,6 +101,7 @@ class PhotoOrganizer:
         self.enable_face_swap = enable_face_swap
         self.swap_closed_eyes = swap_closed_eyes
         self.threads = threads
+        self.cpu_limit = cpu_limit
         self.verbose = verbose
         self.immich_group_by_person = immich_group_by_person
         self.immich_person = immich_person
@@ -138,6 +139,7 @@ class PhotoOrganizer:
             "enable_ml_quality": enable_ml_quality,
             "face_backend": face_backend,
             "threads": threads,
+            "cpu_limit": cpu_limit,
             "immich_group_by_person": immich_group_by_person,
             "immich_person": immich_person,
             "immich_use_server_faces": immich_use_server_faces,
@@ -425,7 +427,8 @@ class PhotoOrganizer:
             lambda: self._interrupted,
             media_type=self.media_type,
             video_strategy=self.video_strategy,
-            video_max_frames=self.video_max_frames
+            video_max_frames=self.video_max_frames,
+            cpu_limit=self.cpu_limit,
         )
 
     def _organize_by_person(self, album: str = None):
@@ -471,7 +474,8 @@ class PhotoOrganizer:
                 self.extract_metadata, self.get_datetime_from_metadata,
                 self.similarity_threshold, self.use_time_window, self.time_window,
                 self.min_group_size, self.threads,
-                lambda: self._interrupted
+                lambda: self._interrupted,
+                cpu_limit=self.cpu_limit,
             )
 
             if groups:
@@ -573,7 +577,8 @@ class PhotoOrganizer:
                 self.extract_metadata, self.get_datetime_from_metadata,
                 self.similarity_threshold, self.use_time_window, self.time_window,
                 self.min_group_size, self.threads,
-                lambda: self._interrupted
+                lambda: self._interrupted,
+                cpu_limit=self.cpu_limit,
             )
 
             if groups:

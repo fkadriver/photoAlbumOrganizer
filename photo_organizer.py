@@ -209,7 +209,9 @@ Examples:
 
     # GPU acceleration
     parser.add_argument('--gpu', action='store_true',
-                        help='Enable GPU acceleration for face detection (auto-selects best GPU backend)')
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--no-gpu', action='store_true',
+                        help='Disable GPU acceleration even if a GPU is detected')
     parser.add_argument('--gpu-device', type=int, default=0,
                         help='GPU device index for multi-GPU systems (default: 0)')
     parser.add_argument('--no-ml-quality', action='store_true',
@@ -238,6 +240,8 @@ Examples:
                         help='Limit processing to first N photos (for testing, default: unlimited)')
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of threads for parallel processing (default: 2)')
+    parser.add_argument('--cpu-limit', type=int, default=None, metavar='N',
+                        help='Pause new work when system CPU load exceeds N%% (0-100)')
 
     # Cleanup mode
     parser.add_argument('--cleanup', action='store_true',
@@ -438,6 +442,13 @@ Examples:
             use_thumbnails=not args.use_full_resolution
         )
 
+    # Auto-detect GPU unless --no-gpu is set or --gpu was explicitly passed
+    if not getattr(args, 'no_gpu', False) and not getattr(args, 'gpu', False):
+        from face_backend import detect_gpu
+        if detect_gpu():
+            print("GPU detected — enabling GPU acceleration (use --no-gpu to disable)")
+            args.gpu = True
+
     # Create organizer and run
     organizer = PhotoOrganizer(
         photo_source=photo_source,
@@ -462,6 +473,7 @@ Examples:
         gpu_device=getattr(args, 'gpu_device', 0),
         enable_ml_quality=not getattr(args, 'no_ml_quality', False),
         threads=args.threads,
+        cpu_limit=getattr(args, 'cpu_limit', None),
         verbose=args.verbose,
         immich_group_by_person=getattr(args, 'immich_group_by_person', False),
         immich_group_by_people=getattr(args, 'immich_group_by_people', False),

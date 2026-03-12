@@ -3,12 +3,28 @@ Photo/Video grouping functions for similarity matching and hash computation.
 """
 
 import logging
+import os
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import imagehash
+
+
+def _get_cpu_load_pct() -> float:
+    """Return current system CPU load as a percentage (0-100)."""
+    try:
+        import psutil
+        return psutil.cpu_percent(interval=0.1)
+    except ImportError:
+        pass
+    try:
+        load1, _, _ = os.getloadavg()
+        return (load1 / (os.cpu_count() or 1)) * 100.0
+    except AttributeError:
+        return 0.0  # Windows fallback
 
 try:
     from pillow_heif import register_heif_opener
@@ -185,7 +201,8 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                         min_group_size: int, threads: int, interrupted_flag,
                         media_type: str = 'image',
                         video_strategy: str = 'scene_change',
-                        video_max_frames: int = 10):
+                        video_max_frames: int = 10,
+                        cpu_limit: int = None):
     """
     Group photos/videos by perceptual similarity.
 
@@ -217,14 +234,16 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
 
     with ThreadPoolExecutor(max_workers=threads) as executor:
         # Submit all photo processing tasks
-        future_to_photo = {
-            executor.submit(
+        future_to_photo = {}
+        for photo in photos:
+            if cpu_limit is not None:
+                while _get_cpu_load_pct() >= cpu_limit:
+                    time.sleep(1.0)
+            future_to_photo[executor.submit(
                 process_photo_hash, photo, photo_source, state,
                 extract_metadata_func, get_datetime_func,
                 media_type, video_strategy, video_max_frames
-            ): photo
-            for photo in photos
-        }
+            )] = photo
 
         # Process completed tasks
         for future in as_completed(future_to_photo):

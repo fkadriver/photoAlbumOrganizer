@@ -3,6 +3,7 @@ Face detection backend abstraction layer.
 Supports multiple face detection libraries through a common interface.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -303,6 +304,26 @@ class MediaPipeBackend(FaceBackend):
                                        for p in face_lm]},
             ))
         return landmarks
+
+
+def detect_gpu() -> bool:
+    """Probe for an available GPU without loading model weights.
+
+    Checks CUDA (via PyTorch) and Apple MPS. Returns True if found.
+    """
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logging.info(f"CUDA GPU found: {torch.cuda.get_device_name(0)}")
+            return True
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            logging.info("Apple MPS (Metal) GPU found")
+            return True
+    except ImportError:
+        pass
+    except Exception as e:
+        logging.debug(f"GPU detection failed: {e}")
+    return False
 
 
 def get_face_backend(
