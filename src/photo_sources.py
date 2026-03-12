@@ -742,16 +742,21 @@ class ApplePhotoSource(PhotoSource):
         if photo.cached_path and photo.cached_path.exists():
             return photo.cached_path.read_bytes()
 
-        # Export to temp directory
-        import osxphotos
+        # Export to temp directory — use_photos_export=True triggers iCloud download
+        import tempfile
         p = self.photosdb.get_photo(photo.id)
         if p is None:
             raise FileNotFoundError(f"Photo {photo.id} not found in Apple Photos library")
-        export_dir = Path('/tmp/photo-organizer-apple')
-        export_dir.mkdir(parents=True, exist_ok=True)
-        exported = p.export(str(export_dir))
-        if exported:
-            return Path(exported[0]).read_bytes()
+        with tempfile.TemporaryDirectory(prefix='photo-organizer-apple-') as export_dir:
+            exported = p.export(
+                export_dir,
+                use_photos_export=True,  # triggers iCloud download if needed
+                timeout=120,
+                overwrite=True,
+            )
+            if exported:
+                data = Path(exported[0]).read_bytes()
+                return data
         raise FileNotFoundError(f"Could not export photo {photo.id}")
 
     def get_metadata(self, photo: Photo) -> Dict:
