@@ -4,6 +4,7 @@ All features listed here are fully implemented and available.
 
 ## Contents
 
+- [Apple Photos Integration](#apple-photos-integration)
 - [Immich Integration](#immich-integration)
 - [Multi-threaded Processing](#multi-threaded-processing)
 - [Video Support](#video-support)
@@ -19,7 +20,39 @@ All features listed here are fully implemented and available.
 
 ---
 
-The Photo Album Organizer detects near-duplicate and similar photos in your library, groups them, selects the best shot from each group, and integrates with [Immich](https://immich.app/) for tagging, album creation, and real-time sync. It supports local filesystem sources, remote Immich libraries, and a hybrid mode for on-server deployments. All features are flag-gated and backward compatible.
+The Photo Album Organizer detects near-duplicate and similar photos in your library, groups them, selects the best shot from each group, and integrates with [Apple Photos](https://www.apple.com/macos/photos/) and [Immich](https://immich.app/) for rich metadata, face recognition, and library management. It supports local filesystem sources, Apple Photos libraries (macOS), remote Immich libraries, and a hybrid mode for on-server deployments. All features are flag-gated and backward compatible.
+
+---
+
+## Apple Photos Integration
+
+Read-only access to your macOS Photos library via [osxphotos](https://github.com/RhetTbull/osxphotos):
+
+- **People recognition** — uses Apple's built-in face detection to group photos by recognized person; shown in the web viewer people tab
+- **Apple ML quality scores** — `score.overall` and `score.curation` fed into best-photo selection alongside MobileNetV2 scoring
+- **Native duplicate detection** — `PhotoInfo.duplicates` exposes Apple's own duplicate groups, pre-computed by Photos.app
+- **Burst shot metadata** — `is_burst`, `burst_key` stored per photo for downstream burst-aware grouping
+- **iCloud-aware** — by default only processes locally-available photos (`--apple-local-only`); `--apple-include-icloud` triggers on-demand iCloud download
+- **Album filter** — `--apple-album ALBUM` restricts to a specific Photos album
+- **Group by person** — `--apple-group-by-person [--apple-person NAME]` processes one person at a time using Apple's face data
+- **Interactive mode** — `./photo_organizer.py -i` shows the `apple` source option on macOS; walks through library path, album, person filter, and local-only settings
+- **Web viewer people tab** — thumbnail for each named person served from their key photo; clicking shows all their locally-available photos
+- **Batch iCloud processing** — `scripts/process_icloud_batches.py` downloads your full iCloud library in date-range batches then runs the organizer on each batch
+
+```bash
+pip install osxphotos pillow-heif
+
+# Auto-detect library, skip iCloud-only photos
+./photo_organizer.py --source-type apple -o ~/Organized
+
+# Group by recognized person
+./photo_organizer.py --source-type apple --apple-group-by-person -o ~/Organized
+
+# Process a specific album
+./photo_organizer.py --source-type apple --apple-album "Summer 2024" -o ~/Organized/Summer
+```
+
+See [Apple-Photos.md](Apple-Photos.md) for the full guide.
 
 ---
 

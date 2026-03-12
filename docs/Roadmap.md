@@ -15,7 +15,8 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 | Viewer: Save Original Alongside Modified | ⏳ Planned |
 | Viewer: Per-Group Reprocessing | ⏳ Planned |
 | Viewer: Download Group(s) as ZIP | ⏳ Planned |
-| Apple / Google Photos Integration | ⏳ Planned |
+| Apple Photos Integration | ✅ Done |
+| Google Photos Integration | ⏳ Planned |
 
 ---
 
@@ -58,8 +59,7 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 - ZIP includes originals and any modified files (face_swapped.jpg, hdr_merged.jpg)
 - Available from the bulk-select toolbar and from within a single group detail view, or person view
 
-### Apple / Google Photos Integration
-- Apple Photos via `osxphotos` (macOS only)
+### Google Photos Integration
 - Google Photos via OAuth2 (read-only)
 
 See [Cloud-Integration.md](Cloud-Integration.md) for design details.

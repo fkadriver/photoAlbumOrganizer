@@ -18,6 +18,7 @@ _report_path = None
 _report_dir = None
 _output_dir = None  # base output directory for writing HDR/face-swap files
 _immich_client = None
+_apple_source = None   # ApplePhotoSource instance, set when source_type == 'apple'
 _local_file_cache = {}  # {asset_id: filepath}
 
 
@@ -984,10 +985,31 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Asset not found")
 
     def _handle_people(self):
-        """Return list of named people from Immich."""
-        if not _immich_client:
-            self._send_json({"error": "No Immich client configured"}, 503)
+        """Return list of named people from Immich or Apple Photos."""
+        # Apple Photos fallback
+        if not _immich_client and _apple_source:
+            try:
+                people = _apple_source.list_people()
+            except Exception as e:
+                self._send_json({"error": f"Apple Photos error: {e}"}, 500)
+                return
+            result = [
+                {
+                    "id": p['id'],
+                    "name": p['name'],
+                    "assetCount": p.get('photo_count', 0),
+                    "isFavorite": p.get('is_favorite', False),
+                    "keyPhotoUuid": p.get('key_photo_uuid'),
+                }
+                for p in people
+            ]
+            self._send_json(result)
             return
+
+        if not _immich_client:
+            self._send_json({"error": "No people source configured"}, 503)
+            return
+
         people = _immich_client.get_people()
 
         # Build photo counts per person name from the current report
@@ -1017,9 +1039,28 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self._send_json(result)
 
     def _handle_person_thumbnail(self, person_id):
-        """Proxy person face thumbnail from Immich."""
+        """Proxy person face thumbnail from Immich or Apple Photos."""
+        # Apple Photos fallback: person_id is the person's name
+        if not _immich_client and _apple_source:
+            try:
+                from urllib.parse import unquote
+                name = unquote(person_id)
+                for person in _apple_source.photosdb.person_info:
+                    if person.name == name and person.keyphoto:
+                        kp = person.keyphoto
+                        local_path = kp.path if kp.path else None
+                        if local_path and Path(local_path).exists():
+                            data = _generate_thumbnail(local_path, 250)
+                            if data:
+                                self._send_image(data)
+                                return
+            except Exception:
+                pass
+            self.send_error(404, "Person thumbnail not found")
+            return
+
         if not _immich_client:
-            self.send_error(503, "No Immich client configured")
+            self.send_error(503, "No people source configured")
             return
         data = _immich_client.get_person_thumbnail(person_id)
         if data:
@@ -1029,8 +1070,27 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
     def _handle_person_photos(self, person_id):
         """Return photo list for a specific person."""
+        # Apple Photos fallback: person_id is the person's name
+        if not _immich_client and _apple_source:
+            try:
+                from urllib.parse import unquote
+                name = unquote(person_id)
+                photos = _apple_source.list_photos_by_person(name, limit=200)
+                result = [
+                    {
+                        "id": p.id,
+                        "asset_id": p.id,
+                        "filename": p.metadata.get('filename', ''),
+                    }
+                    for p in photos
+                ]
+                self._send_json(result)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
+
         if not _immich_client:
-            self._send_json({"error": "No Immich client configured"}, 503)
+            self._send_json({"error": "No people source configured"}, 503)
             return
         assets = _immich_client.get_person_assets(person_id, limit=200)
         result = []
@@ -1434,15 +1494,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
         if run_ml_quality and paths:
             try:
                 sys.path.insert(0, str(Path(__file__).parent))
-                from image_processing import score_photo_quality
-                for p in photos:
-                    aid = p.get("asset_id") or p.get("id")
-                    if aid in paths:
-                        score = score_photo_quality(str(paths[aid]))
-                        if score is not None:
-                            ml_scores[aid] = score
-                if ml_scores:
-                    new_best_id = max(ml_scores, key=ml_scores.get)
+                from backends.ml_quality_scorer import get_quality_scorer
+                scorer = get_quality_scorer(device='cpu')
+                if scorer:
+                    for p in photos:
+                        aid = p.get("asset_id") or p.get("id")
+                        if aid in paths:
+                            score = scorer.score(str(paths[aid]))
+                            if score is not None:
+                                ml_scores[aid] = score
+                    if ml_scores:
+                        new_best_id = max(ml_scores, key=ml_scores.get)
             except Exception as e:
                 logging.warning(f"ML quality reprocess failed: {e}")
 
@@ -1542,7 +1604,8 @@ def _bind_server(port):
     raise OSError(f"Could not bind to any port in range {port}-{port + 9}")
 
 
-def start_viewer_background(report_path, port=8888, immich_client=None, report_dir="reports"):
+def start_viewer_background(report_path, port=8888, immich_client=None, report_dir="reports",
+                            apple_source=None):
     """
     Start the web viewer server in a background daemon thread.
 
@@ -1551,16 +1614,18 @@ def start_viewer_background(report_path, port=8888, immich_client=None, report_d
         port: HTTP port (default: 8080)
         immich_client: Optional ImmichClient for thumbnail proxying
         report_dir: Directory containing timestamped reports
+        apple_source: Optional ApplePhotoSource for people/thumbnail serving
 
     Returns:
         The background thread
     """
     import threading
 
-    global _report_path, _immich_client, _report_dir
+    global _report_path, _immich_client, _report_dir, _apple_source
     _report_path = str(report_path)
     _immich_client = immich_client
     _report_dir = str(report_dir)
+    _apple_source = apple_source
 
     # Build local file cache for fallback serving
     _build_local_file_cache()
@@ -1574,7 +1639,7 @@ def start_viewer_background(report_path, port=8888, immich_client=None, report_d
 
 
 def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports",
-                 output_dir=None):
+                 output_dir=None, apple_source=None):
     """
     Start the web viewer server.
 
@@ -1584,12 +1649,14 @@ def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports
         immich_client: Optional ImmichClient for thumbnail proxying and actions
         report_dir: Directory containing timestamped reports (default: reports)
         output_dir: Base output directory for writing HDR/face-swap files
+        apple_source: Optional ApplePhotoSource for people/thumbnail serving
     """
-    global _report_path, _immich_client, _report_dir, _output_dir
+    global _report_path, _immich_client, _report_dir, _output_dir, _apple_source
     _report_path = str(report_path)
     _immich_client = immich_client
     _report_dir = str(report_dir)
     _output_dir = output_dir
+    _apple_source = apple_source
 
     if not os.path.exists(_report_path):
         print(f"Error: Report file not found: {_report_path}")

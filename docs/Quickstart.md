@@ -143,6 +143,26 @@ See [Configuration.md](Configuration.md) for a full threshold guide.
 
 ---
 
+## Apple Photos (macOS)
+
+```bash
+# Install Apple Photos support (one-time)
+pip install osxphotos pillow-heif
+
+# Auto-detect your Photos library, skip iCloud-only photos
+./photo_organizer.py --source-type apple -o ~/Organized
+
+# Interactive guided setup — select "apple" at Step 1
+./photo_organizer.py -i
+
+# Live web viewer during processing
+./photo_organizer.py --source-type apple -o ~/Organized --live-viewer
+```
+
+The web viewer's **People** tab shows all recognized people from your Photos library with thumbnails and photo counts. See [Apple-Photos.md](Apple-Photos.md) for the full guide.
+
+---
+
 ## Viewer Lifecycle
 
 ```bash
@@ -158,6 +178,7 @@ The viewer auto-stops when your shell leaves the project directory.
 
 ## Next Steps
 
+- [Apple-Photos.md](Apple-Photos.md) — Apple Photos integration guide
 - [Immich.md](Immich.md) — Full Immich integration guide
 - [Configuration.md](Configuration.md) — Threshold, time window, and settings
 - [Face-Backends.md](Face-Backends.md) — Face detection backend options

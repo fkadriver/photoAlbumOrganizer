@@ -259,17 +259,23 @@ def _validate_output_path(path):
 # --- Section prompts ---
 
 def _prompt_source_type():
-    """Step 1: choose local, immich, or hybrid."""
+    """Step 1: choose local, apple, immich, or hybrid."""
+    import platform
     _print_section("Step 1: Source Type")
+    choices = ["local", "immich", "hybrid"]
+    descriptions = [
+        "Photos on your local filesystem",
+        "Immich photo management server (downloads via HTTP)",
+        "Immich on same machine (direct filesystem + API)",
+    ]
+    if platform.system() == "Darwin":
+        choices.insert(1, "apple")
+        descriptions.insert(1, "Apple Photos library (macOS — reads via osxphotos)")
     return _prompt_choice(
         "Where are your photos?",
-        ["local", "immich", "hybrid"],
+        choices,
         default="local",
-        descriptions=[
-            "Photos on your local filesystem",
-            "Immich photo management server (downloads via HTTP)",
-            "Immich on same machine (direct filesystem + API)",
-        ],
+        descriptions=descriptions,
     )
 
 
@@ -280,6 +286,51 @@ def _prompt_local_options():
     output = _prompt_text("Output directory", required=True, validator=_validate_output_path)
     output = os.path.expanduser(output)
     return {"source": source, "output": output}
+
+
+def _prompt_apple_options():
+    """Step 2b: Apple Photos source options."""
+    _print_section("Step 2: Apple Photos Options")
+    print("  Reads your Photos library directly (no copying needed).")
+    print("  By default uses ~/Pictures/Photos Library.photoslibrary")
+    print()
+
+    library_path = _prompt_text(
+        "Photos library path (leave blank for default)",
+    )
+    library_path = os.path.expanduser(library_path) if library_path else None
+
+    output = _prompt_text(
+        "Output directory for organized photos",
+        required=True,
+        validator=_validate_output_path,
+    )
+    output = os.path.expanduser(output)
+
+    album = _prompt_text("Filter to specific album (leave blank for all)")
+
+    group_by_person = _prompt_bool(
+        "Group photos by recognized person (Apple face detection)?", default=False
+    )
+    person_filter = None
+    if group_by_person:
+        person_filter = _prompt_text(
+            "Filter to specific person name (leave blank for all recognized people)"
+        )
+        person_filter = person_filter or None
+
+    local_only = _prompt_bool(
+        "Skip iCloud-only photos (not downloaded to this Mac)?", default=True
+    )
+
+    return {
+        "apple_library_path": library_path,
+        "output": output,
+        "apple_album": album or None,
+        "apple_group_by_person": group_by_person,
+        "apple_person": person_filter,
+        "apple_local_only": local_only,
+    }
 
 
 def _prompt_immich_options():
@@ -576,7 +627,7 @@ def _prompt_run_options():
 
 def _prompt_daemon_options(source_type):
     """Step 6: Daemon/sync mode configuration (Immich/hybrid only)."""
-    if source_type == "local":
+    if source_type in ("local", "apple"):
         # Daemon mode not available for local source
         return {
             "daemon_mode": False,
@@ -635,6 +686,9 @@ _SECTION_LAYOUT = [
     (2, "Source Options", [
         # local
         "source", "output",
+        # apple
+        "apple_library_path", "apple_album",
+        "apple_group_by_person", "apple_person", "apple_local_only",
         # immich connection
         "immich_url", "immich_api_key", "immich_album",
         "immich_cache_dir", "immich_cache_size",
@@ -709,6 +763,11 @@ def _build_namespace(settings):
     ns.source_type = settings["source_type"]
     ns.source = settings.get("source")
     ns.output = settings.get("output")
+    ns.apple_library = settings.get("apple_library_path")  # matches --apple-library CLI arg
+    ns.apple_album = settings.get("apple_album")
+    ns.apple_group_by_person = settings.get("apple_group_by_person", False)
+    ns.apple_person = settings.get("apple_person")
+    ns.apple_local_only = settings.get("apple_local_only", True)
     ns.immich_url = settings.get("immich_url")
     ns.immich_api_key = settings.get("immich_api_key")
     ns.immich_album = settings.get("immich_album")
@@ -795,6 +854,22 @@ def _collect_source_options(settings):
         settings.setdefault("mark_best_favorite", False)
         settings.setdefault("no_verify_ssl", False)
         settings.setdefault("use_full_resolution", False)
+    elif settings["source_type"] == "apple":
+        opts = _prompt_apple_options()
+        settings.update(opts)
+        # Defaults for unused keys
+        settings.setdefault("source", None)
+        settings.setdefault("tag_only", False)
+        settings.setdefault("create_albums", False)
+        settings.setdefault("mark_best_favorite", False)
+        for key in ("immich_url", "immich_api_key", "immich_album",
+                    "immich_cache_dir", "immich_cache_size",
+                    "no_verify_ssl", "use_full_resolution",
+                    "immich_library_path", "album_prefix",
+                    "immich_group_by_person", "immich_person",
+                    "immich_use_server_faces", "archive_non_best",
+                    "immich_use_duplicates", "immich_smart_search"):
+            settings.setdefault(key, None if "cache_size" not in key else 5000)
     elif settings["source_type"] == "hybrid":
         # Hybrid mode: local filesystem + Immich API
         hybrid_opts = _prompt_hybrid_options()

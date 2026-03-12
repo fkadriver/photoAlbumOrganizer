@@ -81,6 +81,10 @@ Examples:
   ./photo_organizer.py -s ~/Photos -o ~/Organized \\
     --enable-hdr --enable-face-swap
 
+  # Apple Photos (macOS only — reads Photos library directly)
+  ./photo_organizer.py --source-type apple -o ~/OrganizedPhotos
+  ./photo_organizer.py --source-type apple --apple-library ~/Pictures/Photos\\ Library.photoslibrary -o ~/Organized
+
   # Hybrid mode - local Immich library + API
   ./photo_organizer.py --source-type hybrid \\
     --immich-library-path /mnt/photos/immich-app/library \\
@@ -114,12 +118,26 @@ Examples:
     )
 
     # Source arguments
-    parser.add_argument('--source-type', choices=['local', 'immich', 'hybrid'], default='local',
-                        help='Photo source type: local, immich, or hybrid (default: local)')
+    parser.add_argument('--source-type', choices=['local', 'immich', 'hybrid', 'apple'], default='local',
+                        help='Photo source type: local, immich, hybrid, or apple (default: local)')
     parser.add_argument('-s', '--source',
                         help='Source directory containing photos (for local source)')
     parser.add_argument('-o', '--output',
                         help='Output directory for organized photos')
+
+    # Apple Photos arguments
+    parser.add_argument('--apple-library',
+                        help='Path to Photos library (auto-detected if omitted, macOS only)')
+    parser.add_argument('--apple-album',
+                        help='Filter to a specific Apple Photos album')
+    parser.add_argument('--apple-group-by-person', action='store_true',
+                        help='Group photos by recognized person (Apple face detection)')
+    parser.add_argument('--apple-person',
+                        help='Filter to a specific person name (with --apple-group-by-person)')
+    parser.add_argument('--apple-local-only', action='store_true', default=True,
+                        help='Skip iCloud-only photos not downloaded to this Mac (default: True)')
+    parser.add_argument('--apple-include-icloud', action='store_true',
+                        help='Include iCloud-only photos (overrides --apple-local-only)')
 
     # Immich arguments
     parser.add_argument('--immich-url',
@@ -284,6 +302,7 @@ Examples:
             else:
                 report_path = os.path.join(args.report_dir, 'latest.json')
         immich_client = None
+        apple_source = None
         if args.immich_url and args.immich_api_key:
             from immich_client import ImmichClient
             immich_client = ImmichClient(
@@ -291,7 +310,11 @@ Examples:
                 api_key=args.immich_api_key,
                 verify_ssl=not args.no_verify_ssl,
             )
-        start_viewer(report_path, port=args.port, immich_client=immich_client)
+        elif getattr(args, 'source_type', None) == 'apple':
+            from photo_sources import ApplePhotoSource
+            apple_source = ApplePhotoSource()
+        start_viewer(report_path, port=args.port, immich_client=immich_client,
+                     apple_source=apple_source)
         sys.exit(0)
 
     # Handle --cleanup early (no state file or validation needed)
@@ -394,10 +417,14 @@ Examples:
         if not args.output and not args.tag_only and not args.create_albums:
             parser.error("--output, --tag-only, or --create-albums is required for hybrid source type")
 
+    if args.source_type == 'apple':
+        if not args.output:
+            parser.error("--output is required for apple source type")
+
     # Deferred imports — these pull in cv2, face_recognition, etc.
     # and require the Nix development environment for native libraries.
     try:
-        from photo_sources import LocalPhotoSource, ImmichPhotoSource, HybridPhotoSource
+        from photo_sources import LocalPhotoSource, ImmichPhotoSource, HybridPhotoSource, ApplePhotoSource
         from organizer import PhotoOrganizer
     except ImportError as e:
         print(f"\nError: Failed to import required libraries: {e}\n")
@@ -425,6 +452,8 @@ Examples:
     # Create photo source
     if args.source_type == 'local':
         photo_source = LocalPhotoSource(args.source)
+    elif args.source_type == 'apple':
+        photo_source = ApplePhotoSource(library_path=getattr(args, 'apple_library', None))
     elif args.source_type == 'hybrid':
         photo_source = HybridPhotoSource(
             library_path=args.immich_library_path,
@@ -475,9 +504,11 @@ Examples:
         threads=args.threads,
         cpu_limit=getattr(args, 'cpu_limit', None),
         verbose=args.verbose,
-        immich_group_by_person=getattr(args, 'immich_group_by_person', False),
+        immich_group_by_person=(getattr(args, 'immich_group_by_person', False) or
+                                 getattr(args, 'apple_group_by_person', False)),
         immich_group_by_people=getattr(args, 'immich_group_by_people', False),
-        immich_person=getattr(args, 'immich_person', None),
+        immich_person=(getattr(args, 'immich_person', None) or
+                       getattr(args, 'apple_person', None)),
         immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
         archive_non_best=getattr(args, 'archive_non_best', False),
         immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
@@ -496,12 +527,16 @@ Examples:
         # Write empty initial report so viewer can start
         organizer._write_report([])
         immich_client_for_viewer = None
+        apple_source_for_viewer = None
         if args.source_type == 'immich':
             immich_client_for_viewer = photo_source.client
+        elif args.source_type == 'apple':
+            apple_source_for_viewer = photo_source
         viewer_port = getattr(args, 'port', 8888)
         start_viewer_background(report_path, port=viewer_port,
                                 immich_client=immich_client_for_viewer,
-                                report_dir=report_dir)
+                                report_dir=report_dir,
+                                apple_source=apple_source_for_viewer)
         print(f"\nLive viewer running at http://localhost:{viewer_port}")
         print(f"Report updates as processing progresses\n")
 
@@ -534,7 +569,13 @@ Examples:
         )
         return  # Daemon handles its own loop
 
-    organizer.organize_photos(album=args.immich_album if args.source_type == 'immich' else None)
+    if args.source_type == 'immich':
+        run_album = args.immich_album
+    elif args.source_type == 'apple':
+        run_album = getattr(args, 'apple_album', None)
+    else:
+        run_album = None
+    organizer.organize_photos(album=run_album)
 
     # If live viewer is running, keep the process alive so the daemon thread persists
     if getattr(args, 'live_viewer', False):

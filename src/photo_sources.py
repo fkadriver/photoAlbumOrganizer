@@ -633,6 +633,189 @@ class ImmichPhotoSource(PhotoSource):
         return downloaded
 
 
+class ApplePhotoSource(PhotoSource):
+    """Photo source for Apple Photos (macOS only).
+
+    Reads the local Photos library database using osxphotos.
+    Cross-platform operation is not supported.
+    """
+
+    def __init__(self, library_path: Optional[str] = None):
+        """
+        Args:
+            library_path: Path to Photos library. Auto-detected if None.
+                Default: ~/Pictures/Photos Library.photoslibrary
+        """
+        import platform
+        if platform.system() != 'Darwin':
+            raise RuntimeError("Apple Photos integration requires macOS")
+
+        try:
+            import osxphotos
+        except ImportError:
+            raise ImportError(
+                "osxphotos is required for Apple Photos integration. "
+                "Install it with: pip install osxphotos"
+            )
+
+        self.photosdb = osxphotos.PhotosDB(dbfile=library_path)
+
+    def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
+                    media_type: str = 'image', local_only: bool = True) -> List[Photo]:
+        """List photos or videos from Apple Photos library.
+
+        Args:
+            album: Filter to a specific album name.
+            limit: Maximum number of photos to return.
+            media_type: 'image' or 'video'.
+            local_only: If True (default), skip photos whose original file is not
+                present on disk (e.g. iCloud-only photos not yet downloaded).
+                Set to False to include all photos; iCloud-only photos will have
+                no cached_path and will require an export call in get_photo_data.
+        """
+        if album:
+            raw = self.photosdb.photos(albums=[album])
+        else:
+            raw = self.photosdb.photos()
+
+        photos = []
+        for p in raw:
+            if limit and len(photos) >= limit:
+                break
+
+            # Filter by media type
+            if media_type == 'video' and not p.ismovie:
+                continue
+            if media_type == 'image' and not p.isphoto:
+                continue
+
+            # Skip iCloud-only photos when local_only is set
+            local_path = Path(p.path) if p.path else None
+            if local_only and (local_path is None or not local_path.exists()):
+                continue
+
+            photo = Photo(
+                photo_id=p.uuid,
+                source='apple',
+                metadata={
+                    'filename': p.original_filename,
+                    'filepath': str(local_path) if local_path else None,
+                    'date': p.date.isoformat() if p.date else None,
+                    'title': p.title,
+                    'description': p.description,
+                    'keywords': p.keywords,
+                    'albums': [a.title for a in p.album_info],
+                    'persons': p.persons,
+                    'favorite': p.favorite,
+                    'hidden': p.hidden,
+                    'latitude': p.latitude,
+                    'longitude': p.longitude,
+                    'uti': p.uti,
+                    'media_type': media_type,
+                    # Apple's own ML quality scores (0–1)
+                    'apple_score': p.score.overall if p.score else None,
+                    'apple_curation': p.score.curation if p.score else None,
+                    # Duplicate group: all dupes share the same canonical UUID
+                    'duplicate_group': p.duplicates[0].uuid if p.duplicates else None,
+                    # Burst shot info
+                    'is_burst': p.burst,
+                    'burst_key': p.burst_key_photo,
+                }
+            )
+            if local_path and local_path.exists():
+                photo.cached_path = local_path
+            photos.append(photo)
+
+        return photos
+
+    def get_photo_data(self, photo: Photo) -> bytes:
+        """Get photo data, exporting from Apple Photos if needed."""
+        if photo.cached_path and photo.cached_path.exists():
+            return photo.cached_path.read_bytes()
+
+        # Export to temp directory
+        import osxphotos
+        p = self.photosdb.get_photo(photo.id)
+        if p is None:
+            raise FileNotFoundError(f"Photo {photo.id} not found in Apple Photos library")
+        export_dir = Path('/tmp/photo-organizer-apple')
+        export_dir.mkdir(parents=True, exist_ok=True)
+        exported = p.export(str(export_dir))
+        if exported:
+            return Path(exported[0]).read_bytes()
+        raise FileNotFoundError(f"Could not export photo {photo.id}")
+
+    def get_metadata(self, photo: Photo) -> Dict:
+        """Return stored metadata."""
+        return photo.metadata.copy()
+
+    def tag_photo(self, photo: Photo, tags: List[str]) -> bool:
+        """Not supported by osxphotos (read-only)."""
+        return False
+
+    def create_album(self, name: str, photos: List[Photo]) -> bool:
+        """Not supported by osxphotos (read-only)."""
+        return False
+
+    def set_favorite(self, photo: Photo, favorite: bool = True) -> bool:
+        """Not supported by osxphotos (read-only)."""
+        return False
+
+    def list_people(self) -> List[Dict]:
+        """List recognized people from Apple Photos face database."""
+        people = []
+        for person in self.photosdb.person_info:
+            name = person.name
+            if not name or name == '_UNKNOWN_':
+                continue
+            key_photo_uuid = person.keyphoto.uuid if person.keyphoto else None
+            people.append({
+                'id': name,
+                'name': name,
+                'photo_count': person.facecount,
+                'key_photo_uuid': key_photo_uuid,
+                'is_favorite': person.favorite,
+            })
+        people.sort(key=lambda p: p['name'].lower())
+        return people
+
+    def list_photos_by_person(self, person_id: str, limit: Optional[int] = None,
+                               local_only: bool = True) -> List[Photo]:
+        """List photos of a specific person (matched by name).
+
+        Args:
+            person_id: Person name as returned by list_people().
+            limit: Maximum number of photos to return.
+            local_only: If True (default), skip iCloud-only photos not on disk.
+        """
+        raw = self.photosdb.photos(persons=[person_id])
+        photos = []
+        for p in raw:
+            if limit and len(photos) >= limit:
+                break
+            if not p.isphoto:
+                continue
+            local_path = Path(p.path) if p.path else None
+            if local_only and (local_path is None or not local_path.exists()):
+                continue
+            photo = Photo(
+                photo_id=p.uuid,
+                source='apple',
+                metadata={
+                    'filename': p.original_filename,
+                    'filepath': str(local_path) if local_path else None,
+                    'date': p.date.isoformat() if p.date else None,
+                    'persons': p.persons,
+                    'favorite': p.favorite,
+                    'media_type': 'image',
+                }
+            )
+            if local_path and local_path.exists():
+                photo.cached_path = local_path
+            photos.append(photo)
+        return photos
+
+
 class HybridPhotoSource(PhotoSource):
     """Hybrid photo source: local filesystem + Immich API.
 

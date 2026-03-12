@@ -8,8 +8,9 @@ A Python tool to organize large photo collections by automatically grouping simi
 - **Flexible Temporal Grouping**: Configurable time window or pure visual similarity matching
 - **Face Quality Detection**: Scores faces for smiles and open eyes — pluggable backends (face_recognition, MediaPipe, InsightFace, FaceNet — see [Face-Backends.md](docs/Face-Backends.md))
 - **GPU Acceleration**: 10–50× faster face detection via PyTorch/ONNX — see [Gpu-Acceleration.md](docs/Gpu-Acceleration.md)
+- **Apple Photos Integration**: Read directly from your macOS Photos library — people recognition, native duplicate detection, Apple ML quality scores, iCloud-aware (macOS only)
 - **Immich Integration**: Full integration with Immich — tag, album, favorite, archive, cleanup, people view
-- **Web Viewer**: Built-in review interface with thumbnails, EXIF comparison, bulk actions, report switcher, and people view
+- **Web Viewer**: Built-in review interface with thumbnails, EXIF comparison, bulk actions, report switcher, and people view (works with both Apple Photos and Immich)
 - **Viewer Lifecycle**: `scripts/viewer` manages background start/stop with watchdog auto-stop on directory exit
 - **Resume Capability**: Interrupt and resume processing without losing progress
 - **Interactive Setup**: Guided `-i` mode with save/load settings
@@ -26,6 +27,7 @@ A Python tool to organize large photo collections by automatically grouping simi
 - [Usage](#usage)
   - [Interactive Mode](#interactive-mode)
   - [Local Photos](#local-photos)
+  - [Apple Photos (macOS)](#apple-photos-macos)
   - [Immich Integration](#immich-integration)
   - [Web Viewer](#web-viewer)
   - [Immich Cleanup](#immich-cleanup)
@@ -140,6 +142,32 @@ Guided menu walks through every option. After a run, the summary screen defaults
 ./photo_organizer.py -s /path/to/photos -o /path/to/output
 ```
 
+### Apple Photos (macOS)
+
+```bash
+# Install Apple Photos support
+pip install osxphotos pillow-heif
+
+# Interactive — select "apple" at the source type prompt
+./photo_organizer.py -i
+
+# Direct — auto-detects your Photos library
+./photo_organizer.py --source-type apple -o ~/Organized
+
+# Specific library, album filter, local-only (skips iCloud-only photos)
+./photo_organizer.py --source-type apple \
+  --apple-library ~/Pictures/Photos\ Library.photoslibrary \
+  --apple-album "Summer 2023" \
+  -o ~/Organized
+
+# Group by recognized person (Apple face detection)
+./photo_organizer.py --source-type apple \
+  --apple-group-by-person --apple-person "Connor Jensen" \
+  -o ~/Organized/Connor
+```
+
+The people view in the web viewer (`--web-viewer` or `--live-viewer`) shows Apple Photos recognized faces with thumbnails and photo counts. See [docs/Apple-Photos.md](docs/Apple-Photos.md) for the full guide.
+
 ### Immich Integration
 
 ```bash
@@ -218,9 +246,17 @@ See [docs/Configuration.md](docs/Configuration.md) for a full threshold and time
 
 ```
 Source Arguments:
-  --source-type TYPE        local or immich (default: local)
+  --source-type TYPE        local, apple, immich, or hybrid (default: local)
   -s, --source SOURCE       Source directory (local)
   -o, --output OUTPUT       Output directory
+
+Apple Photos Arguments (macOS only):
+  --apple-library PATH      Path to Photos library (auto-detected if omitted)
+  --apple-album ALBUM       Filter to a specific Apple Photos album
+  --apple-group-by-person   Group photos by recognized person (Apple face detection)
+  --apple-person NAME       Filter to a specific person (with --apple-group-by-person)
+  --apple-local-only        Skip iCloud-only photos not on disk (default: True)
+  --apple-include-icloud    Include iCloud-only photos (downloads on demand)
 
 Processing Arguments:
   -t, --threshold N         Similarity threshold 0–64 (default: 5, lower=stricter)
@@ -372,7 +408,7 @@ photoAlbumOrganizer/
 - [x] Video support — see [Roadmap.md](docs/Roadmap.md)
 - [x] ML-based photo quality scoring (CLIP/MobileNetV2)
 - [x] Hybrid local+Immich mode for same-server deployments
-- [ ] Apple Photos integration (macOS, `osxphotos`)
+- [x] Apple Photos integration (macOS, `osxphotos`) — people, native duplicates, Apple ML scores
 - [ ] Google Photos integration (OAuth2, read-only)
 - [ ] Immich real-time sync
 
@@ -391,6 +427,7 @@ photoAlbumOrganizer/
 | [docs/Troubleshooting.md](docs/Troubleshooting.md) | Common issues and fixes |
 | [docs/Direnv-Setup.md](docs/Direnv-Setup.md) | direnv configuration |
 | [docs/Nixos-Setup.md](docs/Nixos-Setup.md) | NixOS-specific setup |
+| [docs/Apple-Photos.md](docs/Apple-Photos.md) | Apple Photos integration guide |
 | [docs/Roadmap.md](docs/Roadmap.md) | Feature roadmap |
 
 ---
@@ -406,6 +443,7 @@ MIT License — see [LICENSE](LICENSE) file for details.
 - **[MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)** — Google face landmarker
 - **[Pillow](https://python-pillow.org/)** — Python Imaging Library
 - **[OpenCV](https://opencv.org/)** — Computer vision library
+- **[osxphotos](https://github.com/RhetTbull/osxphotos)** — Apple Photos library access (macOS)
 - **[Immich](https://immich.app/)** — Self-hosted photo management
 
 ## Support
