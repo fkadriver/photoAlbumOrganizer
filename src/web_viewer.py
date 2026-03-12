@@ -1598,7 +1598,7 @@ def _bind_server(port):
             server = _ReuseAddrHTTPServer(("0.0.0.0", p), ViewerHandler)
             return server, p
         except OSError as e:
-            if e.errno == 98:  # Address already in use
+            if e.errno in (98, 48):  # Address already in use (Linux=98, macOS=48)
                 continue
             raise
     raise OSError(f"Could not bind to any port in range {port}-{port + 9}")
