@@ -15,6 +15,15 @@ PID_FILE="${PROJECT_DIR}/.viewer.pid"
 WATCHDOG_PID_FILE="${PROJECT_DIR}/.viewer-watchdog.pid"
 DEFAULT_PORT=8080
 
+# Use venv python when available, otherwise fall back to python3/python
+if [ -f "${PROJECT_DIR}/venv/bin/python" ]; then
+    PYTHON="${PROJECT_DIR}/venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="python3"
+else
+    PYTHON="python"
+fi
+
 # ---------- helpers ----------
 
 _find_report() {
@@ -163,8 +172,8 @@ cmd_start() {
     # Detect source type from saved settings (if any)
     local source_type="local"
     local settings_file="${PROJECT_DIR}/.photo_organizer_settings.json"
-    if [ -f "$settings_file" ] && command -v python >/dev/null 2>&1; then
-        source_type=$(python -c "
+    if [ -f "$settings_file" ]; then
+        source_type=$("$PYTHON" -c "
 import json, sys
 try:
     d = json.load(open('${settings_file}'))
@@ -188,7 +197,7 @@ except Exception:
     fi
 
     # Start viewer in background
-    python -c "
+    "$PYTHON" -c "
 import sys, os
 sys.path.insert(0, '${PROJECT_DIR}/src')
 os.chdir('${PROJECT_DIR}')
