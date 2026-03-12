@@ -16,6 +16,7 @@ from pathlib import Path
 # Will be set by start_viewer()
 _report_path = None
 _report_dir = None
+_output_dir = None  # base output directory for writing HDR/face-swap files
 _immich_client = None
 _local_file_cache = {}  # {asset_id: filepath}
 
@@ -504,6 +505,14 @@ function showDetail(g) {
       <button class="btn-split" onclick="splitSelectedPhotos(${g.group_index})">Split selected to new group</button>
       <span id="splitCount" style="font-size:0.8rem;opacity:0.7"></span>
     </div>
+    <div style="margin-top:0.8rem;display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;padding:0.5rem;background:rgba(255,255,255,0.05);border-radius:6px;">
+      <span style="font-size:0.82rem;font-weight:600;opacity:0.8">Reprocess:</span>
+      <label style="font-size:0.8rem;cursor:pointer"><input type="checkbox" id="rpML" checked> ML Quality</label>
+      <label style="font-size:0.8rem;cursor:pointer"><input type="checkbox" id="rpFaceSwap"> Face Swap</label>
+      <label style="font-size:0.8rem;cursor:pointer"><input type="checkbox" id="rpHDR"> HDR Merge</label>
+      <button onclick="reprocessGroup(${g.group_index})" style="padding:0.3rem 0.8rem;font-size:0.8rem;background:#4a6fa5;color:#fff;border:none;border-radius:4px;cursor:pointer;">Run</button>
+      <span id="rpStatus" style="font-size:0.75rem;opacity:0.6"></span>
+    </div>
     <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
@@ -712,6 +721,29 @@ async function splitSelectedPhotos(groupIndex) {
       alert('Error: ' + (result.error || 'Unknown'));
     }
   } catch(e) { alert('Request failed: ' + e); }
+}
+
+async function reprocessGroup(groupIndex) {
+  const status = document.getElementById('rpStatus');
+  if (status) status.textContent = 'Running\u2026';
+  const resp = await fetch('/api/actions/reprocess-group', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      group_index: groupIndex,
+      run_ml_quality: document.getElementById('rpML')?.checked ?? true,
+      run_face_swap: document.getElementById('rpFaceSwap')?.checked ?? false,
+      run_hdr: document.getElementById('rpHDR')?.checked ?? false,
+    })
+  });
+  const result = await resp.json();
+  if (result.ok) {
+    if (status) status.textContent = 'Done' + (result.face_swap_saved ? ' \u00b7 face swap saved' : '') + (result.hdr_saved ? ' \u00b7 HDR saved' : '');
+    await load();
+    showDetail((report.groups || []).find(g => g.group_index === groupIndex));
+  } else {
+    if (status) status.textContent = 'Error: ' + (result.error || 'unknown');
+  }
 }
 
 document.getElementById('search').oninput = render;
@@ -1073,6 +1105,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._handle_split_group(body)
         elif path == "/api/actions/reprocess":
             self._handle_reprocess(body)
+        elif path == "/api/actions/reprocess-group":
+            self._handle_reprocess_group(body)
         else:
             self.send_error(404)
 
@@ -1350,6 +1384,145 @@ class ViewerHandler(BaseHTTPRequestHandler):
         _save_report(report)
         self._send_json({"ok": True, "updated": updated})
 
+    def _handle_reprocess_group(self, body):
+        """Re-run face-swap, HDR, and/or ML quality scoring on a single group."""
+        import logging
+        group_index = body.get("group_index")
+        run_face_swap = body.get("run_face_swap", False)
+        run_hdr = body.get("run_hdr", False)
+        run_ml_quality = body.get("run_ml_quality", False)
+
+        report = _load_report()
+        group = next((g for g in report.get("groups", [])
+                      if g.get("group_index") == group_index), None)
+        if not group:
+            self._send_json({"ok": False, "error": "Group not found"}, 404)
+            return
+
+        # Resolve local paths for each photo
+        paths = {}
+        for p in group.get("photos", []):
+            aid = p.get("asset_id") or p.get("id")
+            if not aid:
+                continue
+            for key in ("filepath", "local_path", "cached_path"):
+                fp = p.get(key)
+                if fp and Path(fp).exists():
+                    paths[aid] = Path(fp)
+                    break
+            if aid not in paths and _output_dir:
+                # Try originals folder written by download mode
+                orig = Path(_output_dir) / f"group_{group_index:04d}" / "originals"
+                fn = p.get("filename", "")
+                if fn and (orig / fn).exists():
+                    paths[aid] = orig / fn
+
+        if not paths:
+            self._send_json({"ok": False,
+                             "error": "No local files found for this group. "
+                                      "Run in download mode (not tag-only) to enable reprocessing."}, 422)
+            return
+
+        hdr_saved = False
+        face_swap_saved = False
+        ml_scores = {}
+        photos = group.get("photos", [])
+        new_best_id = (group.get("best_photo") or {}).get("asset_id") or \
+                      next((p.get("asset_id") or p.get("id") for p in photos), None)
+
+        # ML quality scoring
+        if run_ml_quality and paths:
+            try:
+                sys.path.insert(0, str(Path(__file__).parent))
+                from image_processing import score_photo_quality
+                for p in photos:
+                    aid = p.get("asset_id") or p.get("id")
+                    if aid in paths:
+                        score = score_photo_quality(str(paths[aid]))
+                        if score is not None:
+                            ml_scores[aid] = score
+                if ml_scores:
+                    new_best_id = max(ml_scores, key=ml_scores.get)
+            except Exception as e:
+                logging.warning(f"ML quality reprocess failed: {e}")
+
+        out_dir = Path(_output_dir) / f"group_{group_index:04d}" if _output_dir else None
+
+        # HDR merge
+        if run_hdr and len(paths) >= 2 and out_dir:
+            try:
+                import cv2
+                from image_processing import should_merge_hdr, merge_exposures_hdr
+                from photo_sources import Photo
+                mini_group = []
+                for p in photos:
+                    aid = p.get("asset_id") or p.get("id")
+                    if aid in paths:
+                        photo_obj = Photo(photo_id=aid, source='local',
+                                         metadata={'filename': p.get('filename', aid)},
+                                         cached_path=paths[aid])
+                        mini_group.append({'photo': photo_obj, 'metadata': {}})
+                if should_merge_hdr(mini_group, enable_hdr=True):
+                    hdr_img = merge_exposures_hdr(mini_group, None, hdr_gamma=2.2)
+                    if hdr_img is not None:
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        cv2.imwrite(str(out_dir / "hdr_merged_reprocessed.jpg"), hdr_img)
+                        hdr_saved = True
+                        acts = group.setdefault("actions_taken", [])
+                        if "modified:hdr-merged" not in acts:
+                            acts.append("modified:hdr-merged")
+            except Exception as e:
+                logging.warning(f"HDR reprocess failed: {e}")
+
+        # Face swap
+        if run_face_swap and out_dir:
+            try:
+                import cv2
+                from image_processing import create_face_swapped_image, FACE_DETECTION_ENABLED
+                from photo_sources import Photo
+                if FACE_DETECTION_ENABLED:
+                    mini_group = []
+                    for p in photos:
+                        aid = p.get("asset_id") or p.get("id")
+                        if aid in paths:
+                            photo_obj = Photo(photo_id=aid, source='local',
+                                             metadata={'filename': p.get('filename', aid)},
+                                             cached_path=paths[aid])
+                            mini_group.append({'photo': photo_obj, 'metadata': {}})
+                    best_path = paths.get(new_best_id)
+                    if best_path and mini_group:
+                        swapped = create_face_swapped_image(mini_group, best_path, enable_face_swap=True)
+                        if swapped is not None:
+                            out_dir.mkdir(parents=True, exist_ok=True)
+                            cv2.imwrite(str(out_dir / "face_swapped_reprocessed.jpg"), swapped)
+                            face_swap_saved = True
+                            acts = group.setdefault("actions_taken", [])
+                            if "modified:face-swapped" not in acts:
+                                acts.append("modified:face-swapped")
+            except Exception as e:
+                logging.warning(f"Face swap reprocess failed: {e}")
+
+        # Update best photo in report
+        if new_best_id and new_best_id != (group.get("best_photo") or {}).get("asset_id"):
+            for p in photos:
+                p["is_best"] = (p.get("asset_id") == new_best_id or p.get("id") == new_best_id)
+            best_entry = next((p for p in photos
+                               if (p.get("asset_id") or p.get("id")) == new_best_id), None)
+            group["best_photo"] = {
+                "id": new_best_id,
+                "asset_id": new_best_id,
+                "filename": best_entry.get("filename", new_best_id) if best_entry else new_best_id,
+            }
+
+        _save_report(report)
+        self._send_json({
+            "ok": True,
+            "new_best_asset_id": new_best_id,
+            "hdr_saved": hdr_saved,
+            "face_swap_saved": face_swap_saved,
+            "ml_scores": ml_scores,
+        })
+
 
 class _ReuseAddrHTTPServer(HTTPServer):
     allow_reuse_address = True
@@ -1400,7 +1573,8 @@ def start_viewer_background(report_path, port=8888, immich_client=None, report_d
     return thread
 
 
-def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports"):
+def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports",
+                 output_dir=None):
     """
     Start the web viewer server.
 
@@ -1409,11 +1583,13 @@ def start_viewer(report_path, port=8888, immich_client=None, report_dir="reports
         port: HTTP port (default: 8080)
         immich_client: Optional ImmichClient for thumbnail proxying and actions
         report_dir: Directory containing timestamped reports (default: reports)
+        output_dir: Base output directory for writing HDR/face-swap files
     """
-    global _report_path, _immich_client, _report_dir
+    global _report_path, _immich_client, _report_dir, _output_dir
     _report_path = str(report_path)
     _immich_client = immich_client
     _report_dir = str(report_dir)
+    _output_dir = output_dir
 
     if not os.path.exists(_report_path):
         print(f"Error: Report file not found: {_report_path}")
