@@ -43,7 +43,8 @@ class PhotoOrganizer:
                  immich_smart_search=None,
                  immich_group_by_people=False,
                  report_dir="reports",
-                 media_type='image', video_strategy='scene_change', video_max_frames=10):
+                 media_type='image', video_strategy='scene_change', video_max_frames=10,
+                 apple_start_date=None, apple_end_date=None):
         """
         Initialize the photo organizer.
 
@@ -86,6 +87,8 @@ class PhotoOrganizer:
         self.media_type = media_type
         self.video_strategy = video_strategy
         self.video_max_frames = video_max_frames
+        self.apple_start_date = apple_start_date
+        self.apple_end_date = apple_end_date
         self.output_dir = Path(output_dir) if output_dir else None
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
@@ -321,7 +324,11 @@ class PhotoOrganizer:
 
     def find_all_photos(self, album: str = None):
         """Find all photos/videos from the photo source."""
-        return self.photo_source.list_photos(album=album, limit=self.limit, media_type=self.media_type)
+        kwargs = dict(album=album, limit=self.limit, media_type=self.media_type)
+        if self.apple_start_date or self.apple_end_date:
+            kwargs['start_date'] = self.apple_start_date
+            kwargs['end_date'] = self.apple_end_date
+        return self.photo_source.list_photos(**kwargs)
 
     def save_metadata(self, group, group_dir):
         """Save metadata for all photos in group to text file."""

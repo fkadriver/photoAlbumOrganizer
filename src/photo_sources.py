@@ -661,7 +661,8 @@ class ApplePhotoSource(PhotoSource):
         self.photosdb = osxphotos.PhotosDB(dbfile=library_path)
 
     def list_photos(self, album: Optional[str] = None, limit: Optional[int] = None,
-                    media_type: str = 'image', local_only: bool = True) -> List[Photo]:
+                    media_type: str = 'image', local_only: bool = True,
+                    start_date=None, end_date=None) -> List[Photo]:
         """List photos or videos from Apple Photos library.
 
         Args:
@@ -672,6 +673,8 @@ class ApplePhotoSource(PhotoSource):
                 present on disk (e.g. iCloud-only photos not yet downloaded).
                 Set to False to include all photos; iCloud-only photos will have
                 no cached_path and will require an export call in get_photo_data.
+            start_date: Only include photos on or after this datetime (inclusive).
+            end_date: Only include photos on or before this datetime (inclusive).
         """
         if album:
             raw = self.photosdb.photos(albums=[album])
@@ -687,6 +690,12 @@ class ApplePhotoSource(PhotoSource):
             if media_type == 'video' and not p.ismovie:
                 continue
             if media_type == 'image' and not p.isphoto:
+                continue
+
+            # Apply date range filter
+            if start_date and p.date and p.date < start_date:
+                continue
+            if end_date and p.date and p.date > end_date:
                 continue
 
             # Skip iCloud-only photos when local_only is set

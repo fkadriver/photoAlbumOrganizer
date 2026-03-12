@@ -28,6 +28,17 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 from utils import setup_logging
 
 
+def _parse_date(date_str, end_of_day=False):
+    """Parse a YYYY-MM-DD string to a timezone-aware datetime, or None."""
+    if not date_str:
+        return None
+    from datetime import datetime, timezone
+    dt = datetime.strptime(date_str, '%Y-%m-%d')
+    if end_of_day:
+        dt = dt.replace(hour=23, minute=59, second=59)
+    return dt.replace(tzinfo=timezone.utc)
+
+
 class HintingArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that appends a tip about interactive mode on error."""
 
@@ -138,6 +149,10 @@ Examples:
                         help='Skip iCloud-only photos not downloaded to this Mac (default: True)')
     parser.add_argument('--apple-include-icloud', action='store_true',
                         help='Include iCloud-only photos (overrides --apple-local-only)')
+    parser.add_argument('--apple-start-date', metavar='DATE',
+                        help='Only process photos on or after this date (YYYY-MM-DD)')
+    parser.add_argument('--apple-end-date', metavar='DATE',
+                        help='Only process photos on or before this date (YYYY-MM-DD)')
 
     # Immich arguments
     parser.add_argument('--immich-url',
@@ -517,6 +532,8 @@ Examples:
         media_type=getattr(args, 'media_type', 'image'),
         video_strategy=getattr(args, 'video_strategy', 'scene_change'),
         video_max_frames=getattr(args, 'video_max_frames', 10),
+        apple_start_date=_parse_date(getattr(args, 'apple_start_date', None)),
+        apple_end_date=_parse_date(getattr(args, 'apple_end_date', None), end_of_day=True),
     )
 
     # Start live viewer if requested

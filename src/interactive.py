@@ -323,6 +323,12 @@ def _prompt_apple_options():
         "Skip iCloud-only photos (not downloaded to this Mac)?", default=True
     )
 
+    print()
+    print("  Date range filter (optional — leave blank to process all dates).")
+    print("  Format: YYYY-MM-DD")
+    start_date = _prompt_text("Start date (oldest photos to include)")
+    end_date = _prompt_text("End date (newest photos to include)")
+
     return {
         "apple_library_path": library_path,
         "output": output,
@@ -330,6 +336,8 @@ def _prompt_apple_options():
         "apple_group_by_person": group_by_person,
         "apple_person": person_filter,
         "apple_local_only": local_only,
+        "apple_start_date": start_date or None,
+        "apple_end_date": end_date or None,
     }
 
 
@@ -689,6 +697,7 @@ _SECTION_LAYOUT = [
         # apple
         "apple_library_path", "apple_album",
         "apple_group_by_person", "apple_person", "apple_local_only",
+        "apple_start_date", "apple_end_date",
         # immich connection
         "immich_url", "immich_api_key", "immich_album",
         "immich_cache_dir", "immich_cache_size",
@@ -768,6 +777,8 @@ def _build_namespace(settings):
     ns.apple_group_by_person = settings.get("apple_group_by_person", False)
     ns.apple_person = settings.get("apple_person")
     ns.apple_local_only = settings.get("apple_local_only", True)
+    ns.apple_start_date = settings.get("apple_start_date")
+    ns.apple_end_date = settings.get("apple_end_date")
     ns.immich_url = settings.get("immich_url")
     ns.immich_api_key = settings.get("immich_api_key")
     ns.immich_album = settings.get("immich_album")

@@ -50,23 +50,38 @@ By default (`--apple-local-only`), the organizer skips photos that are stored in
 
 ### Batch Processing Your Full iCloud Library
 
-For large iCloud libraries, use the batch download script to download photos in date-range batches first, then run the organizer on the exported files:
+For large iCloud libraries, use the batch script to process photos in time-window batches. Photos are read directly from the Apple Photos library — iCloud downloads happen on-demand, so no separate export directory is needed.
 
 ```bash
-# Preview the batch plan (no download)
+# Preview the batch plan (no processing)
 python scripts/process_icloud_batches.py --dry-run
 
-# Download all batches and organize (3 batches, 7-day overlap)
-python scripts/process_icloud_batches.py --output-dir ~/icloud-organized
+# Process in 6-month windows (default) with 7-day overlap at boundaries
+python scripts/process_icloud_batches.py
 
-# Resume a specific batch
+# Smaller windows for very large libraries
+python scripts/process_icloud_batches.py --months 3
+
+# Resume a specific batch after interruption
 python scripts/process_icloud_batches.py --only-batch 2
 
-# Download only, organize later
-python scripts/process_icloud_batches.py --download-only
+# Custom output directory
+python scripts/process_icloud_batches.py --output-dir ~/icloud-organized
 ```
 
-The batch script splits your library into equal-count date ranges with configurable overlap at boundaries (so burst shots straddling a date boundary stay together).
+The batch script splits your library into calendar-month time windows with configurable overlap at boundaries (so burst shots straddling a date boundary stay together). Results land in `~/icloud-organized/batch_01/`, `batch_02/`, etc.
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--months N` | 6 | Months per batch window |
+| `--overlap-days N` | 7 | Overlap days between adjacent batches |
+| `--output-dir DIR` | `~/icloud-organized` | Root directory for organized output |
+| `--only-batch N` | — | Process only batch N (1-indexed) |
+| `--cpu-limit N` | 90 | CPU usage limit % |
+| `--threads N` | 4 | Organizer threads |
+| `--dry-run` | — | Print plan without processing |
 
 ---
 
@@ -161,6 +176,8 @@ Apple Photos Arguments (--source-type apple, macOS only):
   --apple-person NAME       Filter to one person (requires --apple-group-by-person)
   --apple-local-only        Skip iCloud-only photos not yet on this Mac (default)
   --apple-include-icloud    Include iCloud-only photos (triggers on-demand download)
+  --apple-start-date DATE   Only include photos on or after DATE (YYYY-MM-DD)
+  --apple-end-date DATE     Only include photos on or before DATE (YYYY-MM-DD)
 ```
 
 ---
@@ -184,6 +201,7 @@ Selecting `apple` walks you through:
 - Album filter
 - Group by person (and optional person name filter)
 - Local-only vs. iCloud-include
+- Date range filter (start date / end date, optional)
 
 Settings are saved to `.photo_organizer_settings.json` so you can rerun with `./photo_organizer.py -r`.
 
