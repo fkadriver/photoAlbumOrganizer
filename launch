@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+#
+# launch — Photo Album Organizer launcher
+#
+# Replaces direnv for environments where it's unavailable (e.g. macOS without nix).
+# Activates the Python venv, then shows the same startup menu as .envrc.
+#
+# Usage (from project root or anywhere):
+#   ./launch
+#   bash ~/git/photoAlbumOrganizer/launch
+#
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV="$PROJECT_DIR/venv"
+PID_FILE="$PROJECT_DIR/.viewer.pid"
+
+# ---------------------------------------------------------------------------
+# Activate venv
+# ---------------------------------------------------------------------------
+
+if [ ! -f "$VENV/bin/activate" ]; then
+    echo ""
+    echo "  Error: Python venv not found at $VENV"
+    echo ""
+    echo "  Create it with:"
+    echo "    python3 -m venv venv"
+    echo "    venv/bin/pip install -r requirements.txt"
+    echo ""
+    exit 1
+fi
+
+# shellcheck disable=SC1091
+source "$VENV/bin/activate"
+
+# Ensure src/ is importable
+export PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+
+# Run from project root so relative paths work
+cd "$PROJECT_DIR"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_viewer_status() {
+    if [ -f "$PID_FILE" ]; then
+        local vpid vport
+        vpid=$(head -1 "$PID_FILE" 2>/dev/null || true)
+        vport=$(sed -n '2p' "$PID_FILE" 2>/dev/null || true)
+        if [ -n "$vpid" ] && kill -0 "$vpid" 2>/dev/null; then
+            echo " (running → http://localhost:${vport})"
+            return
+        fi
+    fi
+    echo ""
+}
+
+_has_report() {
+    [ -e "$PROJECT_DIR/reports/latest.json" ] || [ -f "$PROJECT_DIR/processing_report.json" ]
+}
+
+_has_settings() {
+    [ -f "$PROJECT_DIR/.photo_organizer_settings.json" ]
+}
+
+_drop_to_shell() {
+    echo ""
+    echo "  venv activated. Type 'exit' to return."
+    echo "  Python: $(which python)"
+    echo ""
+    # Spawn an interactive subshell with the venv in PATH.
+    # VIRTUAL_ENV_PROMPT labels the prompt in modern venvs.
+    VIRTUAL_ENV="$VENV" \
+    VIRTUAL_ENV_PROMPT="photo-organizer" \
+    PATH="$VENV/bin:$PATH" \
+    exec "${SHELL}" -i
+}
+
+# ---------------------------------------------------------------------------
+# Menu
+# ---------------------------------------------------------------------------
+
+_menu() {
+    local viewer_status
+    viewer_status=$(_viewer_status)
+
+    echo ""
+    echo "=========================================="
+    echo "  Photo Album Organizer"
+    echo "  Python: $(python --version 2>&1)"
+    echo "=========================================="
+
+    local default="s"
+
+    if _has_settings; then
+        echo "  Saved settings found."
+        echo ""
+        echo "  [r] Run with saved settings"
+    fi
+
+    echo "  [i] Interactive setup"
+
+    if _has_report; then
+        echo "  [v] Web viewer${viewer_status}"
+        default="v"
+    fi
+
+    echo "  [s] Shell  (venv active)"
+    echo "=========================================="
+    printf "  Your choice [%s]: " "$default"
+
+    # Read with a fallback for non-interactive contexts
+    local choice=""
+    if read -r choice 2>/dev/null; then
+        choice="${choice:-$default}"
+    else
+        choice="$default"
+    fi
+
+    echo ""
+    case "$choice" in
+        r|R)
+            if _has_settings; then
+                echo "  Running with saved settings..."
+                echo ""
+                ./photo_organizer.py -r
+            else
+                echo "  No saved settings found."
+                _menu
+            fi
+            ;;
+        i|I)
+            ./photo_organizer.py -i
+            ;;
+        v|V)
+            if _has_report; then
+                scripts/viewer start
+            else
+                echo "  No report found yet — run the organizer first."
+                echo ""
+                _menu
+            fi
+            ;;
+        s|S)
+            _drop_to_shell
+            ;;
+        q|Q)
+            echo "  Bye."
+            exit 0
+            ;;
+        *)
+            echo "  Unknown choice '${choice}'. Try again."
+            _menu
+            ;;
+    esac
+}
+
+_menu

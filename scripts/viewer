@@ -71,6 +71,18 @@ _cleanup() {
 
 # ---------- watchdog ----------
 
+# Get the current working directory of a process, cross-platform.
+_proc_cwd() {
+    local pid="$1"
+    if [ -r "/proc/${pid}/cwd" ]; then
+        # Linux
+        readlink "/proc/${pid}/cwd" 2>/dev/null || true
+    else
+        # macOS / BSD — use lsof if available
+        lsof -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/{print substr($0,2); exit}' || true
+    fi
+}
+
 _watchdog() {
     local viewer_pid="$1"
     local parent_pid="$PPID"
@@ -93,7 +105,7 @@ _watchdog() {
 
         # Has the parent shell left the project directory?
         local shell_cwd
-        shell_cwd=$(readlink "/proc/${parent_pid}/cwd" 2>/dev/null || true)
+        shell_cwd=$(_proc_cwd "$parent_pid")
         if [ -n "$shell_cwd" ]; then
             case "$shell_cwd" in
                 "${PROJECT_DIR}"*) ;; # still inside project
@@ -148,11 +160,30 @@ cmd_start() {
         immich_api_key="${immich_api_key:-${IMMICH_API_KEY:-}}"
     fi
 
+    # Detect source type from saved settings (if any)
+    local source_type="local"
+    local settings_file="${PROJECT_DIR}/.photo_organizer_settings.json"
+    if [ -f "$settings_file" ] && command -v python >/dev/null 2>&1; then
+        source_type=$(python -c "
+import json, sys
+try:
+    d = json.load(open('${settings_file}'))
+    print(d.get('source_type', 'local'))
+except Exception:
+    print('local')
+" 2>/dev/null || echo "local")
+    fi
+
     # Build the Python command
-    local immich_setup=""
+    local setup_code=""
     local immich_ref="None"
-    if [ -n "$immich_url" ] && [ -n "$immich_api_key" ]; then
-        immich_setup="from immich_client import ImmichClient; client = ImmichClient('${immich_url}', '${immich_api_key}')"
+    local apple_ref="None"
+
+    if [ "$source_type" = "apple" ]; then
+        setup_code="from photo_sources import ApplePhotoSource; apple_src = ApplePhotoSource()"
+        apple_ref="apple_src"
+    elif [ -n "$immich_url" ] && [ -n "$immich_api_key" ]; then
+        setup_code="from immich_client import ImmichClient; client = ImmichClient('${immich_url}', '${immich_api_key}')"
         immich_ref="client"
     fi
 
@@ -161,9 +192,9 @@ cmd_start() {
 import sys, os
 sys.path.insert(0, '${PROJECT_DIR}/src')
 os.chdir('${PROJECT_DIR}')
-${immich_setup}
+${setup_code}
 from web_viewer import start_viewer
-start_viewer('${report_path}', port=${port}, immich_client=${immich_ref}, report_dir='${PROJECT_DIR}/reports')
+start_viewer('${report_path}', port=${port}, immich_client=${immich_ref}, apple_source=${apple_ref}, report_dir='${PROJECT_DIR}/reports')
 " &>/dev/null &
 
     local viewer_pid=$!
@@ -187,7 +218,9 @@ start_viewer('${report_path}', port=${port}, immich_client=${immich_ref}, report
     echo "  Viewer started on port ${port}"
     echo "  http://localhost:${port}"
     echo "  Report: ${report_path}"
-    if [ -n "$immich_setup" ]; then
+    if [ "$source_type" = "apple" ]; then
+        echo "  Source: Apple Photos (people tab enabled)"
+    elif [ -n "$immich_url" ] && [ -n "$immich_api_key" ]; then
         echo "  Immich: ${immich_url} (thumbnails enabled)"
     fi
 }
