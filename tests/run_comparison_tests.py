@@ -116,6 +116,7 @@ def run_config(cfg, url, api_key, limit, common_flags, download=False):
         "--limit", str(limit),
         "--min-group-size", "2",
         "--threads", "2",
+        "--cpu-limit", "90",
         "--force-fresh",
     ]
     if not download:
