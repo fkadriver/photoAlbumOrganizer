@@ -534,6 +534,7 @@ Examples:
         video_max_frames=getattr(args, 'video_max_frames', 10),
         apple_start_date=_parse_date(getattr(args, 'apple_start_date', None)),
         apple_end_date=_parse_date(getattr(args, 'apple_end_date', None), end_of_day=True),
+        apple_local_only=getattr(args, 'apple_local_only', True),
     )
 
     # Start live viewer if requested

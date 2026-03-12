@@ -44,7 +44,8 @@ class PhotoOrganizer:
                  immich_group_by_people=False,
                  report_dir="reports",
                  media_type='image', video_strategy='scene_change', video_max_frames=10,
-                 apple_start_date=None, apple_end_date=None):
+                 apple_start_date=None, apple_end_date=None,
+                 apple_local_only=True):
         """
         Initialize the photo organizer.
 
@@ -89,6 +90,7 @@ class PhotoOrganizer:
         self.video_max_frames = video_max_frames
         self.apple_start_date = apple_start_date
         self.apple_end_date = apple_end_date
+        self.apple_local_only = apple_local_only
         self.output_dir = Path(output_dir) if output_dir else None
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
@@ -325,9 +327,12 @@ class PhotoOrganizer:
     def find_all_photos(self, album: str = None):
         """Find all photos/videos from the photo source."""
         kwargs = dict(album=album, limit=self.limit, media_type=self.media_type)
-        if self.apple_start_date or self.apple_end_date:
-            kwargs['start_date'] = self.apple_start_date
-            kwargs['end_date'] = self.apple_end_date
+        if hasattr(self.photo_source, 'photosdb'):
+            # Apple Photos source — pass local_only and date range
+            kwargs['local_only'] = self.apple_local_only
+            if self.apple_start_date or self.apple_end_date:
+                kwargs['start_date'] = self.apple_start_date
+                kwargs['end_date'] = self.apple_end_date
         return self.photo_source.list_photos(**kwargs)
 
     def save_metadata(self, group, group_dir):
@@ -467,7 +472,10 @@ class PhotoOrganizer:
             if not person_id:
                 continue
 
-            photos = self.photo_source.list_photos_by_person(person_id, limit=self.limit)
+            kwargs = dict(limit=self.limit)
+            if hasattr(self.photo_source, 'photosdb'):
+                kwargs['local_only'] = getattr(self, 'apple_local_only', True)
+            photos = self.photo_source.list_photos_by_person(person_id, **kwargs)
             if len(photos) < self.min_group_size:
                 continue
 
@@ -535,7 +543,10 @@ class PhotoOrganizer:
             person_id = person['id']
             # No per-person limit: applying limit here would break combination detection
             # (photos of Scott+Steph would only be indexed for whoever's top-N they land in)
-            photos = self.photo_source.list_photos_by_person(person_id, limit=None)
+            lp_kwargs = dict(limit=None)
+            if hasattr(self.photo_source, 'photosdb'):
+                lp_kwargs['local_only'] = getattr(self, 'apple_local_only', True)
+            photos = self.photo_source.list_photos_by_person(person_id, **lp_kwargs)
             print(f"  {person_name}: {len(photos)} photos")
             for photo in photos:
                 asset_id = photo.metadata.get('asset_id', photo.id)
