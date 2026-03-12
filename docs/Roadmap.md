@@ -14,6 +14,7 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 | Pet Detection | ⏳ Planned |
 | Viewer: Save Original Alongside Modified | ⏳ Planned |
 | Viewer: Per-Group Reprocessing | ⏳ Planned |
+| Viewer: Download Group(s) as ZIP | ⏳ Planned |
 | Apple / Google Photos Integration | ⏳ Planned |
 
 ---
@@ -51,6 +52,11 @@ Planned and in-progress features. For completed features, see [Features.md](Feat
 - User can choose which module(s) to apply: ML Quality Scoring, Face Swap, HDR Blending, etc.
 - Enables workflow: manually group photos (merge/split via viewer UI), then reprocess with chosen options
 - Results update the report in place without re-running the full organizer
+
+### Viewer: Download Group(s) as ZIP
+- Bulk-select one or more groups in the viewer and download all their photos as a single ZIP file
+- ZIP includes originals and any modified files (face_swapped.jpg, hdr_merged.jpg)
+- Available from the bulk-select toolbar and from within a single group detail view, or person view
 
 ### Apple / Google Photos Integration
 - Apple Photos via `osxphotos` (macOS only)
