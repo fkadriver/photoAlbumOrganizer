@@ -738,25 +738,21 @@ class ApplePhotoSource(PhotoSource):
         return photos
 
     def get_photo_data(self, photo: Photo) -> bytes:
-        """Get photo data, exporting from Apple Photos if needed."""
+        """Get photo data, using local derivative thumbnail for iCloud-only photos."""
         if photo.cached_path and photo.cached_path.exists():
             return photo.cached_path.read_bytes()
 
-        # Export to temp directory — use_photos_export=True triggers iCloud download
-        import tempfile
         p = self.photosdb.get_photo(photo.id)
         if p is None:
             raise FileNotFoundError(f"Photo {photo.id} not found in Apple Photos library")
-        with tempfile.TemporaryDirectory(prefix='photo-organizer-apple-') as export_dir:
-            exported = p.export(
-                export_dir,
-                use_photos_export=True,  # triggers iCloud download if needed
-                timeout=120,
-                overwrite=True,
-            )
-            if exported:
-                data = Path(exported[0]).read_bytes()
-                return data
+
+        # For iCloud-only photos, use the local derivative thumbnail.
+        # These JPEG previews are always stored locally even when the original
+        # is only in iCloud, so no network/Photos.app interaction is needed.
+        for deriv in (p.path_derivatives or []):
+            if deriv and Path(deriv).exists():
+                return Path(deriv).read_bytes()
+
         raise FileNotFoundError(f"Could not export photo {photo.id}")
 
     def get_metadata(self, photo: Photo) -> Dict:
