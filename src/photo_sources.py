@@ -753,7 +753,12 @@ class ApplePhotoSource(PhotoSource):
             if deriv and Path(deriv).exists():
                 return Path(deriv).read_bytes()
 
-        raise FileNotFoundError(f"Could not export photo {photo.id}")
+        # No local data at all — photo is in iCloud with no cached thumbnail.
+        # Browse to it in Photos.app to trigger thumbnail download, then re-run.
+        raise FileNotFoundError(
+            f"No local data for {photo.metadata.get('filename', photo.id)} "
+            f"(iCloud-only, thumbnail not yet cached)"
+        )
 
     def get_metadata(self, photo: Photo) -> Dict:
         """Return stored metadata."""

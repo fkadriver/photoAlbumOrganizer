@@ -321,7 +321,15 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
                 groups.append(group)
     else:
         # Image grouping uses imagehash difference
+        total = len(photo_data)
+        log_interval = max(1, total // 20)  # log every 5%
         for i, data1 in enumerate(photo_data):
+            if i % log_interval == 0:
+                pct = i * 100 // total
+                msg = f"Grouping progress: {i}/{total} ({pct}%) — {len(groups)} groups so far"
+                logging.info(msg)
+                print(f"\r  {msg}", end="", flush=True)
+
             if i in used:
                 continue
 
@@ -354,6 +362,8 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
 
             if len(group) >= min_group_size:
                 groups.append(group)
+
+        print()  # newline after progress line
 
     logging.info(f"Found {len(groups)} groups of similar {media_label}")
     return groups
