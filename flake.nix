@@ -10,8 +10,41 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        lib = pkgs.lib;
         python = pkgs.python312;
         pythonPackages = python.pkgs;
+        isDarwin = pkgs.stdenv.isDarwin;
+        isLinux = pkgs.stdenv.isLinux;
+
+        # Packages only available / needed on Linux
+        linuxOnlyPkgs = if isLinux then (with pkgs; [
+          libGL
+          glib
+          zlib
+          stdenv.cc.cc.lib
+          libpng
+          libjpeg
+          libwebp
+          xorg.libX11
+          xorg.libXext
+          xorg.libxcb
+          openblas
+          lapack
+          opencv4
+        ]) else [];
+
+        # LD_LIBRARY_PATH entries (Linux only)
+        ldLibPath = if isLinux then
+          lib.concatStringsSep ":" (map (p: "${p}/lib") (with pkgs; [
+            libGL
+            stdenv.cc.cc.lib
+            glib
+            zlib
+            xorg.libX11
+            xorg.libXext
+            xorg.libxcb
+          ]))
+        else "";
       in
       {
         devShells.default = pkgs.mkShell {
@@ -20,41 +53,19 @@
             python
             pythonPackages.pip
             pythonPackages.virtualenv
-            
+
             # Build tools
             cmake
-            gcc
             gnumake
             pkg-config
-            
-            # System libraries for OpenCV and binary packages
-            libGL
-            glib
-            glib.out  # Provides libgthread-2.0.so.0
-            zlib
-            stdenv.cc.cc.lib
-            
-            # Image processing libraries
-            libpng
-            libjpeg
-            libwebp
-            
-            # X11/XCB for dlib GUI support and OpenCV runtime
-            libx11
-            libxext
-            libxcb
-            
-            # BLAS/LAPACK for optimized operations
-            openblas
-            lapack
-            
-            # OpenCV
-            opencv4
-          ];
+          ] ++ linuxOnlyPkgs;
 
-          shellHook = ''
-            # CRITICAL: Set library paths for NixOS
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glib}/lib:${pkgs.glib.out}/lib:${pkgs.zlib}/lib:${pkgs.libx11}/lib:${pkgs.libxext}/lib:${pkgs.libxcb}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          shellHook = (if isLinux then ''
+            # Set library paths (Linux only)
+            export LD_LIBRARY_PATH="${ldLibPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          '' else ''
+            # macOS: system libs handled by the OS
+          '') + ''
 
             # Fix BLAS/LAPACK warnings by using single-threaded mode
             export OMP_NUM_THREADS=1
@@ -64,8 +75,10 @@
             export NUMEXPR_NUM_THREADS=1
 
             # Set build environment variables
+          '' + (if isLinux then ''
             export CMAKE_PREFIX_PATH="${pkgs.openblas}:${pkgs.lapack}"
             export PKG_CONFIG_PATH="${pkgs.openblas}/lib/pkgconfig:${pkgs.lapack}/lib/pkgconfig:''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          '' else "") + ''
             export PYTHONDONTWRITEBYTECODE=1
 
             # Create virtual environment if it doesn't exist
