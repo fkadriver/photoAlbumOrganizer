@@ -302,6 +302,7 @@ def _prompt_apple_options():
 
     output = _prompt_text(
         "Output directory for organized photos",
+        default="/tmp",
         required=True,
         validator=_validate_output_path,
     )
