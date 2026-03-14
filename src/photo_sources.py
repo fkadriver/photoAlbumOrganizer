@@ -738,7 +738,7 @@ class ApplePhotoSource(PhotoSource):
         return photos
 
     def get_photo_data(self, photo: Photo) -> bytes:
-        """Get photo data, using local derivative thumbnail for iCloud-only photos."""
+        """Get photo data, preferring the full original over thumbnails."""
         if photo.cached_path and photo.cached_path.exists():
             return photo.cached_path.read_bytes()
 
@@ -746,9 +746,13 @@ class ApplePhotoSource(PhotoSource):
         if p is None:
             raise FileNotFoundError(f"Photo {photo.id} not found in Apple Photos library")
 
-        # For iCloud-only photos, use the local derivative thumbnail.
-        # These JPEG previews are always stored locally even when the original
-        # is only in iCloud, so no network/Photos.app interaction is needed.
+        # Check the original path directly — may be available now even if it
+        # wasn't set when list_photos() ran (e.g. sync completed mid-session).
+        if p.path and Path(p.path).exists():
+            return Path(p.path).read_bytes()
+
+        # Fall back to derivative thumbnail (local JPEG preview, available even
+        # for iCloud-only photos that have been viewed at least once in Photos.app).
         for deriv in (p.path_derivatives or []):
             if deriv and Path(deriv).exists():
                 return Path(deriv).read_bytes()

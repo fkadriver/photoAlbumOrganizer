@@ -283,7 +283,7 @@ def _prompt_local_options():
     """Step 2a: local source paths."""
     _print_section("Step 2: Local Source Options")
     source = _prompt_text("Source directory", required=True, validator=_validate_source_path)
-    output = _prompt_text("Output directory", required=True, validator=_validate_output_path)
+    output = _prompt_text("Output directory", default="/tmp", required=True, validator=_validate_output_path)
     output = os.path.expanduser(output)
     return {"source": source, "output": output}
 
