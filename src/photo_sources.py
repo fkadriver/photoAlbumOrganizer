@@ -682,6 +682,7 @@ class ApplePhotoSource(PhotoSource):
             raw = self.photosdb.photos()
 
         photos = []
+        skipped_icloud = 0
         for p in raw:
             if limit and len(photos) >= limit:
                 break
@@ -698,10 +699,22 @@ class ApplePhotoSource(PhotoSource):
             if end_date and p.date and p.date > end_date:
                 continue
 
-            # Skip iCloud-only photos when local_only is set
             local_path = Path(p.path) if p.path else None
+
+            # Skip iCloud-only photos when local_only is set
             if local_only and (local_path is None or not local_path.exists()):
                 continue
+
+            # Even with local_only=False, skip photos with absolutely no local
+            # data (no original file and no cached thumbnail). These cannot be
+            # hashed and would only produce per-photo warnings later.
+            if not local_only and not (local_path and local_path.exists()):
+                has_deriv = any(
+                    d and Path(d).exists() for d in (p.path_derivatives or [])
+                )
+                if not has_deriv:
+                    skipped_icloud += 1
+                    continue
 
             photo = Photo(
                 photo_id=p.uuid,
@@ -734,6 +747,13 @@ class ApplePhotoSource(PhotoSource):
             if local_path and local_path.exists():
                 photo.cached_path = local_path
             photos.append(photo)
+
+        if skipped_icloud:
+            logging.warning(
+                f"Skipped {skipped_icloud} iCloud-only photos with no local data "
+                f"(no original downloaded, no thumbnail cached). "
+                f"To include them, open Photos.app and let it download originals."
+            )
 
         return photos
 
