@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, BinaryIO
 from datetime import datetime
 import hashlib
 import io
+import logging
 import time
 import os
 import threading
