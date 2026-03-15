@@ -844,23 +844,30 @@ class PhotoOrganizer:
                     date_str = str(raw)[:10]
                     break
 
-        # --- people: collect from metadata + person_name field ---
-        seen: set[str] = set()
-        people: list[str] = []
+        # --- people: count appearances across all photos in the group ---
+        # Use frequency (how many photos contain each person) so that the
+        # person who appears in the most photos comes first, regardless of
+        # which person's iteration loop found this group.
+        from collections import Counter
+        person_counts: Counter = Counter()
         for pd in group:
-            # person_name set in person-grouping mode
-            pn = pd.get('person_name')
-            if pn and pn not in seen:
-                seen.add(pn)
-                people.append(pn)
-            # persons list in Apple/Immich metadata
+            persons_in_photo: set[str] = set()
+            # persons from photo metadata (Apple: p.persons, Immich: people field)
             for name in ((pd.get('metadata') or {}).get('persons') or []):
-                if name and name not in seen:
-                    seen.add(name)
-                    people.append(name)
+                if name:
+                    persons_in_photo.add(name)
+            # person_name stamped by the iteration loop — counts as appearing
+            # in this photo but only if not already covered by metadata
+            pn = pd.get('person_name')
+            if pn:
+                persons_in_photo.add(pn)
+            person_counts.update(persons_in_photo)
 
-        # Sort: favorites first, then alphabetical
-        people.sort(key=lambda n: (not favorites.get(n, False), n.lower()))
+        # Sort: favorites first, then frequency descending, then alphabetical
+        people = sorted(
+            person_counts.keys(),
+            key=lambda n: (not favorites.get(n, False), -person_counts[n], n.lower()),
+        )
         people = people[:6]
 
         # Sanitise names for use in an album title (keep letters, digits, spaces)
@@ -889,9 +896,17 @@ class PhotoOrganizer:
                 logging.info(msg)
                 continue
 
-            person_label = ""
-            if group[0].get('person_name'):
-                person_label = f" [{group[0]['person_name']}]"
+            # Build person label from all people across the group (by frequency),
+            # not just the loop-iteration person_name of the first photo.
+            from collections import Counter as _Counter
+            _pc: _Counter = _Counter()
+            for _pd in group:
+                _names = set(((_pd.get('metadata') or {}).get('persons') or []))
+                if _pd.get('person_name'):
+                    _names.add(_pd['person_name'])
+                _pc.update(_names)
+            _top = [n for n, _ in _pc.most_common(3)]
+            person_label = f" [{', '.join(_top)}]" if _top else ""
 
             msg = f"\nProcessing group {i}/{len(groups)} ({len(group)} photos){person_label}..."
             print(msg)
