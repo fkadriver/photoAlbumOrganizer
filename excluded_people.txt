@@ -1,0 +1,12 @@
+# excluded_people.txt
+# People listed here will never be used for grouping decisions or album/file naming.
+# Their photos are still processed — they just won't influence which group is chosen
+# or appear in album titles like "Organized-2024-03-15-Connor+Alice-0001".
+#
+# Format: one name per line, exactly as it appears in Apple Photos / Immich.
+# Lines starting with # are comments. Blank lines are ignored.
+# Names are matched case-insensitively.
+#
+# Example:
+#   Santa Claus
+#   Easter Bunny

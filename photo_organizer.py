@@ -28,6 +28,26 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 from utils import setup_logging
 
 
+_EXCLUDED_PEOPLE_FILE = os.path.join(os.path.dirname(__file__), 'excluded_people.txt')
+
+
+def _load_excluded_people(extra: list) -> list:
+    """Merge the static excluded_people.txt file with any CLI/settings names.
+
+    The file lives at excluded_people.txt in the project root.
+    One name per line; lines starting with # are comments; blank lines ignored.
+    Names from the file are combined with any passed-in extra names.
+    """
+    names = list(extra)
+    if os.path.exists(_EXCLUDED_PEOPLE_FILE):
+        with open(_EXCLUDED_PEOPLE_FILE, encoding='utf-8') as fh:
+            for line in fh:
+                name = line.split('#', 1)[0].strip()
+                if name:
+                    names.append(name)
+    return names
+
+
 def _parse_date(date_str, end_of_day=False):
     """Parse a YYYY-MM-DD string to a timezone-aware datetime, or None."""
     if not date_str:
@@ -551,7 +571,9 @@ Examples:
         apple_end_date=_parse_date(getattr(args, 'apple_end_date', None), end_of_day=True),
         apple_local_only=getattr(args, 'apple_local_only', True),
         apple_use_duplicates=getattr(args, 'apple_use_duplicates', False),
-        excluded_people=getattr(args, 'excluded_people', None) or [],
+        excluded_people=_load_excluded_people(
+            getattr(args, 'excluded_people', None) or []
+        ),
     )
 
     # Start live viewer if requested
