@@ -454,6 +454,52 @@ def _prompt_hybrid_options():
     }
 
 
+def _prompt_apple_actions():
+    """Step 2b (continued): Apple Photos write-back actions."""
+    _print_section("Step 2b: Apple Photos Actions")
+    print("  These actions write back to your Photos library via AppleScript.")
+    print()
+
+    use_duplicates = _prompt_bool(
+        "Use Apple's native duplicate detection (faster, no hashing)?", default=False
+    )
+
+    create_albums = _prompt_bool("Create a Photos album for each group?", default=False)
+    album_prefix = "Organized-"
+    if create_albums:
+        album_prefix = _prompt_text("Album name prefix", default="Organized-")
+
+    mark_fav = _prompt_bool("Mark best photo in each group as favorite?", default=False)
+
+    archive_non_best = _prompt_bool(
+        "Tag non-best photos with 'archive' keyword (for review/delete)?", default=False
+    )
+
+    tag_only = _prompt_bool(
+        "Keyword-only mode (no output folder — just tag in Photos.app)?", default=True
+    )
+
+    output = None
+    if not tag_only:
+        output = _prompt_text(
+            "Output directory for exported copies",
+            default="/tmp",
+            required=True,
+            validator=_validate_output_path,
+        )
+        output = os.path.expanduser(output)
+
+    return {
+        "apple_use_duplicates": use_duplicates,
+        "create_albums": create_albums,
+        "album_prefix": album_prefix,
+        "mark_best_favorite": mark_fav,
+        "archive_non_best": archive_non_best,
+        "tag_only": tag_only,
+        "output": output,
+    }
+
+
 def _prompt_immich_actions():
     """Step 2b (continued): Immich-specific actions."""
     _print_section("Step 2b: Immich Actions")
@@ -699,6 +745,7 @@ _SECTION_LAYOUT = [
         "apple_library_path", "apple_album",
         "apple_group_by_person", "apple_person", "apple_local_only",
         "apple_start_date", "apple_end_date",
+        "apple_use_duplicates",
         # immich connection
         "immich_url", "immich_api_key", "immich_album",
         "immich_cache_dir", "immich_cache_size",
@@ -804,6 +851,7 @@ def _build_namespace(settings):
     ns.archive_non_best = settings.get("archive_non_best", False)
     ns.immich_use_duplicates = settings.get("immich_use_duplicates", False)
     ns.immich_smart_search = settings.get("immich_smart_search")
+    ns.apple_use_duplicates = settings.get("apple_use_duplicates", False)
     ns.resume = False
     ns.force_fresh = False
     ns.state_file = None
@@ -869,17 +917,22 @@ def _collect_source_options(settings):
     elif settings["source_type"] == "apple":
         opts = _prompt_apple_options()
         settings.update(opts)
-        # Defaults for unused keys
+        action_opts = _prompt_apple_actions()
+        if action_opts.get("output"):
+            settings["output"] = action_opts["output"]
+        settings["apple_use_duplicates"] = action_opts["apple_use_duplicates"]
+        settings["create_albums"] = action_opts["create_albums"]
+        settings["album_prefix"] = action_opts["album_prefix"]
+        settings["mark_best_favorite"] = action_opts["mark_best_favorite"]
+        settings["archive_non_best"] = action_opts["archive_non_best"]
+        settings["tag_only"] = action_opts["tag_only"]
         settings.setdefault("source", None)
-        settings.setdefault("tag_only", False)
-        settings.setdefault("create_albums", False)
-        settings.setdefault("mark_best_favorite", False)
         for key in ("immich_url", "immich_api_key", "immich_album",
                     "immich_cache_dir", "immich_cache_size",
                     "no_verify_ssl", "use_full_resolution",
-                    "immich_library_path", "album_prefix",
+                    "immich_library_path",
                     "immich_group_by_person", "immich_person",
-                    "immich_use_server_faces", "archive_non_best",
+                    "immich_use_server_faces",
                     "immich_use_duplicates", "immich_smart_search"):
             settings.setdefault(key, None if "cache_size" not in key else 5000)
     elif settings["source_type"] == "hybrid":
