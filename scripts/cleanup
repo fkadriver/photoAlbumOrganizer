@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# cleanup — interactive script to remove photoOrganizer artifacts from Photos.app
+#
+# Usage:
+#   ./scripts/cleanup          (auto-detects venv)
+#   source venv/bin/activate && ./scripts/cleanup
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Activate venv if not already active
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+    if [ -f "$PROJECT_DIR/venv/bin/activate" ]; then
+        source "$PROJECT_DIR/venv/bin/activate"
+    fi
+fi
+
+PYTHON="${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"
+PYTHON="${PYTHON:-python3}"
+
+exec "$PYTHON" "$PROJECT_DIR/scripts/cleanup.py" "$@"
