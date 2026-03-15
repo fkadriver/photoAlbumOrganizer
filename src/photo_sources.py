@@ -821,21 +821,34 @@ class ApplePhotoSource(PhotoSource):
         return apple_actions.remove_keyword(photo.id, 'archive')
 
     def list_people(self) -> List[Dict]:
-        """List recognized people from Apple Photos face database."""
-        people = []
+        """List recognized people from Apple Photos face database.
+
+        Photos.app can store multiple face clusters for the same person name.
+        We deduplicate by name, summing face counts and preferring the cluster
+        that has a key photo or is marked as a favorite.
+        """
+        merged: Dict[str, Dict] = {}
         for person in self.photosdb.person_info:
             name = person.name
             if not name or name == '_UNKNOWN_':
                 continue
             key_photo_uuid = person.keyphoto.uuid if person.keyphoto else None
-            people.append({
-                'id': name,
-                'name': name,
-                'photo_count': person.facecount,
-                'key_photo_uuid': key_photo_uuid,
-                'is_favorite': person.favorite,
-            })
-        people.sort(key=lambda p: p['name'].lower())
+            if name not in merged:
+                merged[name] = {
+                    'id': name,
+                    'name': name,
+                    'photo_count': person.facecount,
+                    'key_photo_uuid': key_photo_uuid,
+                    'is_favorite': person.favorite,
+                }
+            else:
+                # Merge duplicate cluster: sum counts, keep best key photo
+                merged[name]['photo_count'] += person.facecount
+                if key_photo_uuid and not merged[name]['key_photo_uuid']:
+                    merged[name]['key_photo_uuid'] = key_photo_uuid
+                if person.favorite:
+                    merged[name]['is_favorite'] = True
+        people = sorted(merged.values(), key=lambda p: p['name'].lower())
         return people
 
     def list_photos_by_person(self, person_id: str, limit: Optional[int] = None,

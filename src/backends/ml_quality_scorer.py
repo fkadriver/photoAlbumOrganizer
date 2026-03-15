@@ -127,7 +127,9 @@ class MLQualityScorer:
             self._torch = torch
 
             # Load pre-trained MobileNetV2
-            self._model = models.mobilenet_v2(pretrained=True)
+            self._model = models.mobilenet_v2(
+                weights=models.MobileNet_V2_Weights.IMAGENET1K_V1
+            )
             self._model.eval()
             self._model.to(self._device)
 
