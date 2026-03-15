@@ -144,31 +144,46 @@ def add_keywords_batch(uuids: list[str], keyword: str) -> int:
 # Albums
 # ---------------------------------------------------------------------------
 
-_BATCH_SIZE = 200  # media items per AppleScript call (avoids arg-list limits)
+_FOLDER = "photoOrganizer"
+_BATCH_SIZE = 200
+
+
+def _ensure_folder() -> bool:
+    """Create the photoOrganizer folder in Photos.app if it doesn't exist."""
+    f = _esc(_FOLDER)
+    ok, _ = _run(f'''tell application "Photos"
+    if not (exists folder "{f}") then
+        make new folder named "{f}"
+    end if
+end tell''')
+    return ok
 
 
 def create_album(name: str) -> bool:
-    """Create a Photos album if it does not already exist."""
+    """Create a Photos album inside the photoOrganizer folder."""
+    _ensure_folder()
     n = _esc(name)
+    f = _esc(_FOLDER)
     ok, _ = _run(f'''tell application "Photos"
-    if not (exists album "{n}") then
-        make new album with properties {{name: "{n}"}}
+    if not (exists album "{n}" of folder "{f}") then
+        make new album named "{n}" at folder "{f}"
     end if
 end tell''')
     return ok
 
 
 def add_to_album(album_name: str, uuids: list[str]) -> bool:
-    """Add photos to an album (creates the album if needed)."""
+    """Add photos to an album in the photoOrganizer folder (creates if needed)."""
     if not create_album(album_name):
         return False
     n = _esc(album_name)
+    f = _esc(_FOLDER)
     ok = True
     for start in range(0, len(uuids), _BATCH_SIZE):
         batch = uuids[start:start + _BATCH_SIZE]
         items = ', '.join(f'media item id "{u}"' for u in batch)
         batch_ok, _ = _run(f'''tell application "Photos"
-    add {{{items}}} to album "{n}"
+    add {{{items}}} to album "{n}" of folder "{f}"
 end tell''')
         ok = ok and batch_ok
     return ok

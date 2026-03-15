@@ -809,8 +809,75 @@ class PhotoOrganizer:
         except Exception as e:
             logging.warning(f"Failed to write processing report: {e}")
 
+    def _load_people_favorites(self) -> dict:
+        """Return {person_name: is_favorite} from the photo source, or {} if unsupported."""
+        try:
+            people = self.photo_source.list_people()
+            return {p['name']: p.get('is_favorite', False) for p in people if p.get('name')}
+        except Exception:
+            return {}
+
+    def _build_album_name(self, group: list, group_index: int,
+                          favorites: dict | None = None) -> str:
+        """Build a descriptive album name: Organized-YYYY-MM-DD-People-XXXX.
+
+        Args:
+            group: list of photo_data dicts with 'datetime', 'metadata', optional 'person_name'
+            group_index: 1-based group number for the XXXX suffix
+            favorites: {name: is_favorite} cache from _load_people_favorites()
+        """
+        if favorites is None:
+            favorites = {}
+
+        # --- date: use the earliest datetime in the group ---
+        date_str = "unknown"
+        for pd in group:
+            dt = pd.get('datetime')
+            if dt:
+                date_str = dt.strftime('%Y-%m-%d')
+                break
+        if date_str == "unknown":
+            for pd in group:
+                raw = (pd.get('metadata') or {}).get('date') or \
+                      (pd.get('metadata') or {}).get('file_created_at')
+                if raw:
+                    date_str = str(raw)[:10]
+                    break
+
+        # --- people: collect from metadata + person_name field ---
+        seen: set[str] = set()
+        people: list[str] = []
+        for pd in group:
+            # person_name set in person-grouping mode
+            pn = pd.get('person_name')
+            if pn and pn not in seen:
+                seen.add(pn)
+                people.append(pn)
+            # persons list in Apple/Immich metadata
+            for name in ((pd.get('metadata') or {}).get('persons') or []):
+                if name and name not in seen:
+                    seen.add(name)
+                    people.append(name)
+
+        # Sort: favorites first, then alphabetical
+        people.sort(key=lambda n: (not favorites.get(n, False), n.lower()))
+        people = people[:6]
+
+        # Sanitise names for use in an album title (keep letters, digits, spaces)
+        def _sanitise(name: str) -> str:
+            import re
+            return re.sub(r'[^\w ]', '', name).strip()
+
+        parts = ["Organized", date_str]
+        if people:
+            parts.append('+'.join(_sanitise(n) for n in people))
+        parts.append(f"{group_index:04d}")
+
+        return '-'.join(parts)
+
     def _process_groups(self, groups):
         """Process all groups: tag, create albums, download, HDR, face-swap."""
+        _people_fav = self._load_people_favorites() if self.create_albums else {}
         for i, group in enumerate(groups, 1):
             if self._interrupted:
                 break
@@ -850,12 +917,12 @@ class PhotoOrganizer:
                                            group[0].get('person_name'),
                                            modifications=modifications)
 
-            # Create albums mode (for Immich)
+            # Create albums
             if self.create_albums:
-                album_name = f"{self.album_prefix}{i:04d}"
+                album_name = self._build_album_name(group, i, _people_fav)
                 photos_in_group = [pd['photo'] for pd in group]
                 if self.photo_source.create_album(album_name, photos_in_group):
-                    print(f"Created album: {album_name}")
+                    print(f"  Created album: {album_name}")
 
             # Mark best as favorite (for Immich)
             if self.mark_best_favorite:
