@@ -746,6 +746,7 @@ _SECTION_LAYOUT = [
         "apple_group_by_person", "apple_person", "apple_local_only",
         "apple_start_date", "apple_end_date",
         "apple_use_duplicates",
+        "excluded_people",
         # immich connection
         "immich_url", "immich_api_key", "immich_album",
         "immich_cache_dir", "immich_cache_size",
@@ -852,6 +853,7 @@ def _build_namespace(settings):
     ns.immich_use_duplicates = settings.get("immich_use_duplicates", False)
     ns.immich_smart_search = settings.get("immich_smart_search")
     ns.apple_use_duplicates = settings.get("apple_use_duplicates", False)
+    ns.excluded_people = settings.get("excluded_people", [])
     ns.resume = False
     ns.force_fresh = False
     ns.state_file = None

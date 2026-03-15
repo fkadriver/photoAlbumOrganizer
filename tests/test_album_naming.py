@@ -19,6 +19,7 @@ def _make_organizer(source=None):
     org.photo_source = source or MagicMock()
     org.create_albums = True
     org.album_prefix = "Organized-"
+    org.excluded_people = set()
     return org
 
 

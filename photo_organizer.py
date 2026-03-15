@@ -155,6 +155,8 @@ Examples:
                         help='Only process photos on or before this date (YYYY-MM-DD)')
     parser.add_argument('--apple-use-duplicates', action='store_true',
                         help='Use Apple Photos native duplicate detection instead of perceptual hashing')
+    parser.add_argument('--excluded-people', nargs='+', metavar='NAME',
+                        help='People to exclude from album names and group labels (case-insensitive)')
 
     # Immich arguments
     parser.add_argument('--immich-url',
@@ -549,6 +551,7 @@ Examples:
         apple_end_date=_parse_date(getattr(args, 'apple_end_date', None), end_of_day=True),
         apple_local_only=getattr(args, 'apple_local_only', True),
         apple_use_duplicates=getattr(args, 'apple_use_duplicates', False),
+        excluded_people=getattr(args, 'excluded_people', None) or [],
     )
 
     # Start live viewer if requested

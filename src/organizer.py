@@ -46,7 +46,8 @@ class PhotoOrganizer:
                  media_type='image', video_strategy='scene_change', video_max_frames=10,
                  apple_start_date=None, apple_end_date=None,
                  apple_local_only=True,
-                 apple_use_duplicates=False):
+                 apple_use_duplicates=False,
+                 excluded_people=None):
         """
         Initialize the photo organizer.
 
@@ -93,6 +94,10 @@ class PhotoOrganizer:
         self.apple_end_date = apple_end_date
         self.apple_local_only = apple_local_only
         self.apple_use_duplicates = apple_use_duplicates
+        # Names to exclude from album titles and group labels (case-insensitive)
+        self.excluded_people: set[str] = {
+            n.lower() for n in (excluded_people or [])
+        }
         self.output_dir = Path(output_dir) if output_dir else None
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
@@ -864,8 +869,9 @@ class PhotoOrganizer:
             person_counts.update(persons_in_photo)
 
         # Sort: favorites first, then frequency descending, then alphabetical
+        # Exclude hidden/private people by name (case-insensitive match)
         people = sorted(
-            person_counts.keys(),
+            (n for n in person_counts if n.lower() not in self.excluded_people),
             key=lambda n: (not favorites.get(n, False), -person_counts[n], n.lower()),
         )
         people = people[:6]
@@ -905,7 +911,10 @@ class PhotoOrganizer:
                 if _pd.get('person_name'):
                     _names.add(_pd['person_name'])
                 _pc.update(_names)
-            _top = [n for n, _ in _pc.most_common(3)]
+            _top = [
+                n for n, _ in _pc.most_common(6)
+                if n.lower() not in self.excluded_people
+            ][:3]
             person_label = f" [{', '.join(_top)}]" if _top else ""
 
             msg = f"\nProcessing group {i}/{len(groups)} ({len(group)} photos){person_label}..."
