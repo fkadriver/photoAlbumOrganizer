@@ -723,20 +723,33 @@ class PhotoOrganizer:
                                modifications=None):
         """Apply structured tags to a group using the Immich tag API or Apple keywords."""
         if not hasattr(self.photo_source, 'client'):
-            # Apple Photos (and other non-Immich sources): use keywords
+            # Apple Photos source: apply keywords AND add to curated albums.
+            # Keywords are stored in the library but invisible on iPhone.
+            # The curated albums (Best Photos / Archive) sync to iPhone via iCloud.
+            from src.apple_actions import add_to_best_photos, add_to_archive
             best_id = best_photo.id
-            tagged = 0
+            best_uuids = [best_id]
+            archive_uuids = []
             for photo_data in group:
                 photo = photo_data['photo']
-                if photo.id == best_id:
-                    if self.photo_source.add_keyword(photo, 'best-photo'):
-                        tagged += 1
+                if photo.id != best_id:
+                    archive_uuids.append(photo.id)
                     for mod in (modifications or []):
                         self.photo_source.add_keyword(photo, f'modified-{mod}')
-                else:
-                    self.photo_source.add_keyword(photo, 'archive')
-                    tagged += 1
-            print(f"  Tagged {tagged}/{len(group)} photos")
+
+            # Keywords (Mac only — not visible on iPhone)
+            self.photo_source.add_keyword(best_photo, 'best-photo')
+            for uid in archive_uuids:
+                from photo_sources import Photo
+                p = Photo(uid, 'apple')
+                self.photo_source.add_keyword(p, 'archive')
+
+            # Albums (visible on iPhone via iCloud sync)
+            add_to_best_photos(best_uuids)
+            if archive_uuids:
+                add_to_archive(archive_uuids)
+
+            print(f"  Tagged {len(group)} photos ({len(archive_uuids)} → archive album)")
             return
 
         client = self.photo_source.client

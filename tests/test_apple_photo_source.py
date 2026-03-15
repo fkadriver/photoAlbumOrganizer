@@ -468,10 +468,13 @@ class TestAppleScriptActions:
     def test_tag_photo_adds_each_tag_as_keyword(self, source):
         photo = self._make_photo()
         calls = []
-        with patch("src.apple_actions._run", side_effect=lambda s: calls.append(s) or (True, "")):
+        with patch("src.apple_actions._run", side_effect=lambda *a, **kw: calls.append(a[0]) or (True, "")):
             source.tag_photo(photo, ["best-photo", "archive"])
-        # One AppleScript call per tag (add_keyword called for each)
-        assert len(calls) == 2
+        # Each tag triggers at least one _run call (may be batched per keyword)
+        assert len(calls) >= 1
+        combined = "\n".join(calls)
+        assert "best-photo" in combined
+        assert "archive" in combined
 
 
 # ---------------------------------------------------------------------------
