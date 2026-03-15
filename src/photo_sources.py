@@ -141,6 +141,10 @@ class PhotoSource(ABC):
         """Mark a photo as archived. Override in subclasses that support it."""
         return False
 
+    def add_keyword(self, photo: Photo, keyword: str) -> bool:
+        """Add a keyword/tag to a photo. Override in subclasses that support it."""
+        return False
+
     def list_people(self) -> List[Dict]:
         """List recognized people. Override in subclasses that support it."""
         return []
@@ -790,16 +794,31 @@ class ApplePhotoSource(PhotoSource):
         return photo.metadata.copy()
 
     def tag_photo(self, photo: Photo, tags: List[str]) -> bool:
-        """Not supported by osxphotos (read-only)."""
-        return False
+        """Add tags as Photos.app keywords via AppleScript."""
+        from src import apple_actions
+        return all(apple_actions.add_keyword(photo.id, t) for t in tags)
+
+    def add_keyword(self, photo: Photo, keyword: str) -> bool:
+        """Add a keyword to a photo in Photos.app via AppleScript."""
+        from src import apple_actions
+        return apple_actions.add_keyword(photo.id, keyword)
 
     def create_album(self, name: str, photos: List[Photo]) -> bool:
-        """Not supported by osxphotos (read-only)."""
-        return False
+        """Create a Photos.app album and add photos via AppleScript."""
+        from src import apple_actions
+        return apple_actions.create_album_with_photos(name, [p.id for p in photos])
 
     def set_favorite(self, photo: Photo, favorite: bool = True) -> bool:
-        """Not supported by osxphotos (read-only)."""
-        return False
+        """Mark photo as favorite in Photos.app via AppleScript."""
+        from src import apple_actions
+        return apple_actions.set_favorite(photo.id, favorite)
+
+    def set_archived(self, photo: Photo, archived: bool = True) -> bool:
+        """Add/remove 'archive' keyword in Photos.app via AppleScript."""
+        from src import apple_actions
+        if archived:
+            return apple_actions.add_keyword(photo.id, 'archive')
+        return apple_actions.remove_keyword(photo.id, 'archive')
 
     def list_people(self) -> List[Dict]:
         """List recognized people from Apple Photos face database."""

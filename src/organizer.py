@@ -45,7 +45,8 @@ class PhotoOrganizer:
                  report_dir="reports",
                  media_type='image', video_strategy='scene_change', video_max_frames=10,
                  apple_start_date=None, apple_end_date=None,
-                 apple_local_only=True):
+                 apple_local_only=True,
+                 apple_use_duplicates=False):
         """
         Initialize the photo organizer.
 
@@ -91,6 +92,7 @@ class PhotoOrganizer:
         self.apple_start_date = apple_start_date
         self.apple_end_date = apple_end_date
         self.apple_local_only = apple_local_only
+        self.apple_use_duplicates = apple_use_duplicates
         self.output_dir = Path(output_dir) if output_dir else None
         self.similarity_threshold = similarity_threshold
         self.time_window = time_window
@@ -364,7 +366,9 @@ class PhotoOrganizer:
             logging.info(f"Starting organize_photos (album={album})")
             logging.info("="*60)
 
-            if self.immich_use_duplicates:
+            if self.apple_use_duplicates:
+                groups = self._organize_by_apple_duplicates(album)
+            elif self.immich_use_duplicates:
                 groups = self._organize_by_immich_duplicates(album)
             elif self.immich_group_by_people:
                 groups = self._organize_by_people_combinations(album)
@@ -667,15 +671,67 @@ class PhotoOrganizer:
         print(f"  {len(all_groups)} group(s) meet minimum size of {self.min_group_size}")
         return all_groups
 
+    def _organize_by_apple_duplicates(self, album: str = None):
+        """Use Apple Photos native duplicate detection as grouping source.
+
+        Groups are formed from the duplicate_group UUID Apple assigned in its
+        own ML-based duplicate detection (exposed by osxphotos as p.duplicates).
+        """
+        from collections import defaultdict
+        photos = self.find_all_photos(album=album)
+        logging.info(f"Found {len(photos)} photos — grouping by Apple native duplicates")
+        print(f"Found {len(photos)} photos — grouping by Apple native duplicates")
+
+        # Bucket photos by their duplicate_group UUID
+        buckets = defaultdict(list)
+        singletons = 0
+        for photo in photos:
+            dup_group = photo.metadata.get('duplicate_group')
+            if dup_group:
+                buckets[dup_group].append(photo)
+            else:
+                singletons += 1
+
+        print(f"  {len(buckets)} Apple duplicate group(s), {singletons} unique photos")
+
+        all_groups = []
+        for dup_uuid, group_photos in buckets.items():
+            if len(group_photos) < self.min_group_size:
+                continue
+            group = []
+            for photo in group_photos:
+                self.state.mark_photo_discovered()
+                metadata = self.extract_metadata(photo)
+                dt = self.get_datetime_from_metadata(metadata)
+                group.append({
+                    'photo': photo,
+                    'hash': None,
+                    'metadata': metadata,
+                    'datetime': dt,
+                })
+            all_groups.append(group)
+
+        print(f"  {len(all_groups)} group(s) meet minimum size of {self.min_group_size}")
+        return all_groups
+
     def _apply_structured_tags(self, group, best_photo, group_index, person_name=None,
                                modifications=None):
-        """Apply structured tags to a group using the Immich tag API."""
+        """Apply structured tags to a group using the Immich tag API or Apple keywords."""
         if not hasattr(self.photo_source, 'client'):
-            # Fall back to simple tagging for non-Immich sources
-            tag = "photo-organizer-duplicate"
+            # Apple Photos (and other non-Immich sources): use keywords
+            best_id = best_photo.id
+            tagged = 0
             for photo_data in group:
-                self.photo_source.tag_photo(photo_data['photo'], [tag])
-            print(f"  Tagged {len(group)} photos")
+                photo = photo_data['photo']
+                if photo.id == best_id:
+                    if self.photo_source.add_keyword(photo, 'best-photo'):
+                        tagged += 1
+                    for mod in (modifications or []):
+                        self.photo_source.add_keyword(photo, f'modified-{mod}')
+                else:
+                    self.photo_source.add_keyword(photo, 'archive')
+                    tagged += 1
+            print(f"  Tagged {tagged}/{len(group)} photos")
             return
 
         client = self.photo_source.client
