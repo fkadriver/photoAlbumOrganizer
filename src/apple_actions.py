@@ -224,3 +224,94 @@ def add_to_best_photos(uuids: list[str]) -> bool:
 def add_to_archive(uuids: list[str]) -> bool:
     """Add photos to the 'Archive' curated album for review/deletion."""
     return add_to_album(_ALBUM_ARCHIVE, uuids)
+
+
+# ---------------------------------------------------------------------------
+# Cleanup — remove everything photoOrganizer wrote to Photos.app
+# ---------------------------------------------------------------------------
+
+_ORGANIZER_KEYWORDS = ['best-photo', 'archive']
+_KEYWORD_PREFIX_MODIFIED = 'modified-'
+
+
+def cleanup_all(photosdb=None) -> dict:
+    """Remove all albums, keywords and favorites set by photoOrganizer.
+
+    Removes:
+      - The photoOrganizer folder and all albums inside it
+      - 'best-photo' and 'archive' keywords from every photo that has them
+      - Any 'modified-*' keywords added during face-swap/HDR processing
+
+    Pass an osxphotos.PhotosDB instance to enable keyword cleanup; without
+    it only the albums are removed.
+
+    Returns a dict with counts of what was removed.
+    """
+    results = {'albums_removed': False, 'keywords_cleaned': 0}
+
+    # 1. Remove the photoOrganizer folder (deletes all albums inside it)
+    f = _esc(_FOLDER)
+    ok, _ = _run(f'''tell application "Photos"
+    if exists folder "{f}" then
+        delete folder "{f}"
+    end if
+end tell''')
+    results['albums_removed'] = ok
+    if ok:
+        print(f"  Removed Photos folder '{_FOLDER}' and all albums inside it.")
+    else:
+        print(f"  Could not remove folder '{_FOLDER}' (may not exist or Photos.app error).")
+
+    # 2. Remove keywords from tagged photos using osxphotos to find them
+    if photosdb is not None:
+        try:
+            tagged = photosdb.photos(keywords=_ORGANIZER_KEYWORDS)
+            uuids = [p.uuid for p in tagged]
+            if uuids:
+                for kw in _ORGANIZER_KEYWORDS:
+                    removed = _remove_keyword_from_batch(uuids, kw)
+                    results['keywords_cleaned'] += removed
+                print(f"  Removed organizer keywords from {len(uuids)} photos.")
+
+            # Also clean modified-* keywords (any keyword starting with the prefix)
+            all_photos = photosdb.photos()
+            mod_tagged = [
+                p for p in all_photos
+                if any(k.startswith(_KEYWORD_PREFIX_MODIFIED) for k in (p.keywords or []))
+            ]
+            for p in mod_tagged:
+                mod_kws = [k for k in p.keywords if k.startswith(_KEYWORD_PREFIX_MODIFIED)]
+                for kw in mod_kws:
+                    remove_keyword(p.uuid, kw)
+                    results['keywords_cleaned'] += 1
+            if mod_tagged:
+                print(f"  Removed modified-* keywords from {len(mod_tagged)} photos.")
+        except Exception as e:
+            logging.warning("Keyword cleanup error: %s", e)
+
+    return results
+
+
+def _remove_keyword_from_batch(uuids: list[str], keyword: str, batch_size: int = 25) -> int:
+    """Remove a keyword from a batch of photos. Returns count removed."""
+    kw = _esc(keyword)
+    removed = 0
+    for start in range(0, len(uuids), batch_size):
+        batch = uuids[start:start + batch_size]
+        lines = ['tell application "Photos"']
+        for idx, uuid in enumerate(batch):
+            lines.append(
+                f'    set kws{idx} to keywords of (media item id "{uuid}")\n'
+                f'    set newKws{idx} to {{}}\n'
+                f'    repeat with k{idx} in kws{idx}\n'
+                f'        if (k{idx} as string) is not "{kw}" then\n'
+                f'            set newKws{idx} to newKws{idx} & {{(k{idx} as string)}}\n'
+                f'        end if\n'
+                f'    end repeat\n'
+                f'    set keywords of (media item id "{uuid}") to newKws{idx}'
+            )
+        lines.append('end tell')
+        ok, _ = _run('\n'.join(lines), timeout=_TIMEOUT_KEYWORDS)
+        if ok:
+            removed += len(batch)
+    return removed

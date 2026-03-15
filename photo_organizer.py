@@ -305,6 +305,9 @@ Examples:
                         help='Launch Immich cleanup menu to undo organizer changes')
 
     # Web viewer
+    parser.add_argument('--cleanup', action='store_true',
+                        help='Remove all albums, keywords, and tags created by photoOrganizer '
+                             'from Apple Photos, then exit')
     parser.add_argument('--web-viewer', action='store_true',
                         help='Launch web viewer for processing report')
     parser.add_argument('--report',
@@ -326,6 +329,22 @@ Examples:
                              '(default: .photo_organizer_settings.json)')
 
     args = parser.parse_args()
+
+    # Handle --cleanup early: remove all photoOrganizer artifacts from Photos.app
+    if getattr(args, 'cleanup', False):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from apple_actions import cleanup_all
+        print("Cleaning up all photoOrganizer albums, keywords and tags from Photos.app...")
+        photosdb = None
+        try:
+            import osxphotos
+            photosdb = osxphotos.PhotosDB()
+        except Exception:
+            print("  (osxphotos unavailable — keyword cleanup skipped; albums will still be removed)")
+        results = cleanup_all(photosdb=photosdb)
+        print(f"\nDone. Albums removed: {results['albums_removed']}, "
+              f"keywords cleaned: {results['keywords_cleaned']}")
+        sys.exit(0)
 
     # Handle --web-viewer early (no state file or validation needed)
     if args.web_viewer:

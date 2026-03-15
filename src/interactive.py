@@ -315,10 +315,23 @@ def _prompt_apple_options():
     )
     person_filter = None
     if group_by_person:
-        person_filter = _prompt_text(
-            "Filter to specific person name (leave blank for all recognized people)"
+        person_mode = _prompt_choice(
+            "Which people to group on?",
+            ["all", "specific", "non-excluded"],
+            default="non-excluded",
+            descriptions=[
+                "All recognized people (ignores excluded_people.txt for grouping)",
+                "Only the specific people you name now",
+                "Everyone NOT in excluded_people.txt (recommended)",
+            ],
         )
-        person_filter = person_filter or None
+        if person_mode == "specific":
+            raw = _prompt_text(
+                "People to group on (comma-separated names)", required=True
+            )
+            person_filter = [n.strip() for n in raw.split(",") if n.strip()]
+        elif person_mode == "all":
+            person_filter = None  # no filter — but excluded_people still applied to naming
 
     local_only = _prompt_bool(
         "Skip iCloud-only photos (not downloaded to this Mac)?", default=True
@@ -526,8 +539,19 @@ def _prompt_immich_actions():
     person_filter = None
     use_server_faces = False
     if group_by_person:
-        person_filter = _prompt_text("Filter to specific person name (leave blank for all)")
-        person_filter = person_filter or None
+        person_mode = _prompt_choice(
+            "Which people to group on?",
+            ["all", "specific", "non-excluded"],
+            default="non-excluded",
+            descriptions=[
+                "All recognized people",
+                "Only the specific people you name now",
+                "Everyone NOT in excluded_people.txt (recommended)",
+            ],
+        )
+        if person_mode == "specific":
+            raw = _prompt_text("People to group on (comma-separated names)", required=True)
+            person_filter = [n.strip() for n in raw.split(",") if n.strip()]
         use_server_faces = _prompt_bool("Use Immich face data for best-photo selection?", default=True)
 
     archive_non_best = _prompt_bool("Archive non-best photos (hides them without deleting)?", default=False)

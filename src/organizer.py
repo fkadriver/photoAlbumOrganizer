@@ -459,16 +459,31 @@ class PhotoOrganizer:
             print("No recognized people found in Immich.")
             return []
 
-        # Filter to specific person if requested
+        # Filter to specific person/people if requested
         if self.immich_person:
-            people = [p for p in people
-                      if p.get('name', '').lower() == self.immich_person.lower()]
+            wanted = {n.lower() for n in (
+                self.immich_person if isinstance(self.immich_person, list)
+                else [self.immich_person]
+            )}
+            people = [p for p in people if p.get('name', '').lower() in wanted]
             if not people:
-                print(f"Person '{self.immich_person}' not found.")
+                print(f"Person(s) '{self.immich_person}' not found.")
                 return []
 
         # Filter to people with names (skip unnamed faces)
         named_people = [p for p in people if p.get('name')]
+
+        # Skip people on the excluded list
+        if self.excluded_people:
+            before = len(named_people)
+            named_people = [
+                p for p in named_people
+                if p.get('name', '').lower() not in self.excluded_people
+            ]
+            skipped = before - len(named_people)
+            if skipped:
+                print(f"  Skipping {skipped} excluded people.")
+
         print(f"Found {len(named_people)} named people (of {len(people)} total)")
 
         all_groups = []
