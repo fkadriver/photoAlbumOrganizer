@@ -489,6 +489,17 @@ def _prompt_apple_actions():
         )
         output = os.path.expanduser(output)
 
+    print()
+    print("  Excluded people: names to skip when grouping and naming albums.")
+    print("  These people will still appear in photos, but won't influence")
+    print("  group selection or show up in album/file names.")
+    excluded_raw = _prompt_text(
+        "Excluded people (comma-separated names, or leave blank for none)",
+        default="",
+        required=False,
+    )
+    excluded_people = [n.strip() for n in excluded_raw.split(",") if n.strip()] if excluded_raw else []
+
     return {
         "apple_use_duplicates": use_duplicates,
         "create_albums": create_albums,
@@ -497,6 +508,7 @@ def _prompt_apple_actions():
         "archive_non_best": archive_non_best,
         "tag_only": tag_only,
         "output": output,
+        "excluded_people": excluded_people,
     }
 
 
@@ -534,6 +546,15 @@ def _prompt_immich_actions():
         output = _prompt_text("Output directory (optional, leave blank to skip)", validator=_validate_output_path)
         output = os.path.expanduser(output) if output else None
 
+    print()
+    print("  Excluded people: names to skip when grouping and naming albums.")
+    excluded_raw = _prompt_text(
+        "Excluded people (comma-separated names, or leave blank for none)",
+        default="",
+        required=False,
+    )
+    excluded_people = [n.strip() for n in excluded_raw.split(",") if n.strip()] if excluded_raw else []
+
     return {
         "tag_only": tag_only,
         "create_albums": create_albums,
@@ -546,6 +567,7 @@ def _prompt_immich_actions():
         "immich_use_duplicates": use_duplicates,
         "immich_smart_search": smart_search,
         "output": output,
+        "excluded_people": excluded_people,
     }
 
 
