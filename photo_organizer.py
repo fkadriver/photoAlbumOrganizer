@@ -471,6 +471,17 @@ Examples:
         photo_source = LocalPhotoSource(args.source)
     elif args.source_type == 'apple':
         photo_source = ApplePhotoSource(library_path=getattr(args, 'apple_library', None))
+        # Pre-check Automation permission if any write-back actions are requested.
+        needs_applescript = (
+            getattr(args, 'create_albums', False) or
+            getattr(args, 'mark_best_favorite', False) or
+            getattr(args, 'archive_non_best', False) or
+            not getattr(args, 'tag_only', True)
+        )
+        if needs_applescript:
+            from src import apple_actions
+            if not apple_actions.check_permission():
+                sys.exit(1)
     elif args.source_type == 'hybrid':
         photo_source = HybridPhotoSource(
             library_path=args.immich_library_path,
