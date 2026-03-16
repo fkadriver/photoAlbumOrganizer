@@ -732,7 +732,7 @@ class ApplePhotoSource(PhotoSource):
                     'description': p.description,
                     'keywords': p.keywords,
                     'albums': [a.title for a in p.album_info],
-                    'persons': p.persons,
+                    'persons': [n for n in (p.persons or []) if n and n != '_UNKNOWN_'],
                     'favorite': p.favorite,
                     'hidden': p.hidden,
                     'latitude': p.latitude,
@@ -848,7 +848,12 @@ class ApplePhotoSource(PhotoSource):
                     merged[name]['key_photo_uuid'] = key_photo_uuid
                 if person.favorite:
                     merged[name]['is_favorite'] = True
-        people = sorted(merged.values(), key=lambda p: p['name'].lower())
+        # Drop empty clusters (facecount=0 after merging) — these are stale
+        # face groups that Photos.app no longer associates with any photo.
+        people = sorted(
+            (p for p in merged.values() if p['photo_count'] > 0),
+            key=lambda p: p['name'].lower()
+        )
         return people
 
     def list_photos_by_person(self, person_id: str, limit: Optional[int] = None,
@@ -877,7 +882,7 @@ class ApplePhotoSource(PhotoSource):
                     'filename': p.original_filename,
                     'filepath': str(local_path) if local_path else None,
                     'date': p.date.isoformat() if p.date else None,
-                    'persons': p.persons,
+                    'persons': [n for n in (p.persons or []) if n and n != '_UNKNOWN_'],
                     'favorite': p.favorite,
                     'media_type': 'image',
                 }
