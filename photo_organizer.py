@@ -302,12 +302,8 @@ Examples:
 
     # Cleanup mode
     parser.add_argument('--cleanup', action='store_true',
-                        help='Launch Immich cleanup menu to undo organizer changes')
-
-    # Web viewer
-    parser.add_argument('--cleanup', action='store_true',
                         help='Remove all albums, keywords, and tags created by photoOrganizer '
-                             'from Apple Photos, then exit')
+                             '(Apple Photos) or launch the Immich cleanup menu, then exit')
     parser.add_argument('--web-viewer', action='store_true',
                         help='Launch web viewer for processing report')
     parser.add_argument('--report',
