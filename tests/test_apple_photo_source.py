@@ -921,6 +921,6 @@ class TestIntegration:
             pytest.skip("No local photos")
         calls = []
         with patch("src.apple_actions._run",
-                   side_effect=lambda s: calls.append(s) or (True, "")):
+                   side_effect=lambda s, **kw: calls.append(s) or (True, "")):
             real_source.tag_photo(photos[0], ["best-photo", "archive"])
         assert len(calls) == 2
