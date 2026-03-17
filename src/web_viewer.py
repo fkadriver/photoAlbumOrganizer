@@ -778,11 +778,14 @@ async function loadPeople() {
     grid.innerHTML = '<div style="padding:2rem;opacity:0.6">Loading people...</div>';
     try {
       const resp = await fetch('/api/people');
-      peopleCache = await resp.json();
-      if (peopleCache.error) {
-        grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">${peopleCache.error}</div>`;
+      const raw = await resp.json();
+      if (raw.error) {
+        grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">${raw.error}</div>`;
         return;
       }
+      // Deduplicate by id on the client side as a safety net
+      const seen = new Set();
+      peopleCache = raw.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
     } catch(e) {
       grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">Failed to load people: ${e}</div>`;
       return;
@@ -934,6 +937,19 @@ class ViewerHandler(BaseHTTPRequestHandler):
             if filepath and Path(filepath).exists():
                 max_size = 250 if size == 'thumbnail' else 1440
                 data = _generate_thumbnail(filepath, max_size)
+
+        # For unsupported formats (DNG/RAW), fall back to Apple derivative thumbnail
+        if not data and _apple_source:
+            try:
+                p = _apple_source.photosdb.get_photo(asset_id)
+                if p:
+                    for deriv in (p.path_derivatives or []):
+                        if deriv and Path(deriv).exists():
+                            data = _generate_thumbnail(deriv, 250)
+                            if data:
+                                break
+            except Exception:
+                pass
 
         if data:
             self._send_image(data)
