@@ -357,14 +357,16 @@ Examples:
                 report_path = os.path.join(args.report_dir, 'latest.json')
         immich_client = None
         apple_source = None
-        # Determine source from CLI args, falling back to saved settings file
-        _viewer_source = getattr(args, 'source_type', None)
-        if not _viewer_source:
+        # Determine source: explicit --source-type takes precedence, otherwise
+        # fall back to the saved settings file (the argparse default is 'local'
+        # so we treat 'local' as "not explicitly set" for the viewer).
+        _viewer_source = getattr(args, 'source_type', 'local')
+        if _viewer_source == 'local':
             try:
                 import json as _json
                 _sf = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    '.photo_organizer_settings.json')
-                _viewer_source = _json.load(open(_sf)).get('source_type')
+                _viewer_source = _json.load(open(_sf)).get('source_type', 'local')
             except Exception:
                 pass
         if args.immich_url and args.immich_api_key:
