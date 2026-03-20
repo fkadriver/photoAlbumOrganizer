@@ -520,6 +520,11 @@ function showDetail(g) {
       <button onclick="reprocessGroup(${g.group_index})" style="padding:0.3rem 0.8rem;font-size:0.8rem;background:#4a6fa5;color:#fff;border:none;border-radius:4px;cursor:pointer;">Run</button>
       <span id="rpStatus" style="font-size:0.75rem;opacity:0.6"></span>
     </div>
+    ${g.actions_taken.includes('modified:face-swapped') ? `
+    <div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.8rem;">
+      <button onclick="uploadToPhotos(${g.group_index})" style="padding:0.4rem 1rem;font-size:0.8rem;background:#27ae60;color:#fff;border:none;border-radius:4px;cursor:pointer;">Import face swap to Photos</button>
+      <span id="uploadStatus_${g.group_index}" style="font-size:0.75rem;opacity:0.7"></span>
+    </div>` : ''}
     <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${esc(a)}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
@@ -750,6 +755,29 @@ async function reprocessGroup(groupIndex) {
     showDetail((report.groups || []).find(g => g.group_index === groupIndex));
   } else {
     if (status) status.textContent = 'Error: ' + (result.error || 'unknown');
+  }
+}
+
+async function uploadToPhotos(groupIndex) {
+  const statusEl = document.getElementById('uploadStatus_' + groupIndex);
+  if (statusEl) statusEl.textContent = 'Importing\u2026';
+  try {
+    const resp = await fetch('/api/actions/upload-to-photos', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_index: groupIndex})
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      if (statusEl) statusEl.textContent = result.message || 'Imported!';
+      toast('Imported face swap into Photos');
+    } else {
+      if (statusEl) statusEl.textContent = 'Error: ' + (result.error || 'unknown');
+      alert('Upload failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = 'Error';
+    alert('Request failed: ' + e);
   }
 }
 
@@ -1052,7 +1080,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": f"Apple Photos error: {e}"}, 500)
                 return
-            result = [
+            raw = [
                 {
                     "id": p['id'],
                     "name": p['name'],
@@ -1062,6 +1090,13 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 }
                 for p in people
             ]
+            # Defensive server-side dedup by name (keeps entry with highest assetCount)
+            deduped: dict = {}
+            for entry in raw:
+                n = entry['name']
+                if n not in deduped or entry['assetCount'] > deduped[n]['assetCount']:
+                    deduped[n] = entry
+            result = sorted(deduped.values(), key=lambda x: x['name'].lower())
             self._send_json(result)
             return
 
@@ -1230,6 +1265,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._handle_reprocess(body)
         elif path == "/api/actions/reprocess-group":
             self._handle_reprocess_group(body)
+        elif path == "/api/actions/upload-to-photos":
+            self._handle_upload_to_photos(body)
         else:
             self.send_error(404)
 
@@ -1647,6 +1684,50 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "face_swap_saved": face_swap_saved,
             "ml_scores": ml_scores,
         })
+
+    def _handle_upload_to_photos(self, body):
+        """Import a face-swapped output file into Apple Photos."""
+        if not _apple_source:
+            self._send_json({"ok": False, "error": "Not running with Apple Photos source"}, 503)
+            return
+
+        group_index = body.get("group_index")
+        if group_index is None:
+            self._send_json({"ok": False, "error": "group_index required"}, 400)
+            return
+
+        # Look for face-swap output files in the known output locations
+        face_swap_path = None
+        if _output_dir:
+            candidates = [
+                Path(_output_dir) / f"group_{group_index:04d}" / "face_swapped.jpg",
+                Path(_output_dir) / f"group_{group_index:04d}" / "face_swapped_reprocessed.jpg",
+            ]
+            for c in candidates:
+                if c.exists():
+                    face_swap_path = c
+                    break
+
+        if not face_swap_path:
+            self._send_json({
+                "ok": False,
+                "error": "No face-swapped file found for this group. Run face swap first."
+            }, 404)
+            return
+
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from apple_actions import import_to_photos
+            ok, msg = import_to_photos(str(face_swap_path), album_name="Face Swapped")
+            if ok:
+                self._send_json({
+                    "ok": True,
+                    "message": f"Imported {face_swap_path.name} into Photos (album: Face Swapped)"
+                })
+            else:
+                self._send_json({"ok": False, "error": f"Photos import failed: {msg}"})
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, 500)
 
 
 class _ReuseAddrHTTPServer(HTTPServer):

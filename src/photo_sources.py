@@ -829,21 +829,27 @@ class ApplePhotoSource(PhotoSource):
         """
         merged: Dict[str, Dict] = {}
         for person in self.photosdb.person_info:
-            name = person.name
-            if not name or name == '_UNKNOWN_':
+            raw_name = person.name
+            if not raw_name or raw_name.strip() == '_UNKNOWN_':
+                continue
+            # Normalise: strip whitespace, collapse to NFC unicode
+            import unicodedata
+            name = unicodedata.normalize('NFC', raw_name.strip())
+            if not name:
                 continue
             key_photo_uuid = person.keyphoto.uuid if person.keyphoto else None
+            facecount = person.facecount or 0
             if name not in merged:
                 merged[name] = {
                     'id': name,
                     'name': name,
-                    'photo_count': person.facecount,
+                    'photo_count': facecount,
                     'key_photo_uuid': key_photo_uuid,
-                    'is_favorite': person.favorite,
+                    'is_favorite': bool(person.favorite),
                 }
             else:
                 # Merge duplicate cluster: sum counts, keep best key photo
-                merged[name]['photo_count'] += person.facecount
+                merged[name]['photo_count'] += facecount
                 if key_photo_uuid and not merged[name]['key_photo_uuid']:
                     merged[name]['key_photo_uuid'] = key_photo_uuid
                 if person.favorite:

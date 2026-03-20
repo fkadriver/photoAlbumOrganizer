@@ -292,6 +292,36 @@ end tell''')
     return results
 
 
+# ---------------------------------------------------------------------------
+# Import files into Photos.app
+# ---------------------------------------------------------------------------
+
+def import_to_photos(filepath: str, album_name: str = None) -> tuple[bool, str]:
+    """Import a file from disk into Photos.app.
+
+    Optionally adds the imported item to an album inside the photoOrganizer
+    folder.  Returns (success, message).
+    """
+    p = _esc(str(filepath))
+    if album_name:
+        _ensure_folder()
+        n = _esc(album_name)
+        f = _esc(_FOLDER)
+        script = f'''tell application "Photos"
+    set newItems to (import POSIX file "{p}" skip check duplicates false)
+    if not (exists album "{n}" of folder "{f}") then
+        make new album named "{n}" at folder "{f}"
+    end if
+    add newItems to album "{n}" of folder "{f}"
+end tell'''
+    else:
+        script = f'''tell application "Photos"
+    import POSIX file "{p}" skip check duplicates false
+end tell'''
+    ok, out = _run(script)
+    return ok, out
+
+
 def _remove_keyword_from_batch(uuids: list[str], keyword: str, batch_size: int = 25) -> int:
     """Remove a keyword from a batch of photos. Returns count removed."""
     kw = _esc(keyword)

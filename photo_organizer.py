@@ -357,6 +357,16 @@ Examples:
                 report_path = os.path.join(args.report_dir, 'latest.json')
         immich_client = None
         apple_source = None
+        # Determine source from CLI args, falling back to saved settings file
+        _viewer_source = getattr(args, 'source_type', None)
+        if not _viewer_source:
+            try:
+                import json as _json
+                _sf = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   '.photo_organizer_settings.json')
+                _viewer_source = _json.load(open(_sf)).get('source_type')
+            except Exception:
+                pass
         if args.immich_url and args.immich_api_key:
             from immich_client import ImmichClient
             immich_client = ImmichClient(
@@ -364,8 +374,9 @@ Examples:
                 api_key=args.immich_api_key,
                 verify_ssl=not args.no_verify_ssl,
             )
-        elif getattr(args, 'source_type', None) == 'apple':
+        elif _viewer_source == 'apple':
             from photo_sources import ApplePhotoSource
+            print("Connecting to Apple Photos library…")
             apple_source = ApplePhotoSource()
         start_viewer(report_path, port=args.port, immich_client=immich_client,
                      apple_source=apple_source)
