@@ -18,6 +18,46 @@ from face_backend import get_face_backend, FaceBackend
 _face_backend: Optional[FaceBackend] = get_face_backend("auto")
 FACE_DETECTION_ENABLED = _face_backend is not None
 
+# BRISQUE pre-filter: images scoring above this threshold are skipped before
+# running the more expensive face-detection pipeline. BRISQUE is a no-reference
+# distortion metric (lower = better; 0-20 excellent, 20-50 acceptable, 50+ poor).
+BRISQUE_SKIP_THRESHOLD = 50
+_brisque_metric = None
+
+
+def _get_brisque():
+    """Return a cached pyiqa BRISQUE metric, or None if pyiqa is unavailable."""
+    global _brisque_metric
+    if _brisque_metric is not None:
+        return _brisque_metric
+    try:
+        import pyiqa
+        _brisque_metric = pyiqa.create_metric('brisque', device='cpu', as_loss=False)
+        return _brisque_metric
+    except Exception:
+        return None
+
+
+def _passes_brisque(image_path: str) -> bool:
+    """Return True if image quality is good enough to warrant face detection.
+
+    Scores above BRISQUE_SKIP_THRESHOLD indicate heavy blur, noise, or other
+    distortions that make face-quality scoring unreliable anyway.
+    """
+    brisque = _get_brisque()
+    if brisque is None:
+        return True
+    try:
+        import torch
+        with torch.no_grad():
+            score = brisque(image_path).item()
+        if score > BRISQUE_SKIP_THRESHOLD:
+            logging.debug(f"BRISQUE pre-filter: score={score:.1f} > {BRISQUE_SKIP_THRESHOLD}, skipping {image_path}")
+            return False
+        return True
+    except Exception:
+        return True
+
 
 def set_face_backend(backend_name: str, gpu: bool = False, gpu_device: int = 0):
     """Set the face detection backend. Call before using any face functions.
@@ -60,6 +100,10 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
                 tmp.write(data)
                 image_path = tmp.name
+
+        # BRISQUE pre-filter: skip face detection on clearly poor-quality images
+        if not _passes_brisque(image_path):
+            return []
 
         # Load image and detect faces
         image = _face_backend.load_image(image_path)

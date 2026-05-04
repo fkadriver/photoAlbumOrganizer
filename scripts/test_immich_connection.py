@@ -111,7 +111,7 @@ def test_connection():
         print(f"\n❌ Error: {e}")
         print("\nTroubleshooting:")
         print("  - Verify API key is correct")
-        print("  - Check Immich version compatibility (v1.95+ recommended)")
+        print("  - Check Immich version compatibility (v2.0+ required)")
         print("  - Try with --no-verify-ssl if using self-signed certificate")
         return False
 

@@ -5,7 +5,7 @@ GPU acceleration targets the most CPU-intensive phase: face detection and encodi
 ## Status
 
 > **✅ IMPLEMENTED**
-> GPU-capable backends (`InsightFace`, `FaceNet/PyTorch`, `YOLOv8-Face`) are available in `src/backends/` and integrated into `get_face_backend()`. ML Quality Scoring via CLIP/MobileNetV2 is also available.
+> GPU-capable backends (`InsightFace`, `FaceNet/PyTorch`, `YOLOv8-Face`) are available in `src/backends/` and integrated into `get_face_backend()`. ML Quality Scoring via TOPIQ-IAA/MobileNetV2 and BRISQUE pre-filtering are also available.
 
 ---
 
@@ -145,15 +145,22 @@ cudaPackages.cudnn
 linuxPackages.nvidia_x11
 ```
 
-A `requirements-gpu.txt` will be provided when the backends are implemented:
+Install GPU dependencies with:
+
+```bash
+pip install -r requirements-gpu.txt
+```
+
+Key packages in `requirements-gpu.txt`:
 
 ```txt
-torch>=2.1.0+cu121
-torchvision>=0.16.0+cu121
+torch>=2.7.0
+torchvision>=0.22.0
+pyiqa>=0.1.12          # TOPIQ-IAA aesthetic scorer + BRISQUE pre-filter
 facenet-pytorch>=2.5.3
-# or:
 insightface>=0.7.3
-onnxruntime-gpu>=1.17.0
+onnxruntime>=1.17.0
+ultralytics>=8.1.0
 ```
 
 ---

@@ -34,10 +34,10 @@ onnxruntime>=1.17.0
 # Supports: CUDA, MPS, CPU
 ultralytics>=8.1.0
 
-# ML Quality Scorer (aesthetic scoring)
-# CLIP for high-quality aesthetic assessment
-# Falls back to MobileNetV2 (in torchvision) if not available
-transformers>=4.36.0
+# ML Quality Scorer (aesthetic scoring) + BRISQUE pre-filter
+# TOPIQ-IAA for high-quality aesthetic assessment; BRISQUE for fast pre-filtering
+# Falls back to MobileNetV2 (in torchvision) if pyiqa unavailable
+pyiqa>=0.1.12
 
 # PyTorch (required for FaceNet, YOLOv8, and ML scorer)
 # Install separately based on your platform:
@@ -50,5 +50,5 @@ transformers>=4.36.0
 #
 # CPU-only:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-torch>=2.1.0
-torchvision>=0.16.0
+torch>=2.7.0
+torchvision>=0.22.0

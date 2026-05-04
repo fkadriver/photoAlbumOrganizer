@@ -139,34 +139,8 @@ class ImmichClient:
             True if connection successful
         """
         try:
-            # Try the newer endpoint first (v1.118+)
-            try:
-                response = self._get('/api/server/ping')
-                data = response.json()
-                if data.get('res') == 'pong':
-                    return True
-            except:
-                pass
-
-            # Try older endpoint
-            try:
-                response = self._get('/api/server-info/ping')
-                data = response.json()
-                if data.get('res') == 'pong':
-                    return True
-            except:
-                pass
-
-            # Try getting server version as fallback
-            try:
-                response = self._get('/api/server-info/version')
-                # If we get a successful response with version info, server is up
-                if response.status_code == 200:
-                    return True
-            except:
-                pass
-
-            return False
+            response = self._get('/api/server/ping')
+            return response.json().get('res') == 'pong'
         except Exception as e:
             print(f"Failed to ping Immich server: {e}")
             return False
@@ -197,16 +171,9 @@ class ImmichClient:
                 })
                 data = response.json()
 
-                # Check if we got any assets
-                items = []
-                if 'assets' in data and 'items' in data['assets']:
-                    items = data['assets']['items']
-                elif 'items' in data:
-                    # Some versions might return items directly
-                    items = data['items']
+                items = data.get('assets', {}).get('items', [])
 
                 if not items:
-                    # No more items, we're done
                     break
 
                 # Filter and add images only
@@ -275,12 +242,7 @@ class ImmichClient:
                 response = self._post('/api/search/metadata', json=query)
                 data = response.json()
 
-                # Extract items from response
-                items = []
-                if 'assets' in data and 'items' in data['assets']:
-                    items = data['assets']['items']
-                elif 'items' in data:
-                    items = data['items']
+                items = data.get('assets', {}).get('items', [])
 
                 if not items:
                     break
@@ -419,21 +381,16 @@ class ImmichClient:
 
         Args:
             asset_ids: List of asset IDs
-            tags: List of tags to add
+            tags: List of tag names to add
 
         Returns:
             True if successful
         """
         try:
-            # Tag each asset individually
-            # Note: Immich API may vary - adjust based on actual API
-            for asset_id in asset_ids:
-                asset = self.get_asset_info(asset_id)
-                if asset:
-                    existing_tags = asset.tags or []
-                    new_tags = list(set(existing_tags + tags))
-                    self._put(f'/api/assets/{asset_id}', json={'tags': new_tags})
-
+            for tag_name in tags:
+                tag_id = self.get_or_create_tag(tag_name)
+                if tag_id:
+                    self.tag_assets_by_tag_id(tag_id, asset_ids)
             return True
         except Exception as e:
             print(f"Failed to tag assets: {e}")
@@ -615,8 +572,7 @@ class ImmichClient:
         try:
             params = {'withHidden': str(with_hidden).lower()}
             response = self._get('/api/people', params=params)
-            data = response.json()
-            return data.get('people', data if isinstance(data, list) else [])
+            return response.json().get('people', [])
         except Exception as e:
             print(f"Failed to get people: {e}")
             return []
@@ -662,11 +618,7 @@ class ImmichClient:
                 })
                 data = response.json()
 
-                items = []
-                if 'assets' in data and 'items' in data['assets']:
-                    items = data['assets']['items']
-                elif 'items' in data:
-                    items = data['items']
+                items = data.get('assets', {}).get('items', [])
 
                 if not items:
                     break
@@ -742,12 +694,7 @@ class ImmichClient:
             })
             data = response.json()
 
-            items = []
-            if 'assets' in data and 'items' in data['assets']:
-                items = data['assets']['items']
-            elif 'items' in data:
-                items = data['items']
-
+            items = data.get('assets', {}).get('items', [])
             return [ImmichAsset(item) for item in items if item.get('type') == 'IMAGE']
         except Exception as e:
             print(f"Failed to perform smart search: {e}")
@@ -887,7 +834,7 @@ class ImmichClient:
             # Search existing tags
             tags = self.get_tags()
             for tag in tags:
-                if tag.get('name') == tag_name or tag.get('value') == tag_name:
+                if tag.get('name') == tag_name:
                     return tag.get('id')
 
             # Create new tag
@@ -949,7 +896,7 @@ class ImmichClient:
             tags = self.get_tags()
             matched = [
                 t for t in tags
-                if (t.get('name') or t.get('value', '')).startswith(prefix)
+                if t.get('name', '').startswith(prefix)
             ]
 
             if not matched:
@@ -958,7 +905,7 @@ class ImmichClient:
 
             print(f"\nFound {len(matched)} tag(s) with prefix '{prefix}':")
             for tag in matched:
-                name = tag.get('name') or tag.get('value', 'Unknown')
+                name = tag.get('name', 'Unknown')
                 print(f"  - {name} (ID: {tag.get('id', '?')})")
 
             if dry_run:
@@ -968,7 +915,7 @@ class ImmichClient:
             deleted = 0
             for tag in matched:
                 tag_id = tag.get('id')
-                name = tag.get('name') or tag.get('value', 'Unknown')
+                name = tag.get('name', 'Unknown')
                 if tag_id and self.delete_tag(tag_id):
                     deleted += 1
                     print(f"  Deleted: {name}")
@@ -1014,11 +961,7 @@ class ImmichClient:
                 })
                 data = response.json()
 
-                items = []
-                if 'assets' in data and 'items' in data['assets']:
-                    items = data['assets']['items']
-                elif 'items' in data:
-                    items = data['items']
+                items = data.get('assets', {}).get('items', [])
 
                 if not items:
                     break

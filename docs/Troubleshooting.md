@@ -132,7 +132,7 @@ direnv allow
 
 ```bash
 # Test with curl
-curl -H "x-api-key: YOUR_KEY" https://your-immich-url/api/server-info/ping
+curl -H "x-api-key: YOUR_KEY" https://your-immich-url/api/server/ping
 # Should return: {"res":"pong"}
 
 # Run the built-in test

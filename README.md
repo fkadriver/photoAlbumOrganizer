@@ -406,7 +406,7 @@ photoAlbumOrganizer/
 - [x] Additional face backends: InsightFace, FaceNet/PyTorch, YOLOv8-Face — see [Face-Backends.md](docs/Face-Backends.md)
 - [x] Async/parallel Immich downloads
 - [x] Video support — see [Roadmap.md](docs/Roadmap.md)
-- [x] ML-based photo quality scoring (CLIP/MobileNetV2)
+- [x] ML-based photo quality scoring (TOPIQ-IAA/MobileNetV2) with BRISQUE pre-filter
 - [x] Hybrid local+Immich mode for same-server deployments
 - [x] Apple Photos integration (macOS, `osxphotos`) — people, native duplicates, Apple ML scores
 - [ ] Google Photos integration (OAuth2, read-only)

@@ -1,19 +1,20 @@
 """
 ML-based image quality scoring for aesthetic photo selection.
 
-Uses CLIP (primary) or MobileNetV2 (fallback) to score images on
-aesthetic quality metrics like sharpness, composition, and exposure.
-Complements face-based scoring for best-photo selection.
+Uses pyiqa TOPIQ-IAA (primary) or MobileNetV2 (fallback) to score images on
+aesthetic quality. Complements face-based scoring for best-photo selection.
 
 Install:
-    pip install transformers torch  # CLIP via HuggingFace
+    pip install pyiqa torch  # TOPIQ-IAA via pyiqa
     # or lightweight fallback:
     pip install torch torchvision   # MobileNetV2 (built into torchvision)
 """
 
+import os
 import sys
+import tempfile
 from pathlib import Path
-from typing import Optional, List, Tuple, TYPE_CHECKING, Any
+from typing import Optional, List, TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -28,112 +29,69 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 class MLQualityScorer:
     """ML-based aesthetic quality scorer for images.
 
-    Uses CLIP embeddings with aesthetic prompts to score image quality,
-    or falls back to MobileNetV2-based scoring if CLIP unavailable.
+    Uses pyiqa TOPIQ-IAA to score image quality, or falls back to
+    MobileNetV2-based scoring if pyiqa is unavailable.
 
-    The score represents aesthetic quality on a 0.0-1.0 scale:
-    - 0.0-0.3: Poor quality (blurry, bad exposure, poor composition)
-    - 0.3-0.6: Average quality
-    - 0.6-0.8: Good quality
-    - 0.8-1.0: Excellent quality (sharp, well-exposed, good composition)
+    Score range 0.0–1.0:
+    - 0.0–0.3: Poor quality (blurry, bad exposure, poor composition)
+    - 0.3–0.6: Average quality
+    - 0.6–0.8: Good quality
+    - 0.8–1.0: Excellent quality (sharp, well-exposed, good composition)
 
     Attributes:
         device: PyTorch device being used
-        model_type: 'clip' or 'mobilenet'
+        model_type: 'topiq' or 'mobilenet'
     """
-
-    # CLIP prompts for aesthetic quality assessment
-    _POSITIVE_PROMPTS = [
-        "a high quality photo",
-        "a professional photograph",
-        "a sharp, well-focused image",
-        "a beautifully composed photo",
-        "excellent lighting and exposure",
-        "a stunning photograph",
-    ]
-
-    _NEGATIVE_PROMPTS = [
-        "a low quality photo",
-        "a blurry image",
-        "poor lighting",
-        "overexposed photo",
-        "underexposed photo",
-        "badly composed image",
-        "out of focus",
-    ]
 
     def __init__(self, device: str = 'cpu', prefer_clip: bool = True):
         """Initialize ML Quality Scorer.
 
         Args:
             device: PyTorch device ('cpu', 'cuda:0', 'mps')
-            prefer_clip: Try CLIP first, fall back to MobileNetV2
+            prefer_clip: Ignored; kept for API compatibility.
         """
         self._device = device
         self._model = None
-        self._processor = None
         self._model_type = None
         self._torch = None
 
-        # Try to initialize CLIP or MobileNetV2
-        if prefer_clip:
-            if self._init_clip():
-                self._model_type = 'clip'
-            elif self._init_mobilenet():
-                self._model_type = 'mobilenet'
-        else:
-            if self._init_mobilenet():
-                self._model_type = 'mobilenet'
-            elif self._init_clip():
-                self._model_type = 'clip'
+        if self._init_topiq():
+            self._model_type = 'topiq'
+        elif self._init_mobilenet():
+            self._model_type = 'mobilenet'
 
         if self._model_type is None:
             raise ImportError(
                 "No ML backend available. Install with:\n"
-                "  pip install transformers torch  # For CLIP\n"
+                "  pip install pyiqa torch  # For TOPIQ-IAA\n"
                 "  # or:\n"
                 "  pip install torch torchvision  # For MobileNetV2"
             )
 
-    def _init_clip(self) -> bool:
-        """Try to initialize CLIP model."""
+    def _init_topiq(self) -> bool:
+        """Try to initialize TOPIQ-IAA via pyiqa."""
         try:
+            import pyiqa
             import torch
-            from transformers import CLIPProcessor, CLIPModel
-
             self._torch = torch
-
-            # Load CLIP model and processor
-            model_name = "openai/clip-vit-base-patch32"
-            self._processor = CLIPProcessor.from_pretrained(model_name)
-            self._model = CLIPModel.from_pretrained(model_name)
-            self._model.eval()
-            self._model.to(self._device)
-
-            # Pre-compute text embeddings for prompts
-            self._positive_embeds = self._encode_texts(self._POSITIVE_PROMPTS)
-            self._negative_embeds = self._encode_texts(self._NEGATIVE_PROMPTS)
-
+            self._model = pyiqa.create_metric('topiq_iaa', device=self._device, as_loss=False)
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def _init_mobilenet(self) -> bool:
-        """Try to initialize MobileNetV2 model."""
+        """Try to initialize MobileNetV2 fallback model."""
         try:
             import torch
             from torchvision import models, transforms
 
             self._torch = torch
-
-            # Load pre-trained MobileNetV2
             self._model = models.mobilenet_v2(
                 weights=models.MobileNet_V2_Weights.IMAGENET1K_V1
             )
             self._model.eval()
             self._model.to(self._device)
 
-            # MobileNetV2 preprocessing
             self._transform = transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
@@ -143,25 +101,9 @@ class MLQualityScorer:
                     std=[0.229, 0.224, 0.225]
                 ),
             ])
-
             return True
-        except Exception as e:
+        except Exception:
             return False
-
-    def _encode_texts(self, texts: List[str]) -> Any:
-        """Encode text prompts using CLIP."""
-        inputs = self._processor(
-            text=texts,
-            return_tensors="pt",
-            padding=True
-        )
-        inputs = {k: v.to(self._device) for k, v in inputs.items()}
-
-        with self._torch.no_grad():
-            text_embeds = self._model.get_text_features(**inputs)
-            text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
-
-        return text_embeds
 
     @property
     def device(self) -> str:
@@ -170,7 +112,7 @@ class MLQualityScorer:
 
     @property
     def model_type(self) -> str:
-        """Return model type ('clip' or 'mobilenet')."""
+        """Return model type ('topiq' or 'mobilenet')."""
         return self._model_type
 
     def score(self, image_path: str) -> float:
@@ -182,14 +124,11 @@ class MLQualityScorer:
         Returns:
             Quality score from 0.0 (poor) to 1.0 (excellent)
         """
-        from PIL import Image
-
-        image = Image.open(image_path).convert("RGB")
-
-        if self._model_type == 'clip':
-            return self._score_clip(image)
+        if self._model_type == 'topiq':
+            return self._score_topiq(image_path)
         else:
-            return self._score_mobilenet(image)
+            from PIL import Image
+            return self._score_mobilenet(Image.open(image_path).convert("RGB"))
 
     def score_array(self, image: np.ndarray) -> float:
         """Score an image from numpy array.
@@ -202,37 +141,23 @@ class MLQualityScorer:
         """
         from PIL import Image
 
-        pil_image = Image.fromarray(image)
-
-        if self._model_type == 'clip':
-            return self._score_clip(pil_image)
+        if self._model_type == 'topiq':
+            pil_image = Image.fromarray(image)
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                pil_image.save(tmp_path)
+                return self._score_topiq(tmp_path)
+            finally:
+                os.unlink(tmp_path)
         else:
-            return self._score_mobilenet(pil_image)
+            return self._score_mobilenet(Image.fromarray(image))
 
-    def _score_clip(self, image: Any) -> float:
-        """Score image using CLIP aesthetic prompts."""
-        # Encode image
-        inputs = self._processor(
-            images=image,
-            return_tensors="pt"
-        )
-        inputs = {k: v.to(self._device) for k, v in inputs.items()}
-
+    def _score_topiq(self, image_path: str) -> float:
+        """Score image using TOPIQ-IAA via pyiqa."""
         with self._torch.no_grad():
-            image_embeds = self._model.get_image_features(**inputs)
-            image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
-
-        # Compute similarity to positive and negative prompts
-        pos_sim = (image_embeds @ self._positive_embeds.T).mean().item()
-        neg_sim = (image_embeds @ self._negative_embeds.T).mean().item()
-
-        # Convert to 0-1 score
-        # Higher similarity to positive prompts = higher score
-        # Score = sigmoid((pos_sim - neg_sim) * scale)
-        diff = pos_sim - neg_sim
-        score = 1.0 / (1.0 + np.exp(-diff * 5.0))  # Scale factor 5.0
-
-        return float(np.clip(score, 0.0, 1.0))
+            score = self._model(image_path)
+        return float(np.clip(score.item(), 0.0, 1.0))
 
     def _score_mobilenet(self, image: Any) -> float:
         """Score image using MobileNetV2 feature analysis.
@@ -240,28 +165,15 @@ class MLQualityScorer:
         Uses activation statistics as a proxy for image quality.
         Well-exposed, sharp images tend to have higher activation variance.
         """
-        # Transform image
         tensor = self._transform(image).unsqueeze(0).to(self._device)
-
-        # Extract features (skip final classifier)
         with self._torch.no_grad():
-            # Use features from the last conv layer
             features = self._model.features(tensor)
 
-        # Compute quality metrics from activations
-        # Higher mean activation and variance indicate better image quality
         mean_act = features.mean().item()
         std_act = features.std().item()
-
-        # Normalize to 0-1 range (based on empirical observations)
-        # Good images typically have mean_act in [0.5, 2.0] and std_act in [0.5, 1.5]
         mean_score = np.clip((mean_act - 0.2) / 1.5, 0.0, 1.0)
         std_score = np.clip((std_act - 0.2) / 1.0, 0.0, 1.0)
-
-        # Combined score (weighted average)
-        score = 0.4 * mean_score + 0.6 * std_score
-
-        return float(np.clip(score, 0.0, 1.0))
+        return float(np.clip(0.4 * mean_score + 0.6 * std_score, 0.0, 1.0))
 
     def score_batch(self, image_paths: List[str]) -> List[float]:
         """Score multiple images in a batch (GPU-optimized).
@@ -272,50 +184,28 @@ class MLQualityScorer:
         Returns:
             List of quality scores, one per image
         """
-        from PIL import Image
-
-        if self._model_type == 'clip':
-            return self._score_batch_clip(image_paths)
+        if self._model_type == 'topiq':
+            return self._score_batch_topiq(image_paths)
         else:
             return self._score_batch_mobilenet(image_paths)
 
-    def _score_batch_clip(self, image_paths: List[str]) -> List[float]:
-        """Batch score images using CLIP."""
-        from PIL import Image
-
-        images = [Image.open(p).convert("RGB") for p in image_paths]
-
-        inputs = self._processor(
-            images=images,
-            return_tensors="pt",
-            padding=True
-        )
-        inputs = {k: v.to(self._device) for k, v in inputs.items()}
-
-        with self._torch.no_grad():
-            image_embeds = self._model.get_image_features(**inputs)
-            image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
-
+    def _score_batch_topiq(self, image_paths: List[str]) -> List[float]:
+        """Score images using TOPIQ-IAA; GPU stays warm across calls."""
         scores = []
-        for emb in image_embeds:
-            emb = emb.unsqueeze(0)
-            pos_sim = (emb @ self._positive_embeds.T).mean().item()
-            neg_sim = (emb @ self._negative_embeds.T).mean().item()
-            diff = pos_sim - neg_sim
-            score = 1.0 / (1.0 + np.exp(-diff * 5.0))
-            scores.append(float(np.clip(score, 0.0, 1.0)))
-
+        with self._torch.no_grad():
+            for path in image_paths:
+                score = self._model(path)
+                scores.append(float(np.clip(score.item(), 0.0, 1.0)))
         return scores
 
     def _score_batch_mobilenet(self, image_paths: List[str]) -> List[float]:
         """Batch score images using MobileNetV2."""
         from PIL import Image
 
-        tensors = []
-        for path in image_paths:
-            image = Image.open(path).convert("RGB")
-            tensors.append(self._transform(image))
-
+        tensors = [
+            self._transform(Image.open(p).convert("RGB"))
+            for p in image_paths
+        ]
         batch = self._torch.stack(tensors).to(self._device)
 
         with self._torch.no_grad():
@@ -328,8 +218,7 @@ class MLQualityScorer:
             std_act = feat.std().item()
             mean_score = np.clip((mean_act - 0.2) / 1.5, 0.0, 1.0)
             std_score = np.clip((std_act - 0.2) / 1.0, 0.0, 1.0)
-            score = 0.4 * mean_score + 0.6 * std_score
-            scores.append(float(np.clip(score, 0.0, 1.0)))
+            scores.append(float(np.clip(0.4 * mean_score + 0.6 * std_score, 0.0, 1.0)))
 
         return scores
 
@@ -342,7 +231,7 @@ def get_quality_scorer(
 
     Args:
         device: PyTorch device ('cpu', 'cuda:0', 'mps')
-        prefer_clip: Try CLIP first, fall back to MobileNetV2
+        prefer_clip: Ignored; kept for API compatibility.
 
     Returns:
         MLQualityScorer instance or None if not available

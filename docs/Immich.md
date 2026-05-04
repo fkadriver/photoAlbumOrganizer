@@ -625,7 +625,7 @@ Check:
 
 Test connection:
 ```bash
-curl -H "x-api-key: YOUR_KEY" http://immich:2283/api/server-info/ping
+curl -H "x-api-key: YOUR_KEY" http://immich:2283/api/server/ping
 ```
 
 **SSL Certificate Errors**
@@ -802,13 +802,13 @@ The Photo Organizer requires different permissions depending on the mode:
 **For download mode:**
 - `asset.read`, `asset.download`
 
-**Note:** If running Immich before v1.138.0, enable the **"all"** permission — granular permissions were added in later versions.
+**Note:** Requires Immich v2.0.0 or later. Granular API key permissions are fully supported in v2.x.
 
 ### API Endpoints Used
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/server-info/ping` | GET | Test connection |
+| `/api/server/ping` | GET | Test connection |
 | `/api/search/metadata` | POST | Search assets |
 | `/api/assets/{id}/thumbnail` | GET | Get thumbnail |
 | `/api/assets/{id}/original` | GET | Download full resolution |
