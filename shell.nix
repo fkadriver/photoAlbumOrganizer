@@ -7,7 +7,7 @@ pkgs.mkShell {
     python311Packages.pip
     python311Packages.virtualenv
     
-    # System dependencies for dlib compilation
+    # Build tools (needed if optionally compiling dlib)
     cmake
     gcc
     gnumake
@@ -72,8 +72,8 @@ pkgs.mkShell {
     python -c "import imagehash" 2>/dev/null || MISSING_PACKAGES+=("imagehash")
     python -c "import cv2" 2>/dev/null || MISSING_PACKAGES+=("opencv-python")
     python -c "import numpy" 2>/dev/null || MISSING_PACKAGES+=("numpy")
-    python -c "import face_recognition" 2>/dev/null || MISSING_PACKAGES+=("face_recognition")
-    
+    python -c "import mediapipe" 2>/dev/null || MISSING_PACKAGES+=("mediapipe")
+
     if [ ''${#MISSING_PACKAGES[@]} -eq 0 ]; then
       echo "✓ All packages ready!"
       echo ""
@@ -81,7 +81,6 @@ pkgs.mkShell {
       echo "⚠️  Missing: ''${MISSING_PACKAGES[@]}"
       echo ""
       echo "Install: pip install -r requirements.txt"
-      echo "         pip install git+https://github.com/ageitgey/face_recognition_models"
       echo ""
     fi
     
