@@ -37,6 +37,19 @@ source "$VENV/bin/activate"
 # Ensure src/ is importable
 export PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
+# On NixOS, Python C extensions need libstdc++, libGL, etc. on LD_LIBRARY_PATH.
+# nix-ld populates NIX_LD_LIBRARY_PATH; fall back to nix-build if it's absent.
+if [[ -n "${NIX_LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="${NIX_LD_LIBRARY_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+elif command -v nix-build &>/dev/null && [[ -z "${LD_LIBRARY_PATH:-}" ]]; then
+    _gcc_lib=$(nix-build '<nixpkgs>' -A stdenv.cc.cc.lib --no-out-link 2>/dev/null)
+    _libgl=$(nix-build '<nixpkgs>' -A libGL --no-out-link 2>/dev/null)
+    _glib=$(nix-build '<nixpkgs>' -A glib.out --no-out-link 2>/dev/null)
+    _zlib=$(nix-build '<nixpkgs>' -A zlib --no-out-link 2>/dev/null)
+    _libxcb=$(nix-build '<nixpkgs>' -A xorg.libxcb --no-out-link 2>/dev/null)
+    export LD_LIBRARY_PATH="${_gcc_lib}/lib:${_libgl}/lib:${_glib}/lib:${_zlib}/lib:${_libxcb}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
 # Run from project root so relative paths work
 cd "$PROJECT_DIR"
 
