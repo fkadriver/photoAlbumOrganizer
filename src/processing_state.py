@@ -5,7 +5,6 @@ Allows long-running photo organization jobs to be interrupted and resumed.
 """
 
 import json
-import pickle
 import threading
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -78,9 +77,6 @@ class ProcessingState:
         """
         Load state from disk.
 
-        Supports both JSON (v2.0) and legacy pickle (v1.0) formats.
-        Legacy pickle files are automatically migrated to JSON on load.
-
         Returns:
             True if state was loaded successfully, False otherwise
         """
@@ -88,18 +84,11 @@ class ProcessingState:
             return False
 
         try:
-            # Try JSON first
             with open(self.state_file, 'r') as f:
                 loaded_state = json.load(f)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            # Fall back to legacy pickle format
-            try:
-                with open(self.state_file, 'rb') as f:
-                    loaded_state = pickle.load(f)
-                print("Migrating state file from pickle to JSON format...")
-            except Exception as e:
-                print(f"Warning: Failed to load state: {e}")
-                return False
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"Warning: Failed to load state: {e}")
+            return False
 
         # Verify version compatibility
         version = loaded_state.get('version')
@@ -109,11 +98,6 @@ class ProcessingState:
 
         self.state = loaded_state
         self.state['version'] = '2.0'
-
-        # Re-save as JSON if migrated from pickle
-        if version == '1.0':
-            self.save()
-            print("State file migrated to JSON format.")
 
         return True
 

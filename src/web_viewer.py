@@ -333,6 +333,12 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
 <div class="toast" id="toast"></div>
 
 <script>
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 let report = null;
 let selectedGroups = new Set();
 let currentReportFile = null;
@@ -405,16 +411,16 @@ function render() {
     card.innerHTML = `
       <div class="group-header">
         <span class="label">Group ${g.group_index} (${g.photo_count} photos)</span>
-        ${g.person_name ? `<span class="person">${g.person_name}</span>` : ''}
+        ${g.person_name ? `<span class="person">${esc(g.person_name)}</span>` : ''}
       </div>
       <div class="thumbs">
-        ${g.photos.map(p => `<img src="/api/thumbnail/${p.asset_id}"
+        ${g.photos.map(p => `<img src="/api/thumbnail/${esc(p.asset_id)}"
           class="${p.is_best ? 'best' : ''}"
-          alt="${p.filename || ''}"
+          alt="${esc(p.filename || '')}"
           loading="lazy">`).join('')}
       </div>
       <div class="group-footer">
-        ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}
+        ${g.actions_taken.map(a => `<span>${esc(a)}</span>`).join('')}
       </div>`;
     grid.appendChild(card);
   });
@@ -468,22 +474,22 @@ function showDetail(g) {
   const _lbList = JSON.stringify(_lbPhotosData).replace(/"/g, '&quot;');
   let photosHtml = g.photos.map(p => `
     <div class="detail-photo ${p.is_best ? 'is-best' : ''}">
-      <input type="checkbox" class="photo-checkbox" value="${p.asset_id}"
+      <input type="checkbox" class="photo-checkbox" value="${esc(p.asset_id)}"
              onchange="updateSplitBtn(${g.group_index})">
-      <img src="/api/preview/${p.asset_id}" alt="${p.filename}"
-           onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${_lbList})">
+      <img src="/api/preview/${esc(p.asset_id)}" alt="${esc(p.filename)}"
+           onclick="openLightbox('${esc(p.asset_id)}', '${esc(p.filename || p.id)}', ${_lbList})">
       ${p.is_best ? '<span class="badge">BEST</span>' : ''}
       <div class="photo-actions">
-        ${!p.is_best ? `<button onclick="setBest(event, ${g.group_index}, '${p.asset_id}')">Set Best</button>` : ''}
-        <a href="/api/full/${p.asset_id}" target="_blank" onclick="event.stopPropagation()">Full</a>
+        ${!p.is_best ? `<button onclick="setBest(event, ${g.group_index}, '${esc(p.asset_id)}')">Set Best</button>` : ''}
+        <a href="/api/full/${esc(p.asset_id)}" target="_blank" onclick="event.stopPropagation()">Full</a>
       </div>
-      <div style="font-size:0.75rem;margin-top:4px">${p.filename || p.id}</div>
+      <div style="font-size:0.75rem;margin-top:4px">${esc(p.filename || p.id)}</div>
     </div>`).join('');
 
   let metaRows = '<tr><th>Photo</th>' + metaKeys.map(h =>
-    `<th>${labels[h] || h.replace('exif_','')}</th>`).join('') + '</tr>';
+    `<th>${esc(labels[h] || h.replace('exif_',''))}</th>`).join('') + '</tr>';
   g.photos.forEach(p => {
-    metaRows += '<tr><td>' + (p.filename || p.id) + (p.is_best ? ' *' : '') + '</td>';
+    metaRows += '<tr><td>' + esc(p.filename || p.id) + (p.is_best ? ' *' : '') + '</td>';
     metaKeys.forEach(k => {
       let v = p[k];
       if (v !== undefined && v !== null && v !== '') {
@@ -491,7 +497,7 @@ function showDetail(g) {
         if ((k === 'filesize' || k === 'exif_fileSizeInByte') && !isNaN(v)) {
           v = (Number(v) / 1024 / 1024).toFixed(1) + ' MB';
         }
-        metaRows += `<td>${v}</td>`;
+        metaRows += `<td>${esc(v)}</td>`;
       } else {
         metaRows += '<td>-</td>';
       }
@@ -500,7 +506,7 @@ function showDetail(g) {
   });
 
   detail.innerHTML = `
-    <h2>Group ${g.group_index}${g.person_name ? ' &mdash; ' + g.person_name : ''}</h2>
+    <h2>Group ${g.group_index}${g.person_name ? ' &mdash; ' + esc(g.person_name) : ''}</h2>
     <div class="detail-photos">${photosHtml}</div>
     <div class="split-bar" id="splitBar">
       <button class="btn-split" onclick="splitSelectedPhotos(${g.group_index})">Split selected to new group</button>
@@ -514,7 +520,7 @@ function showDetail(g) {
       <button onclick="reprocessGroup(${g.group_index})" style="padding:0.3rem 0.8rem;font-size:0.8rem;background:#4a6fa5;color:#fff;border:none;border-radius:4px;cursor:pointer;">Run</button>
       <span id="rpStatus" style="font-size:0.75rem;opacity:0.6"></span>
     </div>
-    <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${a}</span>`).join('')}</div>
+    <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${esc(a)}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
   document.getElementById('overlay').classList.add('show');
@@ -798,9 +804,9 @@ async function loadPeople() {
     card.className = 'person-card';
     card.onclick = () => showPersonPhotos(p);
     card.innerHTML = `
-      <img src="/api/people/${p.id}/thumbnail" alt="${p.name}" loading="lazy">
+      <img src="/api/people/${esc(p.id)}/thumbnail" alt="${esc(p.name)}" loading="lazy">
       <div class="person-info">
-        <div class="person-name">${p.name}${p.isFavorite ? '<span class="person-fav">★</span>' : ''}</div>
+        <div class="person-name">${esc(p.name)}${p.isFavorite ? '<span class="person-fav">★</span>' : ''}</div>
         <div class="person-count">${p.assetCount ? p.assetCount + ' photo' + (p.assetCount !== 1 ? 's' : '') : '—'}</div>
       </div>`;
     grid.appendChild(card);
@@ -818,7 +824,7 @@ async function showPersonPhotos(person) {
   container.style.display = '';
   container.innerHTML = `
     <button class="back-btn" onclick="loadPeople()">Back to People</button>
-    <h3>${person.name} (${person.assetCount} photos)</h3>
+    <h3>${esc(person.name)} (${person.assetCount} photos)</h3>
     <div style="padding:1rem 0;opacity:0.6">Loading photos...</div>`;
 
   try {
@@ -827,13 +833,13 @@ async function showPersonPhotos(person) {
     const lbList = JSON.stringify(photos.map(p => ({assetId: p.asset_id, filename: p.filename || p.id}))).replace(/"/g, '&quot;');
     let photoGrid = '<div class="person-photo-grid">';
     photos.forEach((p, i) => {
-      photoGrid += `<img src="/api/thumbnail/${p.asset_id}" alt="${p.filename || ''}"
-                        loading="lazy" onclick="openLightbox('${p.asset_id}', '${p.filename || p.id}', ${lbList})">`;
+      photoGrid += `<img src="/api/thumbnail/${esc(p.asset_id)}" alt="${esc(p.filename || '')}"
+                        loading="lazy" onclick="openLightbox('${esc(p.asset_id)}', '${esc(p.filename || p.id)}', ${lbList})">`;
     });
     photoGrid += '</div>';
     container.innerHTML = `
       <button class="back-btn" onclick="loadPeople()">Back to People</button>
-      <h3>${person.name} (${photos.length} photos loaded)</h3>
+      <h3>${esc(person.name)} (${photos.length} photos loaded)</h3>
       ${photoGrid}`;
   } catch(e) {
     container.innerHTML = `
@@ -1611,7 +1617,7 @@ def _bind_server(port):
     import socket
     for p in range(port, port + 10):
         try:
-            server = _ReuseAddrHTTPServer(("0.0.0.0", p), ViewerHandler)
+            server = _ReuseAddrHTTPServer(("127.0.0.1", p), ViewerHandler)
             return server, p
         except OSError as e:
             if e.errno in (98, 48):  # Address already in use (Linux=98, macOS=48)
