@@ -89,6 +89,7 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
     if not FACE_DETECTION_ENABLED:
         return []
 
+    tmp_path = None
     try:
         # Get image path (prefer cached)
         if photo.cached_path:
@@ -96,10 +97,10 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
         else:
             # Download and cache
             data = photo_source.get_photo_data(photo)
-            # Save to temp file for face detection
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
                 tmp.write(data)
-                image_path = tmp.name
+                tmp_path = tmp.name
+            image_path = tmp_path
 
         # BRISQUE pre-filter: skip face detection on clearly poor-quality images
         if not _passes_brisque(image_path):
@@ -139,18 +140,17 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
             total_score = smile_score + eye_score * 2  # Weight eyes more
             face_scores.append(total_score)
 
-        # Clean up temp file if created
-        if not photo.cached_path:
-            try:
-                os.unlink(image_path)
-            except:
-                pass
-
         return face_scores
 
     except Exception as e:
         logging.error(f"Error scoring faces in {photo.id}: {e}")
         return []
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def find_best_photo(group, photo_source: PhotoSource):
@@ -282,6 +282,7 @@ def merge_exposures_hdr(group, photo_source: PhotoSource, hdr_gamma: float = 1.0
     if len(group) < 2:
         return None
 
+    temp_paths = []
     try:
         # Load images
         images = []
@@ -294,11 +295,10 @@ def merge_exposures_hdr(group, photo_source: PhotoSource, hdr_gamma: float = 1.0
             else:
                 # Download temporarily if not cached
                 data = photo_source.get_photo_data(photo)
-                # Create temp file
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-                temp_file.write(data)
-                temp_file.close()
-                img_path = Path(temp_file.name)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_file:
+                    temp_file.write(data)
+                    temp_paths.append(temp_file.name)
+                img_path = Path(temp_paths[-1])
 
             # Load image
             img = cv2.imread(str(img_path))
@@ -340,6 +340,12 @@ def merge_exposures_hdr(group, photo_source: PhotoSource, hdr_gamma: float = 1.0
         print(f"  HDR: Merge failed: {e}")
         logging.error(f"HDR merge failed: {e}")
         return None
+    finally:
+        for p in temp_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
 def calculate_eye_aspect_ratio(eye_landmarks):

@@ -46,6 +46,9 @@ class ImmichAsset:
 class ImmichClient:
     """Client for Immich API."""
 
+    # (connect, read) seconds. Long read timeout tolerates slow ML endpoints.
+    DEFAULT_TIMEOUT = (10, 120)
+
     # Maps endpoint prefixes to required API key permission scopes.
     # Used to give actionable 403 error messages.
     _PERMISSION_HINTS = {
@@ -57,7 +60,8 @@ class ImmichClient:
         '/api/tags': 'tag.read, tag.create, or tag.update',
     }
 
-    def __init__(self, url: str, api_key: str, verify_ssl: bool = True):
+    def __init__(self, url: str, api_key: str, verify_ssl: bool = True,
+                 timeout=None):
         """
         Initialize Immich client.
 
@@ -65,10 +69,13 @@ class ImmichClient:
             url: Immich server URL (e.g., http://immich:2283)
             api_key: API key from Immich settings
             verify_ssl: Whether to verify SSL certificates
+            timeout: Per-request timeout as float or (connect, read) tuple.
+                Defaults to DEFAULT_TIMEOUT.
         """
         self.url = url.rstrip('/')
         self.api_key = api_key
         self.verify_ssl = verify_ssl
+        self.timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -76,6 +83,16 @@ class ImmichClient:
             'Accept': 'application/json'
         })
         self.session.verify = verify_ssl
+
+    def close(self):
+        """Close the underlying requests session."""
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
 
     def _permission_hint(self, endpoint: str) -> str:
         """Return a permission hint string for the given endpoint, or empty."""
@@ -98,6 +115,7 @@ class ImmichClient:
 
     def _get(self, endpoint: str, **kwargs) -> requests.Response:
         """Make GET request to Immich API."""
+        kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.get(url, **kwargs)
         self._raise_with_hint(response, endpoint)
@@ -105,6 +123,7 @@ class ImmichClient:
 
     def _post(self, endpoint: str, **kwargs) -> requests.Response:
         """Make POST request to Immich API."""
+        kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.post(url, **kwargs)
         self._raise_with_hint(response, endpoint)
@@ -112,6 +131,7 @@ class ImmichClient:
 
     def _put(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PUT request to Immich API."""
+        kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.put(url, **kwargs)
         self._raise_with_hint(response, endpoint)
@@ -119,6 +139,7 @@ class ImmichClient:
 
     def _patch(self, endpoint: str, **kwargs) -> requests.Response:
         """Make PATCH request to Immich API."""
+        kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.patch(url, **kwargs)
         self._raise_with_hint(response, endpoint)
@@ -126,6 +147,7 @@ class ImmichClient:
 
     def _delete(self, endpoint: str, **kwargs) -> requests.Response:
         """Make DELETE request to Immich API."""
+        kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.delete(url, **kwargs)
         self._raise_with_hint(response, endpoint)

@@ -786,14 +786,14 @@ async function loadPeople() {
       const resp = await fetch('/api/people');
       const raw = await resp.json();
       if (raw.error) {
-        grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">${raw.error}</div>`;
+        grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">${esc(raw.error)}</div>`;
         return;
       }
       // Deduplicate by id on the client side as a safety net
       const seen = new Set();
       peopleCache = raw.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
     } catch(e) {
-      grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">Failed to load people: ${e}</div>`;
+      grid.innerHTML = `<div style="padding:2rem;color:var(--danger)">Failed to load people: ${esc(String(e))}</div>`;
       return;
     }
   }
@@ -875,8 +875,45 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", len(body))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(body)
+
+    def _origin_allowed(self) -> bool:
+        """
+        Reject cross-origin state-changing requests.
+
+        The server is bound to 127.0.0.1, but a browser tab on any site can
+        still POST to http://127.0.0.1:PORT/. Enforce that the Origin
+        (or Referer as a fallback) matches the Host we're serving on.
+        """
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        referer = self.headers.get("Referer")
+
+        def _matches(url_value: str) -> bool:
+            if not url_value:
+                return False
+            try:
+                p = urlparse(url_value)
+            except ValueError:
+                return False
+            if p.hostname not in ("127.0.0.1", "localhost"):
+                return False
+            if p.netloc and host and p.netloc != host:
+                return False
+            return True
+
+        if origin is not None:
+            return _matches(origin)
+        if referer is not None:
+            return _matches(referer)
+        # No Origin and no Referer: browsers send Origin on cross-origin
+        # POSTs, so a missing Origin from a same-origin fetch or a non-browser
+        # client (curl, tests) is acceptable.
+        return True
 
     def _send_image(self, data, content_type="image/jpeg"):
         self.send_response(200)
@@ -1171,6 +1208,10 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def do_POST(self):
+        if not self._origin_allowed():
+            self.send_error(403, "Cross-origin request rejected")
+            return
+
         parsed = urlparse(self.path)
         path = parsed.path
 

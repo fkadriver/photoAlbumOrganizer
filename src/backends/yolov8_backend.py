@@ -12,6 +12,7 @@ Install:
     pip install ultralytics
 """
 
+import hashlib
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -40,9 +41,13 @@ class YOLOv8FaceBackend(FaceBackend):
         gpu_device: CUDA device index (0 = first GPU)
     """
 
-    # Model download URL and local cache path
+    # Model download URL and local cache path.
+    # Source: https://github.com/akanametov/yolo-face (repo was renamed from
+    # yolov8-face; tag is 1.0.0, not v1.0.0). SHA256 pin is from the release
+    # asset digest and must be updated if the upstream asset is re-uploaded.
     _MODEL_NAME = "yolov8n-face.pt"
-    _MODEL_URL = "https://github.com/akanametov/yolov8-face/releases/download/v1.0.0/yolov8n-face.pt"
+    _MODEL_URL = "https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov8n-face.pt"
+    _MODEL_SHA256 = "d545bf1add5aa736a4febac4f4f9245a6d596cd0fe70d5d57989fe0cb9e626ca"
 
     def __init__(self, gpu: bool = False, gpu_device: int = 0):
         """Initialize YOLOv8-Face backend.
@@ -82,35 +87,68 @@ class YOLOv8FaceBackend(FaceBackend):
         # Initialize YOLO model
         self._model = YOLO(model_path)
 
+    @staticmethod
+    def _sha256_of(path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _verify(self, path: Path) -> bool:
+        actual = self._sha256_of(path)
+        return actual == self._MODEL_SHA256
+
     def _get_model_path(self) -> str:
-        """Get path to YOLOv8-face model, downloading if necessary."""
-        # Check in models directory relative to repo root
+        """Get path to YOLOv8-face model, downloading if necessary.
+
+        Verifies the file's SHA256 against a pinned hash. If a cached copy
+        fails verification it is removed. Falling back to Ultralytics'
+        generic yolov8n.pt would give a non-face detector, so we raise
+        instead — the caller can choose a different backend.
+        """
         repo_root = Path(__file__).resolve().parent.parent.parent
+        candidates = [
+            repo_root / "models" / self._MODEL_NAME,
+            Path.cwd() / "models" / self._MODEL_NAME,
+        ]
+
+        for cached in candidates:
+            if cached.exists():
+                if self._verify(cached):
+                    return str(cached)
+                print(f"Warning: {cached} failed SHA256 verification; removing")
+                try:
+                    cached.unlink()
+                except OSError:
+                    pass
+
         models_dir = repo_root / "models"
         model_path = models_dir / self._MODEL_NAME
-
-        if model_path.exists():
-            return str(model_path)
-
-        # Check in current working directory
-        cwd_model = Path.cwd() / "models" / self._MODEL_NAME
-        if cwd_model.exists():
-            return str(cwd_model)
-
-        # Try to download the model
         print(f"Downloading {self._MODEL_NAME}...")
         models_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             import urllib.request
-            urllib.request.urlretrieve(self._MODEL_URL, model_path)
-            print(f"Downloaded to {model_path}")
+            tmp_path = model_path.with_suffix(model_path.suffix + ".part")
+            urllib.request.urlretrieve(self._MODEL_URL, tmp_path)
+            if not self._verify(tmp_path):
+                actual = self._sha256_of(tmp_path)
+                tmp_path.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"SHA256 mismatch for {self._MODEL_NAME}: "
+                    f"expected {self._MODEL_SHA256}, got {actual}. "
+                    f"Refusing to load possibly-tampered model."
+                )
+            tmp_path.replace(model_path)
+            print(f"Downloaded and verified: {model_path}")
             return str(model_path)
         except Exception as e:
-            # Fall back to standard YOLOv8n and hope it works for faces
-            print(f"Could not download face model: {e}")
-            print("Falling back to standard yolov8n.pt")
-            return "yolov8n.pt"
+            raise RuntimeError(
+                f"Could not obtain verified {self._MODEL_NAME}: {e}. "
+                f"Download manually from {self._MODEL_URL} and place at "
+                f"{model_path} (expected sha256 {self._MODEL_SHA256})."
+            ) from e
 
     @property
     def name(self) -> str:
