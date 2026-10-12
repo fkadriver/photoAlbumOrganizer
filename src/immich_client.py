@@ -119,6 +119,9 @@ class ImmichClient:
                 scope = 'tag.asset'
             elif method == 'POST':
                 scope = 'tag.create'
+            elif method == 'PUT' and endpoint.rstrip('/') == '/api/tags':
+                # Bulk upsert (creates missing tags by path) — same scope as POST.
+                scope = 'tag.create'
             elif method == 'PUT':
                 scope = 'tag.update'
             elif method == 'DELETE':
@@ -1008,24 +1011,31 @@ class ImmichClient:
 
     def get_or_create_tag(self, tag_name: str) -> Optional[str]:
         """
-        Find a tag by name or create it if it doesn't exist.
+        Find a tag by its full hierarchical path, creating any missing levels.
 
         Args:
-            tag_name: Tag name (e.g., "photo-organizer/best")
+            tag_name: Full tag path (e.g., "photo-organizer/best"). Immich
+                tags are hierarchical: '/' separates levels, each returned
+                by the API as 'name' (leaf only) plus 'value' (full path).
+                This uses the bulk tag-upsert endpoint, which auto-creates
+                missing ancestor levels — plain tag creation (POST /tags)
+                rejects '/' in the name outright on current Immich servers.
 
         Returns:
             Tag ID if successful, None otherwise
         """
         try:
-            # Search existing tags
-            tags = self.get_tags()
-            for tag in tags:
-                if tag.get('name') == tag_name:
+            response = self._put('/api/tags', json={'tags': [tag_name]})
+            for tag in response.json():
+                if tag.get('value') == tag_name:
                     return tag.get('id')
 
-            # Create new tag
-            response = self._post('/api/tags', json={'name': tag_name})
-            return response.json().get('id')
+            # Upsert didn't echo back the exact path (version differences) —
+            # look it up directly instead of failing outright.
+            for tag in self.get_tags():
+                if tag.get('value') == tag_name or tag.get('name') == tag_name:
+                    return tag.get('id')
+            return None
         except Exception as e:
             print(f"Failed to get or create tag '{tag_name}': {e}")
             return None
@@ -1082,7 +1092,9 @@ class ImmichClient:
             tags = self.get_tags()
             matched = [
                 t for t in tags
-                if t.get('name', '').startswith(prefix)
+                # 'value' is the full hierarchical path (e.g. "photo-organizer/best");
+                # 'name' is leaf-only ("best") and will never match a path prefix.
+                if (t.get('value') or t.get('name', '')).startswith(prefix)
             ]
 
             if not matched:
@@ -1091,7 +1103,7 @@ class ImmichClient:
 
             print(f"\nFound {len(matched)} tag(s) with prefix '{prefix}':")
             for tag in matched:
-                name = tag.get('name', 'Unknown')
+                name = tag.get('value') or tag.get('name', 'Unknown')
                 print(f"  - {name} (ID: {tag.get('id', '?')})")
 
             if dry_run:
@@ -1101,7 +1113,7 @@ class ImmichClient:
             deleted = 0
             for tag in matched:
                 tag_id = tag.get('id')
-                name = tag.get('name', 'Unknown')
+                name = tag.get('value') or tag.get('name', 'Unknown')
                 if tag_id and self.delete_tag(tag_id):
                     deleted += 1
                     print(f"  Deleted: {name}")
@@ -1129,7 +1141,9 @@ class ImmichClient:
             tags = self.get_tags()
             tag_id = None
             for tag in tags:
-                if (tag.get('name') or tag.get('value', '')) == tag_name:
+                # 'value' is the full hierarchical path; fall back to 'name'
+                # for a flat (no '/') tag where the two are the same anyway.
+                if (tag.get('value') or tag.get('name', '')) == tag_name:
                     tag_id = tag.get('id')
                     break
 

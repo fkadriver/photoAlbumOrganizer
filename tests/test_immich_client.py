@@ -142,6 +142,8 @@ class TestPermissionHints:
         ("POST", "/api/search/smart", "asset.read"),
         ("GET", "/api/tags", "tag.read"),
         ("POST", "/api/tags", "tag.create"),
+        ("PUT", "/api/tags", "tag.create"),  # bulk upsert — same scope as POST
+        ("PUT", "/api/tags/t1", "tag.update"),
         ("PUT", "/api/tags/t1/assets", "tag.asset"),
     ])
     def test_hint_names_correct_scope(self, client, method, endpoint, expected_scope):
@@ -152,3 +154,67 @@ class TestPermissionHints:
         client.session.get.return_value = FakeResponse(403)
         with pytest.raises(requests.HTTPError, match="person.read"):
             client._get('/api/people')
+
+
+class TestGetOrCreateTag:
+    """Immich's tags are hierarchical: GET /tags returns 'name' (leaf only,
+    e.g. "best") and 'value' (full path, e.g. "photo-organizer/best").
+    POST /tags rejects any '/' in the name outright, so this must go through
+    the bulk-upsert endpoint (PUT /tags), which auto-creates missing levels
+    and is matched back by 'value', not 'name'."""
+
+    def test_uses_bulk_upsert_with_full_path(self, client):
+        client.session.put.return_value = FakeResponse(200, [
+            {'id': 'tag-1', 'name': 'best', 'value': 'photo-organizer/best'},
+        ])
+        tag_id = client.get_or_create_tag('photo-organizer/best')
+        assert tag_id == 'tag-1'
+
+        url, kwargs = client.session.put.call_args
+        assert url[0] == "http://immich.test/api/tags"
+        assert kwargs['json'] == {'tags': ['photo-organizer/best']}
+
+    def test_matches_response_by_value_not_leaf_name(self, client):
+        # Response includes an unrelated tag sharing the same leaf name.
+        client.session.put.return_value = FakeResponse(200, [
+            {'id': 'wrong-tag', 'name': 'best', 'value': 'other-app/best'},
+            {'id': 'right-tag', 'name': 'best', 'value': 'photo-organizer/best'},
+        ])
+        assert client.get_or_create_tag('photo-organizer/best') == 'right-tag'
+
+    def test_falls_back_to_get_tags_when_upsert_response_lacks_match(self, client):
+        client.session.put.return_value = FakeResponse(200, [])
+        client.session.get.return_value = FakeResponse(200, [
+            {'id': 'existing-tag', 'name': 'best', 'value': 'photo-organizer/best'},
+        ])
+        assert client.get_or_create_tag('photo-organizer/best') == 'existing-tag'
+
+    def test_returns_none_on_error(self, client):
+        client.session.put.return_value = FakeResponse(400)
+        assert client.get_or_create_tag('photo-organizer/best') is None
+
+
+class TestDeleteTagsByPrefix:
+    def test_matches_by_full_path_value_not_leaf_name(self, client):
+        client.session.get.return_value = FakeResponse(200, [
+            {'id': 't1', 'name': 'best', 'value': 'photo-organizer/best'},
+            {'id': 't2', 'name': 'non-best', 'value': 'photo-organizer/non-best'},
+            {'id': 't3', 'name': 'best', 'value': 'other-app/best'},
+        ])
+        matched, deleted = client.delete_tags_by_prefix('photo-organizer/', dry_run=True)
+        assert matched == 2
+        assert deleted == 0
+
+
+class TestSearchAssetsByTag:
+    def test_matches_full_path_not_leaf_name(self, client):
+        client.session.get.return_value = FakeResponse(200, [
+            {'id': 'tag-1', 'name': 'best', 'value': 'photo-organizer/best'},
+        ])
+        client.session.post.return_value = FakeResponse(200, {
+            'assets': {'items': [{'id': 'asset-1'}, {'id': 'asset-2'}]}
+        })
+        asset_ids = client.search_assets_by_tag('photo-organizer/best')
+        assert asset_ids == ['asset-1', 'asset-2']
+        _, kwargs = client.session.post.call_args
+        assert kwargs['json']['tagIds'] == ['tag-1']

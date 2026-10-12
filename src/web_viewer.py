@@ -1379,7 +1379,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
                 for tag_name in [group_tag_name]:
                     tags = _immich_client.get_tags()
                     for t in tags:
-                        if (t.get('name') or t.get('value', '')) == tag_name:
+                        # 'value' is the full hierarchical path; 'name' is leaf-only.
+                        if (t.get('value') or t.get('name', '')) == tag_name:
                             _immich_client.delete_tag(t['id'])
                             break
 
