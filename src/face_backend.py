@@ -398,6 +398,8 @@ def get_face_backend(
             return None
 
     # CPU-only backends
+    auto_errors = []
+
     if backend_name in ("face_recognition", "auto"):
         try:
             return FaceRecognitionBackend()
@@ -405,6 +407,7 @@ def get_face_backend(
             if backend_name == "face_recognition":
                 print(f"Warning: Could not load face_recognition backend: {e}")
                 return None
+            auto_errors.append(("face_recognition", e))
 
     if backend_name in ("mediapipe", "auto"):
         try:
@@ -413,9 +416,12 @@ def get_face_backend(
             if backend_name == "mediapipe":
                 print(f"Warning: Could not load mediapipe backend: {e}")
                 return None
+            auto_errors.append(("mediapipe", e))
 
     if backend_name == "auto":
-        print("Warning: No face detection backend available.")
+        print("Warning: No face detection backend available. Tried:")
+        for name, e in auto_errors:
+            print(f"  - {name}: {e}")
         print("Face detection will be DISABLED.")
         print("Best photo selection will fall back to ML quality scoring "
               "(if enabled) or the first photo in each group.")
