@@ -432,6 +432,37 @@ Examples:
         # -r is non-interactive: auto-start fresh instead of prompting
         args.force_fresh = True
 
+    # Validate arguments before touching any existing progress file below —
+    # a typo'd invocation should fail fast, not prompt to delete prior progress
+    # and then error out anyway.
+    if args.source_type == 'local':
+        if not args.source:
+            parser.error("--source is required for local source type")
+        if not args.output:
+            parser.error("--output is required for local source type")
+
+    if args.source_type == 'immich':
+        if not args.immich_url:
+            parser.error("--immich-url is required for immich source type")
+        if not args.immich_api_key:
+            parser.error("--immich-api-key is required for immich source type")
+        if not args.output and not args.tag_only and not args.create_albums:
+            parser.error("--output, --tag-only, or --create-albums is required for immich source type")
+
+    if args.source_type == 'hybrid':
+        if not args.immich_url:
+            parser.error("--immich-url is required for hybrid source type")
+        if not args.immich_api_key:
+            parser.error("--immich-api-key is required for hybrid source type")
+        if not args.immich_library_path:
+            parser.error("--immich-library-path is required for hybrid source type")
+        if not args.output and not args.tag_only and not args.create_albums:
+            parser.error("--output, --tag-only, or --create-albums is required for hybrid source type")
+
+    if args.source_type == 'apple':
+        if not args.output:
+            parser.error("--output is required for apple source type")
+
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:
         # Determine where the state file would be
@@ -481,35 +512,6 @@ Examples:
         if potential_state_file.exists():
             potential_state_file.unlink()
             print("Starting fresh (previous progress deleted)...")
-
-    # Validate arguments
-    if args.source_type == 'local':
-        if not args.source:
-            parser.error("--source is required for local source type")
-        if not args.output:
-            parser.error("--output is required for local source type")
-
-    if args.source_type == 'immich':
-        if not args.immich_url:
-            parser.error("--immich-url is required for immich source type")
-        if not args.immich_api_key:
-            parser.error("--immich-api-key is required for immich source type")
-        if not args.output and not args.tag_only and not args.create_albums:
-            parser.error("--output, --tag-only, or --create-albums is required for immich source type")
-
-    if args.source_type == 'hybrid':
-        if not args.immich_url:
-            parser.error("--immich-url is required for hybrid source type")
-        if not args.immich_api_key:
-            parser.error("--immich-api-key is required for hybrid source type")
-        if not args.immich_library_path:
-            parser.error("--immich-library-path is required for hybrid source type")
-        if not args.output and not args.tag_only and not args.create_albums:
-            parser.error("--output, --tag-only, or --create-albums is required for hybrid source type")
-
-    if args.source_type == 'apple':
-        if not args.output:
-            parser.error("--output is required for apple source type")
 
     # Deferred imports — these pull in cv2, face_recognition, etc.
     # and require the Nix development environment for native libraries.
