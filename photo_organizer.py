@@ -206,8 +206,11 @@ Examples:
                         help='Similarity threshold (0-64, lower=stricter, default=5)')
     parser.add_argument('--time-window', type=int, default=300,
                         help='Time window in seconds for grouping (default=300, use 0 to disable time window)')
-    parser.add_argument('--min-group-size', type=int, default=3,
-                        help='Minimum photos per group (default: 3, min: 2)')
+    parser.add_argument('--min-group-size', type=int, default=None,
+                        help='Minimum photos per group (min: 2). Default is 3 for '
+                             'similarity/person grouping, or 2 for --immich-use-duplicates '
+                             '/ --apple-use-duplicates, since a real duplicate is already '
+                             'meaningful as a pair.')
     parser.add_argument('--video-strategy', choices=['scene_change', 'fixed_interval', 'iframe'],
                         default='scene_change',
                         help='Video key frame extraction strategy (default: scene_change)')
@@ -462,6 +465,13 @@ Examples:
     if args.source_type == 'apple':
         if not args.output:
             parser.error("--output is required for apple source type")
+
+    # A real duplicate is meaningful as a pair; the noise-filtering min of 3
+    # is for similarity/person grouping, not for sources that already assert
+    # "these are duplicates" (Immich's/Apple's own detection).
+    if args.min_group_size is None:
+        args.min_group_size = 2 if (getattr(args, 'immich_use_duplicates', False) or
+                                     getattr(args, 'apple_use_duplicates', False)) else 3
 
     # Auto-detect existing state file and prompt for resume
     if not args.resume and not args.force_fresh:

@@ -25,7 +25,7 @@ FORCE_FRESH=0
 TEST_LIMIT=""
 THREADS=2
 THRESHOLD=5
-MIN_GROUP_SIZE=3
+MIN_GROUP_SIZE=""  # unset: let photo_organizer.py pick its source-aware default
 ARCHIVE_NON_BEST=0
 USE_DUPLICATES=0
 RESOLVE_DUPLICATES=0
@@ -128,8 +128,14 @@ COMMON_ARGS=(
     --immich-url "$IMMICH_URL"
     --immich-api-key "$IMMICH_API_KEY"
     --threshold "$THRESHOLD"
-    --min-group-size "$MIN_GROUP_SIZE"
 )
+
+# Add --min-group-size flag only if explicitly requested — otherwise let
+# photo_organizer.py pick its source-aware default (2 for native duplicates,
+# 3 for similarity/person grouping).
+if [ -n "$MIN_GROUP_SIZE" ]; then
+    COMMON_ARGS+=(--min-group-size "$MIN_GROUP_SIZE")
+fi
 
 # Add --time-window 0 flag if requested (ignore timestamp)
 if [ "$IGNORE_TIMESTAMP" = "1" ]; then
@@ -392,7 +398,9 @@ OPTIONS:
   --limit N             Limit processing to first N photos (for testing)
   --threads N           Number of threads for parallel processing (default: 2)
   --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
-  --min-group-size N    Minimum photos per group (default: 3, min: 2)
+  --min-group-size N    Minimum photos per group (min: 2). Default: 3 normally,
+                        or 2 with --immich-use-duplicates (a real duplicate is
+                        already meaningful as a pair)
   --archive-non-best    Archive non-best photos (hides without deleting)
   --immich-use-duplicates  Group by Immich's own server-side duplicate
                         detection instead of visual-similarity grouping
