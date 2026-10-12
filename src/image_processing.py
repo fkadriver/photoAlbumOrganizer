@@ -153,42 +153,100 @@ def score_face_quality(photo: Photo, photo_source: PhotoSource):
                 pass
 
 
-def find_best_photo(group, photo_source: PhotoSource):
+def _find_best_by_quality_score(group, photo_source: PhotoSource, quality_scorer):
     """
-    Find the best photo in a group based on face quality.
+    Score each photo with an ML aesthetic/quality scorer (e.g. TOPIQ-IAA) and
+    return the highest-scoring photo_data dict, or None if scoring fails for
+    every photo in the group.
+    """
+    best_photo = None
+    best_score = None
+
+    for photo_data in group:
+        photo = photo_data['photo']
+        tmp_path = None
+        score = None
+        try:
+            if photo.cached_path:
+                image_path = str(photo.cached_path)
+            else:
+                data = photo_source.get_photo_data(photo)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                    tmp.write(data)
+                    tmp_path = tmp.name
+                image_path = tmp_path
+
+            score = quality_scorer.score(image_path)
+        except Exception as e:
+            logging.error(f"Error scoring quality for {photo.id}: {e}")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+        if score is not None and (best_score is None or score > best_score):
+            best_score = score
+            best_photo = photo_data
+
+    return best_photo
+
+
+def find_best_photo(group, photo_source: PhotoSource, quality_scorer=None):
+    """
+    Find the best photo in a group based on face quality, falling back to
+    ML aesthetic/quality scoring when no photo in the group has a detected
+    face (e.g. face detection is disabled, or the group has no people in it).
 
     Args:
         group: List of photo_data dictionaries
         photo_source: PhotoSource to get photo data from
+        quality_scorer: Optional ML quality scorer (e.g. TOPIQ-IAA) used as
+            the fallback signal when face-based scoring finds nothing
 
     Returns:
         Best photo_data dictionary from the group
     """
     best_photo = None
     best_score = -1
+    any_faces = False
 
     for photo_data in group:
         scores = score_face_quality(photo_data['photo'], photo_source)
+        if scores:
+            any_faces = True
         avg_score = sum(scores) / len(scores) if scores else 0
 
         if avg_score > best_score:
             best_score = avg_score
             best_photo = photo_data
 
-    # If no faces found, return first photo
+    if any_faces and best_photo:
+        return best_photo
+
+    if quality_scorer is not None:
+        ml_best = _find_best_by_quality_score(group, photo_source, quality_scorer)
+        if ml_best is not None:
+            return ml_best
+
+    # No faces detected and no quality scorer available — first photo
     return best_photo if best_photo else group[0]
 
 
-def find_best_photo_immich_faces(group, photo_source):
+def find_best_photo_immich_faces(group, photo_source, quality_scorer=None):
     """
     Find the best photo using Immich server-side face bounding boxes.
 
     Scores photos by total face area (larger faces = clearer, closer shots).
-    Falls back to find_best_photo() if no face data is available.
+    Falls back to find_best_photo() (face quality, then ML quality scoring)
+    if no face data is available.
 
     Args:
         group: List of photo_data dictionaries
         photo_source: PhotoSource with get_asset_face_data() support
+        quality_scorer: Optional ML quality scorer passed through to the
+            find_best_photo() fallback
 
     Returns:
         Best photo_data dictionary from the group
@@ -219,8 +277,8 @@ def find_best_photo_immich_faces(group, photo_source):
     if any_faces and best_photo:
         return best_photo
 
-    # Fall back to local face scoring
-    return find_best_photo(group, photo_source)
+    # Fall back to local face scoring, then ML quality scoring
+    return find_best_photo(group, photo_source, quality_scorer=quality_scorer)
 
 
 def should_merge_hdr(group, enable_hdr: bool) -> bool:

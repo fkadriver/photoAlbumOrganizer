@@ -417,7 +417,8 @@ def get_face_backend(
     if backend_name == "auto":
         print("Warning: No face detection backend available.")
         print("Face detection will be DISABLED.")
-        print("Photos will be grouped, but best photo selection will be random.")
+        print("Best photo selection will fall back to ML quality scoring "
+              "(if enabled) or the first photo in each group.")
 
     return None
 

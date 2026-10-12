@@ -977,11 +977,14 @@ class PhotoOrganizer:
             print(msg)
             logging.info(msg)
 
-            # Find best photo
+            # Find best photo (falls back to ML quality scoring when no
+            # face is detected in any photo in the group)
             if self.immich_use_server_faces:
-                best_photo_data = find_best_photo_immich_faces(group, self.photo_source)
+                best_photo_data = find_best_photo_immich_faces(
+                    group, self.photo_source, quality_scorer=self.ml_quality_scorer)
             else:
-                best_photo_data = find_best_photo(group, self.photo_source)
+                best_photo_data = find_best_photo(
+                    group, self.photo_source, quality_scorer=self.ml_quality_scorer)
             best_photo = best_photo_data['photo']
 
             # Determine which modifications apply to this group
