@@ -68,6 +68,8 @@ Full read/write integration with [Immich](https://immich.app/):
 - **Parallel downloads** — 8 concurrent thumbnail workers for 4–8× faster processing
 - **Real-time sync** — daemon mode (`--daemon`) polls for new photos; bi-directional sync detects Immich UI changes
 - **Cleanup menu** — undo all tags, albums, and favorites created by the organizer
+- **Native duplicate resolve** — `--immich-use-duplicates` groups by Immich's own server-side duplicate detection; resolving a group (via the web viewer or `--resolve-duplicates`) calls Immich's `/duplicates/resolve` to keep one photo, trash the rest, and clear the duplicate flag
+- **Merge duplicate people** — `--merge-people` opens a menu that finds person records sharing a name (Immich's face clustering sometimes splits one person into two) and merges them via Immich's person-merge API; also supports reassigning a single misassigned face
 
 See [Immich.md](Immich.md) for full configuration and usage details.
 

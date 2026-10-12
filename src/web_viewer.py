@@ -620,7 +620,7 @@ async function bulkAction(action) {
   const indices = Array.from(selectedGroups);
   const labels = {
     'archive-non-best': `Archive non-best photos in ${indices.length} group(s)?`,
-    'delete-non-best': `PERMANENTLY DELETE non-best photos in ${indices.length} group(s)? This cannot be undone!`,
+    'delete-non-best': `Move non-best photos in ${indices.length} group(s) to the Immich trash? They can be restored from Immich's trash until it's emptied.`,
     'discard': `Discard organizer changes for ${indices.length} group(s)? This will unfavorite, unarchive, and remove tags.`,
   };
   if (!confirm(labels[action] || `Run ${action} on ${indices.length} group(s)?`)) return;
@@ -1250,8 +1250,12 @@ class ViewerHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(content_length)) if content_length else {}
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(content_length)) if content_length else {}
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send_json({"ok": False, "error": f"Malformed request body: {e}"}, 400)
+            return
 
         if path == "/api/actions/set-best":
             self._handle_set_best(body)
@@ -1288,6 +1292,10 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
         if not group:
             self._send_json({"ok": False, "error": "Group not found"}, 404)
+            return
+
+        if not any(p["asset_id"] == new_best_id for p in group["photos"]):
+            self._send_json({"ok": False, "error": "asset_id is not a member of this group"}, 400)
             return
 
         old_best_id = group["best_photo"]["asset_id"]
@@ -1329,6 +1337,7 @@ class ViewerHandler(BaseHTTPRequestHandler):
         report = _load_report()
         affected = 0
         asset_count = 0
+        resolved_native = 0
 
         for g in report.get("groups", []):
             if g["group_index"] not in indices:
@@ -1346,7 +1355,19 @@ class ViewerHandler(BaseHTTPRequestHandler):
 
             elif action == "delete-non-best":
                 if non_best_ids:
-                    _immich_client.bulk_delete_assets(non_best_ids, force=False)
+                    duplicate_id = g.get("immich_duplicate_id")
+                    if duplicate_id:
+                        # Group came from Immich's own server-side duplicate
+                        # detection — resolve it natively so the duplicate flag
+                        # is cleared, not just the assets trashed.
+                        _immich_client.resolve_duplicates([{
+                            'duplicate_id': duplicate_id,
+                            'keep_asset_ids': [best_id],
+                            'trash_asset_ids': non_best_ids,
+                        }])
+                        resolved_native += 1
+                    else:
+                        _immich_client.bulk_delete_assets(non_best_ids, force=False)
                     asset_count += len(non_best_ids)
 
             elif action == "discard":
@@ -1362,9 +1383,13 @@ class ViewerHandler(BaseHTTPRequestHandler):
                             _immich_client.delete_tag(t['id'])
                             break
 
+        delete_msg = f"Trashed {asset_count} non-best photo(s) in {affected} group(s)"
+        if resolved_native:
+            delete_msg += f" ({resolved_native} resolved via Immich's native duplicate detection)"
+
         messages = {
             "archive-non-best": f"Archived {asset_count} non-best photo(s) in {affected} group(s)",
-            "delete-non-best": f"Trashed {asset_count} non-best photo(s) in {affected} group(s)",
+            "delete-non-best": delete_msg,
             "discard": f"Discarded changes for {affected} group(s) ({asset_count} assets unfavorited/unarchived)",
         }
         self._send_json({"ok": True, "message": messages.get(action, "Done")})
@@ -1615,15 +1640,21 @@ class ViewerHandler(BaseHTTPRequestHandler):
             try:
                 import cv2
                 from image_processing import should_merge_hdr, merge_exposures_hdr
-                from photo_sources import Photo
+                from photo_sources import Photo, LocalPhotoSource
+                _local_source = LocalPhotoSource('.')
                 mini_group = []
                 for p in photos:
                     aid = p.get("asset_id") or p.get("id")
                     if aid in paths:
                         photo_obj = Photo(photo_id=aid, source='local',
-                                         metadata={'filename': p.get('filename', aid)},
-                                         cached_path=paths[aid])
-                        mini_group.append({'photo': photo_obj, 'metadata': {}})
+                                         metadata={'filepath': str(paths[aid]),
+                                                   'filename': p.get('filename', aid)})
+                        photo_obj.cached_path = paths[aid]
+                        try:
+                            exif_meta = _local_source.get_metadata(photo_obj)
+                        except Exception:
+                            exif_meta = photo_obj.metadata
+                        mini_group.append({'photo': photo_obj, 'metadata': exif_meta})
                 if should_merge_hdr(mini_group, enable_hdr=True):
                     hdr_img = merge_exposures_hdr(mini_group, None, hdr_gamma=2.2)
                     if hdr_img is not None:
@@ -1648,8 +1679,9 @@ class ViewerHandler(BaseHTTPRequestHandler):
                         aid = p.get("asset_id") or p.get("id")
                         if aid in paths:
                             photo_obj = Photo(photo_id=aid, source='local',
-                                             metadata={'filename': p.get('filename', aid)},
-                                             cached_path=paths[aid])
+                                             metadata={'filepath': str(paths[aid]),
+                                                       'filename': p.get('filename', aid)})
+                            photo_obj.cached_path = paths[aid]
                             mini_group.append({'photo': photo_obj, 'metadata': {}})
                     best_path = paths.get(new_best_id)
                     if best_path and mini_group:
@@ -1749,7 +1781,7 @@ def _bind_server(port):
 
 
 def start_viewer_background(report_path, port=8888, immich_client=None, report_dir="reports",
-                            apple_source=None):
+                            output_dir=None, apple_source=None):
     """
     Start the web viewer server in a background daemon thread.
 
@@ -1758,6 +1790,7 @@ def start_viewer_background(report_path, port=8888, immich_client=None, report_d
         port: HTTP port (default: 8080)
         immich_client: Optional ImmichClient for thumbnail proxying
         report_dir: Directory containing timestamped reports
+        output_dir: Base output directory for writing HDR/face-swap files
         apple_source: Optional ApplePhotoSource for people/thumbnail serving
 
     Returns:
@@ -1765,10 +1798,11 @@ def start_viewer_background(report_path, port=8888, immich_client=None, report_d
     """
     import threading
 
-    global _report_path, _immich_client, _report_dir, _apple_source
+    global _report_path, _immich_client, _report_dir, _output_dir, _apple_source
     _report_path = str(report_path)
     _immich_client = immich_client
     _report_dir = str(report_dir)
+    _output_dir = output_dir
     _apple_source = apple_source
 
     # Build local file cache for fallback serving

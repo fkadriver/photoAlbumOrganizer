@@ -49,17 +49,6 @@ class ImmichClient:
     # (connect, read) seconds. Long read timeout tolerates slow ML endpoints.
     DEFAULT_TIMEOUT = (10, 120)
 
-    # Maps endpoint prefixes to required API key permission scopes.
-    # Used to give actionable 403 error messages.
-    _PERMISSION_HINTS = {
-        '/api/duplicates': 'duplicate.read',
-        '/api/people': 'people.read',
-        '/api/faces': 'people.read',
-        '/api/search/smart': 'asset.read',
-        '/api/search/metadata': 'asset.read',
-        '/api/tags': 'tag.read, tag.create, or tag.update',
-    }
-
     def __init__(self, url: str, api_key: str, verify_ssl: bool = True,
                  timeout=None):
         """
@@ -94,21 +83,72 @@ class ImmichClient:
     def __exit__(self, exc_type, exc, tb):
         self.close()
 
-    def _permission_hint(self, endpoint: str) -> str:
-        """Return a permission hint string for the given endpoint, or empty."""
-        for prefix, scope in self._PERMISSION_HINTS.items():
-            if endpoint.startswith(prefix):
-                return (f"\n  Hint: Your API key may need the '{scope}' permission. "
-                        f"Regenerate it in Immich → Administration → API Keys "
-                        f"with the required scope (or use 'All').")
-        return ""
+    def _permission_hint(self, method: str, endpoint: str) -> str:
+        """Return a permission hint string for the given method+endpoint, or empty.
 
-    def _raise_with_hint(self, response: requests.Response, endpoint: str):
+        Mirrors Immich's granular API key scopes (see Immich's `Permission` enum)
+        so a 403 tells the user exactly which scope to add, rather than a generic
+        list of maybe-relevant permissions.
+        """
+        scope = None
+
+        if endpoint.startswith('/api/duplicates'):
+            if endpoint.endswith('/resolve') or method in ('POST', 'DELETE'):
+                scope = 'duplicate.delete'
+            else:
+                scope = 'duplicate.read'
+        elif endpoint.startswith('/api/people'):
+            if '/reassign' in endpoint:
+                scope = 'person.reassign'
+            elif '/merge' in endpoint:
+                scope = 'person.merge'
+            elif method == 'POST':
+                scope = 'person.create'
+            elif method == 'PUT':
+                scope = 'person.update'
+            elif method == 'DELETE':
+                scope = 'person.delete'
+            else:
+                scope = 'person.read'
+        elif endpoint.startswith('/api/faces'):
+            scope = 'person.read'
+        elif endpoint.startswith('/api/search/smart') or endpoint.startswith('/api/search/metadata'):
+            scope = 'asset.read'
+        elif endpoint.startswith('/api/tags'):
+            if '/assets' in endpoint:
+                scope = 'tag.asset'
+            elif method == 'POST':
+                scope = 'tag.create'
+            elif method == 'PUT':
+                scope = 'tag.update'
+            elif method == 'DELETE':
+                scope = 'tag.delete'
+            else:
+                scope = 'tag.read'
+        elif endpoint.startswith('/api/albums'):
+            if '/assets' in endpoint:
+                scope = 'album.update'
+            elif method == 'POST':
+                scope = 'album.create'
+            elif method == 'DELETE':
+                scope = 'album.delete'
+            else:
+                scope = 'album.read'
+        elif endpoint.startswith('/api/assets'):
+            scope = 'asset.update' if method in ('PUT', 'PATCH', 'DELETE') else 'asset.read'
+
+        if not scope:
+            return ""
+        return (f"\n  Hint: Your API key may need the '{scope}' permission. "
+                f"Regenerate it in Immich → Administration → API Keys "
+                f"with the required scope (or use 'All').")
+
+    def _raise_with_hint(self, response: requests.Response, method: str, endpoint: str):
         """Raise for HTTP errors, adding permission hints for 403."""
         if response.status_code == 403:
-            hint = self._permission_hint(endpoint)
+            hint = self._permission_hint(method, endpoint)
             raise requests.HTTPError(
-                f"403 Forbidden for {endpoint}{hint}",
+                f"403 Forbidden for {method} {endpoint}{hint}",
                 response=response,
             )
         response.raise_for_status()
@@ -118,7 +158,7 @@ class ImmichClient:
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.get(url, **kwargs)
-        self._raise_with_hint(response, endpoint)
+        self._raise_with_hint(response, 'GET', endpoint)
         return response
 
     def _post(self, endpoint: str, **kwargs) -> requests.Response:
@@ -126,7 +166,7 @@ class ImmichClient:
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.post(url, **kwargs)
-        self._raise_with_hint(response, endpoint)
+        self._raise_with_hint(response, 'POST', endpoint)
         return response
 
     def _put(self, endpoint: str, **kwargs) -> requests.Response:
@@ -134,7 +174,7 @@ class ImmichClient:
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.put(url, **kwargs)
-        self._raise_with_hint(response, endpoint)
+        self._raise_with_hint(response, 'PUT', endpoint)
         return response
 
     def _patch(self, endpoint: str, **kwargs) -> requests.Response:
@@ -142,7 +182,7 @@ class ImmichClient:
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.patch(url, **kwargs)
-        self._raise_with_hint(response, endpoint)
+        self._raise_with_hint(response, 'PATCH', endpoint)
         return response
 
     def _delete(self, endpoint: str, **kwargs) -> requests.Response:
@@ -150,7 +190,7 @@ class ImmichClient:
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
         response = self.session.delete(url, **kwargs)
-        self._raise_with_hint(response, endpoint)
+        self._raise_with_hint(response, 'DELETE', endpoint)
         return response
 
     def ping(self) -> bool:
@@ -616,6 +656,24 @@ class ImmichClient:
             print(f"Failed to get person {person_id}: {e}")
             return None
 
+    def get_person_statistics(self, person_id: str) -> int:
+        """
+        Get the number of assets a person appears in (cheap — avoids paging
+        through search/metadata just to count).
+
+        Args:
+            person_id: Person ID
+
+        Returns:
+            Asset count, or 0 if unavailable
+        """
+        try:
+            response = self._get(f'/api/people/{person_id}/statistics')
+            return response.json().get('assets', 0)
+        except Exception as e:
+            print(f"Failed to get statistics for person {person_id}: {e}")
+            return 0
+
     def get_person_assets(self, person_id: str, limit: Optional[int] = None) -> List[ImmichAsset]:
         """
         Get all photo assets for a specific person.
@@ -694,6 +752,57 @@ class ImmichClient:
             print(f"Failed to get person thumbnail {person_id}: {e}")
             return None
 
+    def merge_people(self, person_ids: List[str]) -> bool:
+        """
+        Merge two or more person records into one.
+
+        The FIRST id in person_ids becomes the survivor: it keeps its name,
+        thumbnail, and favorite/hidden state (filled in from the others only
+        where it was previously unset), and inherits all faces from the rest.
+        The other person records are deleted. This is irreversible.
+
+        Args:
+            person_ids: Person IDs to merge; first is the target/survivor.
+                Must contain at least 2 distinct IDs.
+
+        Returns:
+            True if successful
+        """
+        if len(set(person_ids)) < 2:
+            print("merge_people requires at least 2 distinct person IDs")
+            return False
+        try:
+            self._post('/api/people/merge', json={'ids': person_ids})
+            return True
+        except Exception as e:
+            print(f"Failed to merge people {person_ids}: {e}")
+            return False
+
+    def reassign_faces(self, target_person_id: str, reassignments: List[Dict]) -> bool:
+        """
+        Move specific misassigned faces onto a different person, without
+        merging the two person records entirely.
+
+        Args:
+            target_person_id: Person ID the faces should be reassigned to
+            reassignments: List of dicts, each identifying one face to move:
+                - 'person_id': the person the face is currently assigned to
+                - 'asset_id': the asset the face appears in
+
+        Returns:
+            True if successful
+        """
+        try:
+            data = [
+                {'personId': r['person_id'], 'assetId': r['asset_id']}
+                for r in reassignments
+            ]
+            self._put(f'/api/people/{target_person_id}/reassign', json={'data': data})
+            return True
+        except Exception as e:
+            print(f"Failed to reassign faces to person {target_person_id}: {e}")
+            return False
+
     # --- ML Features ---
 
     def smart_search(self, query: str, page: int = 1, size: int = 100) -> List[ImmichAsset]:
@@ -735,6 +844,61 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to get duplicates: {e}")
             return []
+
+    def resolve_duplicates(self, groups: List[Dict]) -> bool:
+        """
+        Resolve server-side duplicate groups: keep the chosen assets, trash the
+        rest, and clear the duplicate flag so the group stops showing up in
+        get_duplicates(). Whether the trashed assets land in Immich's trash
+        (recoverable) or are deleted outright is controlled by the server's own
+        trash-retention setting, not by this call.
+
+        Args:
+            groups: List of dicts, each with:
+                - 'duplicate_id': the Immich duplicateId from get_duplicates()
+                - 'keep_asset_ids': asset IDs to keep
+                - 'trash_asset_ids': asset IDs to trash/delete
+
+        Returns:
+            True if the request succeeded
+        """
+        try:
+            payload = {
+                'groups': [
+                    {
+                        'duplicateId': g['duplicate_id'],
+                        'keepAssetIds': g['keep_asset_ids'],
+                        'trashAssetIds': g['trash_asset_ids'],
+                    }
+                    for g in groups
+                ]
+            }
+            self._post('/api/duplicates/resolve', json=payload)
+            return True
+        except Exception as e:
+            print(f"Failed to resolve duplicates: {e}")
+            return False
+
+    def dismiss_duplicates(self, duplicate_ids: List[str]) -> bool:
+        """
+        Dismiss duplicate group(s) by ID without deleting any assets — just
+        unlinks the grouping so Immich stops flagging them as duplicates.
+
+        Args:
+            duplicate_ids: List of Immich duplicateId values to dismiss
+
+        Returns:
+            True if successful
+        """
+        try:
+            if len(duplicate_ids) == 1:
+                self._delete(f'/api/duplicates/{duplicate_ids[0]}')
+            else:
+                self._delete('/api/duplicates', json={'ids': duplicate_ids})
+            return True
+        except Exception as e:
+            print(f"Failed to dismiss duplicates: {e}")
+            return False
 
     def check_ml_capabilities(self) -> Dict[str, bool]:
         """

@@ -445,6 +445,21 @@ python src/photo_organizer.py \
 
 --mark-best-favorite
     Mark the best photo in each group as favorite
+
+--immich-use-duplicates
+    Group photos using Immich's own server-side duplicate detection
+    instead of this tool's visual-similarity grouping
+
+--resolve-duplicates
+    Keep the best photo and trash the rest via Immich's native
+    /duplicates/resolve API. Requires --immich-use-duplicates. No
+    per-group confirmation — see "Resolving Duplicates" above.
+
+--archive-non-best
+    Archive (don't trash) non-best photos in each group
+
+--merge-people
+    Open the interactive merge-duplicate-people menu, then exit
 ```
 
 #### Advanced Image Processing
@@ -768,6 +783,60 @@ Or press `[u]` at the interactive mode summary screen. Options:
 
 Each operation shows a dry-run preview with counts before confirming.
 
+## Resolving Duplicates
+
+Two ways to actually remove duplicates once you've reviewed them, now that Immich
+has a native API for it:
+
+**Recommended: review in the web viewer, then delete.**
+Run with `--immich-use-duplicates` so groups come from Immich's own server-side
+duplicate detection (not just visual similarity), review them in `scripts/viewer start`,
+then use the bulk "Delete non-best" action. When a group came from server-side
+detection, this automatically calls Immich's `/duplicates/resolve` endpoint instead
+of a generic delete — it keeps your chosen photo, trashes the rest, and clears the
+duplicate flag so it won't show up again.
+
+**CLI batch mode (no per-group review):**
+```bash
+./photo_organizer.py --source-type immich \
+  --immich-url "$IMMICH_URL" --immich-api-key "$IMMICH_API_KEY" \
+  --immich-use-duplicates --tag-only --resolve-duplicates
+```
+`--resolve-duplicates` trusts this tool's best-photo heuristic for every group
+with no per-group confirmation — use it only after you've validated that
+heuristic's choices on a sample (e.g. via `--limit` first), or stick to the
+web-viewer flow above. Either way, `--resolve-duplicates` has no effect without
+`--immich-use-duplicates`, since only server-detected groups carry a real
+duplicate ID to resolve.
+
+In both cases, whether the trashed assets are recoverable (Immich's trash,
+default ~30 days) or deleted immediately depends on your Immich server's own
+trash-retention setting — this tool doesn't control that per call.
+
+## Merging Duplicate People
+
+Immich's face clustering sometimes splits one real person into multiple person
+records. Open the merge menu:
+
+```bash
+./photo_organizer.py --merge-people \
+  --immich-url "$IMMICH_URL" --immich-api-key "$IMMICH_API_KEY"
+# or: scripts/immich.sh merge-people
+```
+
+It automatically flags any name shared by 2+ person records (the strongest signal
+that they're really the same person) and lets you merge them with one confirmation.
+You can also:
+- **Manually merge** two differently-named people you know are the same person
+  (e.g. "Bob" and "Bob Smith"), by name or person ID.
+- **Reassign a single face** to a different person without merging the records —
+  useful when one photo has a misassigned face but the two person records are
+  otherwise correct.
+
+Merging is irreversible: the absorbed person record (and its name/thumbnail) is
+deleted, and all its faces move to the survivor. The first person you name becomes
+the survivor.
+
 ## Architecture
 
 The integration is implemented across three source files:
@@ -802,7 +871,13 @@ The Photo Organizer requires different permissions depending on the mode:
 **For download mode:**
 - `asset.read`, `asset.download`
 
-**Note:** Requires Immich v2.0.0 or later. Granular API key permissions are fully supported in v2.x.
+**For resolving server-side duplicates (`--immich-use-duplicates --resolve-duplicates`, or the web viewer's "Delete non-best" on a duplicate-sourced group):**
+- `duplicate.read`, `duplicate.delete`, `asset.read`
+
+**For merging duplicate people (`--merge-people`):**
+- `person.read`, `person.merge`, `person.reassign`
+
+**Note:** Requires Immich v2.0.0 or later. Granular API key permissions are fully supported in v2.x. Native duplicate resolve (`/duplicates/resolve`) and bulk person merge (`/people/merge`) require a recent v2.x server — check your server's release notes if these fail with 404.
 
 ### API Endpoints Used
 
@@ -816,6 +891,14 @@ The Photo Organizer requires different permissions depending on the mode:
 | `/api/albums` | GET/POST | List / create albums |
 | `/api/albums/{id}` | DELETE | Delete album |
 | `/api/albums/{id}/assets` | PUT | Add assets to album |
+| `/api/duplicates` | GET | List server-side duplicate groups |
+| `/api/duplicates/resolve` | POST | Keep chosen assets, trash the rest, clear the duplicate flag |
+| `/api/duplicates` / `/api/duplicates/{id}` | DELETE | Dismiss a duplicate group without deleting anything |
+| `/api/people` | GET | List recognized people |
+| `/api/people/{id}/statistics` | GET | Photo count for a person |
+| `/api/people/merge` | POST | Merge two or more person records into one |
+| `/api/people/{id}/reassign` | PUT | Move a specific misassigned face to another person |
+| `/api/faces` | GET | List faces (and their assigned person) for an asset |
 
 ## See Also
 

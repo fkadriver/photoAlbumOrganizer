@@ -234,6 +234,10 @@ Examples:
                         help='Use Immich face data for best-photo selection')
     parser.add_argument('--archive-non-best', action='store_true',
                         help='Archive non-best photos in each group (Immich only)')
+    parser.add_argument('--resolve-duplicates', action='store_true',
+                        help='Keep the best photo and trash the rest via Immich\'s native '
+                             'duplicate-resolve API (requires --immich-use-duplicates; '
+                             'moves to Immich trash, recoverable per server trash settings)')
     parser.add_argument('--immich-use-duplicates', action='store_true',
                         help='Use Immich server-side duplicate detection for grouping')
     parser.add_argument('--immich-smart-search',
@@ -304,6 +308,9 @@ Examples:
     parser.add_argument('--cleanup', action='store_true',
                         help='Remove all albums, keywords, and tags created by photoOrganizer '
                              '(Apple Photos) or launch the Immich cleanup menu, then exit')
+    parser.add_argument('--merge-people', action='store_true',
+                        help='Launch the Immich merge-duplicate-people menu, then exit '
+                             '(requires --immich-url and --immich-api-key)')
     parser.add_argument('--web-viewer', action='store_true',
                         help='Launch web viewer for processing report')
     parser.add_argument('--report',
@@ -327,7 +334,7 @@ Examples:
     args = parser.parse_args()
 
     # Handle --cleanup early: remove all photoOrganizer artifacts from Photos.app
-    if getattr(args, 'cleanup', False):
+    if getattr(args, 'cleanup', False) and args.source_type == 'apple':
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
         from apple_actions import cleanup_all
         print("Cleaning up all photoOrganizer albums, keywords and tags from Photos.app...")
@@ -397,6 +404,22 @@ Examples:
             verify_ssl=not args.no_verify_ssl,
         )
         run_cleanup_menu(client, album_prefix=args.album_prefix)
+        sys.exit(0)
+
+    # Handle --merge-people early (no state file or validation needed)
+    if getattr(args, 'merge_people', False):
+        if not args.immich_url or not args.immich_api_key:
+            parser.error("--merge-people requires --immich-url and --immich-api-key "
+                         "(or use -i for interactive)")
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+        from immich_client import ImmichClient
+        from people_manager import run_merge_people_menu
+        client = ImmichClient(
+            url=args.immich_url,
+            api_key=args.immich_api_key,
+            verify_ssl=not args.no_verify_ssl,
+        )
+        run_merge_people_menu(client)
         sys.exit(0)
 
     # Early interception: replace args with interactive menu selections
@@ -589,6 +612,7 @@ Examples:
                        getattr(args, 'apple_person', None)),
         immich_use_server_faces=getattr(args, 'immich_use_server_faces', False),
         archive_non_best=getattr(args, 'archive_non_best', False),
+        resolve_duplicates=getattr(args, 'resolve_duplicates', False),
         immich_use_duplicates=getattr(args, 'immich_use_duplicates', False),
         immich_smart_search=getattr(args, 'immich_smart_search', None),
         report_dir=getattr(args, 'report_dir', 'reports'),
@@ -621,6 +645,7 @@ Examples:
         start_viewer_background(report_path, port=viewer_port,
                                 immich_client=immich_client_for_viewer,
                                 report_dir=report_dir,
+                                output_dir=args.output,
                                 apple_source=apple_source_for_viewer)
         print(f"\nLive viewer running at http://localhost:{viewer_port}")
         print(f"Report updates as processing progresses\n")

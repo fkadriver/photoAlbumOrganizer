@@ -346,6 +346,15 @@ except Exception as e:
         "${PROJECT_ROOT}/venv/bin/python" scripts/test_immich_connection.py
         ;;
 
+    merge-people)
+        echo "🧑‍🤝‍🧑 Opening the merge-duplicate-people menu..."
+        echo ""
+        ./photo_organizer.py --source-type immich \
+            --immich-url "$IMMICH_URL" \
+            --immich-api-key "$IMMICH_API_KEY" \
+            --merge-people
+        ;;
+
     help|--help|-h)
         cat <<EOF
 Immich Photo Organizer Script
@@ -371,6 +380,7 @@ MODES:
   download [OUTPUT_DIR]  Download and organize photos locally
   album NAME [MODE]      Process specific album
   cleanup [PREFIX] [yes|no]  Delete albums by prefix and unfavorite assets (default: "Organized-", dry-run: yes)
+  merge-people           Open the merge-duplicate-people menu
   test                   Test Immich connection
   help                   Show this help message
 

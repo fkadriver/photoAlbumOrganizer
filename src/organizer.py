@@ -39,6 +39,7 @@ class PhotoOrganizer:
                  immich_group_by_person=False, immich_person=None,
                  immich_use_server_faces=False,
                  archive_non_best=False,
+                 resolve_duplicates=False,
                  immich_use_duplicates=False,
                  immich_smart_search=None,
                  immich_group_by_people=False,
@@ -80,6 +81,11 @@ class PhotoOrganizer:
             immich_person: Filter to specific person name (Immich only)
             immich_use_server_faces: Use Immich face data for best-photo selection
             archive_non_best: Archive non-best photos in Immich
+            resolve_duplicates: Resolve non-best photos via Immich's native
+                /duplicates/resolve (requires immich_use_duplicates=True so
+                groups carry a real Immich duplicateId). Trashes non-best
+                assets and clears the duplicate flag; whether trash is
+                recoverable depends on the server's own trash-retention setting.
             immich_use_duplicates: Use Immich server-side duplicate detection
             immich_smart_search: CLIP search query to pre-filter photos
             media_type: Type of media to process ('image' or 'video')
@@ -119,6 +125,7 @@ class PhotoOrganizer:
         self.immich_person = immich_person
         self.immich_use_server_faces = immich_use_server_faces
         self.archive_non_best = archive_non_best
+        self.resolve_duplicates = resolve_duplicates
         self.immich_use_duplicates = immich_use_duplicates
         self.immich_smart_search = immich_smart_search
         self.immich_group_by_people = immich_group_by_people
@@ -156,6 +163,7 @@ class PhotoOrganizer:
             "immich_person": immich_person,
             "immich_use_server_faces": immich_use_server_faces,
             "archive_non_best": archive_non_best,
+            "resolve_duplicates": resolve_duplicates,
             "immich_use_duplicates": immich_use_duplicates,
             "immich_smart_search": immich_smart_search,
             "immich_group_by_people": immich_group_by_people,
@@ -228,7 +236,7 @@ class PhotoOrganizer:
             )
 
         if self.output_dir:
-            self.output_dir.mkdir(exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Log initialization parameters
         logging.info("PhotoOrganizer initialized with:")
@@ -254,6 +262,7 @@ class PhotoOrganizer:
         logging.info(f"  Person filter: {self.immich_person}")
         logging.info(f"  Use server faces: {self.immich_use_server_faces}")
         logging.info(f"  Archive non-best: {self.archive_non_best}")
+        logging.info(f"  Resolve duplicates: {self.resolve_duplicates}")
         logging.info(f"  Use server duplicates: {self.immich_use_duplicates}")
         logging.info(f"  Smart search: {self.immich_smart_search}")
         logging.info(f"  Media type: {self.media_type}")
@@ -370,6 +379,11 @@ class PhotoOrganizer:
             logging.info("="*60)
             logging.info(f"Starting organize_photos (album={album})")
             logging.info("="*60)
+
+            if self.resolve_duplicates and not self.immich_use_duplicates:
+                print("Warning: --resolve-duplicates has no effect without "
+                      "--immich-use-duplicates (groups need a native Immich "
+                      "duplicateId to resolve). No photos will be deleted this run.")
 
             if self.apple_use_duplicates:
                 groups = self._organize_by_apple_duplicates(album)
@@ -654,6 +668,9 @@ class PhotoOrganizer:
             if len(assets) < self.min_group_size:
                 continue
 
+            duplicate_id = dup.get('duplicateId')
+            suggested_keep_ids = set(dup.get('suggestedKeepAssetIds') or [])
+
             group = []
             for asset_data in assets:
                 from immich_client import ImmichAsset
@@ -671,7 +688,13 @@ class PhotoOrganizer:
                         'file_created_at': asset.file_created_at,
                         'file_modified_at': asset.file_modified_at,
                         'is_favorite': asset.is_favorite,
-                        'exif': asset.exif_info
+                        'exif': asset.exif_info,
+                        # Lets downstream consumers (e.g. the web viewer) call
+                        # ImmichClient.resolve_duplicates() instead of a generic
+                        # bulk delete, since this group came from Immich's own
+                        # server-side duplicate detection.
+                        'immich_duplicate_id': duplicate_id,
+                        'immich_suggested_keep': asset.id in suggested_keep_ids,
                     }
                 )
                 self.state.mark_photo_discovered()
@@ -749,11 +772,11 @@ class PhotoOrganizer:
                 photo = photo_data['photo']
                 if photo.id != best_id:
                     archive_uuids.append(photo.id)
-                    for mod in (modifications or []):
-                        self.photo_source.add_keyword(photo, f'modified-{mod}')
 
             # Keywords (Mac only — not visible on iPhone)
             self.photo_source.add_keyword(best_photo, 'best-photo')
+            for mod in (modifications or []):
+                self.photo_source.add_keyword(best_photo, f'modified-{mod}')
             for uid in archive_uuids:
                 from photo_sources import Photo
                 p = Photo(uid, 'apple')
@@ -846,7 +869,12 @@ class PhotoOrganizer:
         """Return {person_name: is_favorite} from the photo source, or {} if unsupported."""
         try:
             people = self.photo_source.list_people()
-            return {p['name']: p.get('is_favorite', False) for p in people if p.get('name')}
+            # Apple's source normalizes to 'is_favorite'; Immich/Hybrid return
+            # the raw API dict with 'isFavorite'. Accept either.
+            return {
+                p['name']: p.get('is_favorite', p.get('isFavorite', False))
+                for p in people if p.get('name')
+            }
         except Exception:
             return {}
 
@@ -1001,6 +1029,33 @@ class PhotoOrganizer:
                                        if self.photo_source.set_archived(p, True))
                         print(f"  Archived {archived}/{len(non_best)} non-best photo(s)")
 
+            # Resolve this group via Immich's native duplicate-resolve (for Immich,
+            # only when the group was sourced from server-side duplicate detection)
+            resolved_this_group = False
+            if self.resolve_duplicates:
+                # Note: group[x]['metadata'] is a *fresh* dict built by
+                # extract_metadata() from the Immich asset — it does not carry
+                # immich_duplicate_id. That survives only on the Photo object's
+                # own .metadata, set when the group was built.
+                duplicate_id = group[0]['photo'].metadata.get('immich_duplicate_id')
+                if duplicate_id and hasattr(self.photo_source, 'client'):
+                    non_best_ids = [
+                        pd['photo'].metadata.get('asset_id', pd['photo'].id)
+                        for pd in group if pd['photo'].id != best_photo.id
+                    ]
+                    best_id = best_photo.metadata.get('asset_id', best_photo.id)
+                    if non_best_ids:
+                        if self.photo_source.client.resolve_duplicates([{
+                            'duplicate_id': duplicate_id,
+                            'keep_asset_ids': [best_id],
+                            'trash_asset_ids': non_best_ids,
+                        }]):
+                            resolved_this_group = True
+                            print(f"  Resolved duplicate group: kept 1, trashed {len(non_best_ids)}")
+                else:
+                    print("  Skipping resolve-duplicates: group has no native Immich "
+                          "duplicate ID (requires --immich-use-duplicates)")
+
             # Track which modifications were actually applied
             hdr_applied = False
             face_swap_applied = False
@@ -1094,6 +1149,8 @@ class PhotoOrganizer:
                 actions_taken.append("best_favorited")
             if self.archive_non_best:
                 actions_taken.append("non_best_archived")
+            if resolved_this_group:
+                actions_taken.append("duplicates_resolved")
             if hdr_applied:
                 actions_taken.append("modified:hdr-merged")
             if face_swap_applied:
@@ -1103,6 +1160,12 @@ class PhotoOrganizer:
                 "group_index": i,
                 "photo_count": len(group),
                 "person_name": group[0].get('person_name'),
+                # Set only for groups sourced from --immich-use-duplicates;
+                # lets the web viewer call ImmichClient.resolve_duplicates()
+                # instead of a generic bulk delete when removing non-best photos.
+                # Read from the Photo object's own metadata, not group[0]['metadata']
+                # (extract_metadata() rebuilds that one fresh from the Immich asset).
+                "immich_duplicate_id": group[0]['photo'].metadata.get('immich_duplicate_id'),
                 "best_photo": {
                     "id": best_photo.id,
                     "asset_id": best_photo.metadata.get('asset_id', best_photo.id),

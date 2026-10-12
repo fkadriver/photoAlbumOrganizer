@@ -147,6 +147,17 @@ class TestLoadPeopleFavorites:
         fav = org._load_people_favorites()
         assert list(fav.keys()) == ["Alice"]
 
+    def test_accepts_immich_camelcase_isfavorite(self):
+        # Immich/Hybrid sources return the raw API dict with 'isFavorite',
+        # not the Apple source's normalized 'is_favorite'.
+        org = _make_organizer()
+        org.photo_source.list_people.return_value = [
+            {"name": "Alice", "isFavorite": True},
+            {"name": "Bob",   "isFavorite": False},
+        ]
+        fav = org._load_people_favorites()
+        assert fav == {"Alice": True, "Bob": False}
+
 
 class TestOrganizeByAppleDuplicates:
     """_organize_by_apple_duplicates groups photos by their duplicate_group UUID."""
