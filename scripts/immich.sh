@@ -27,6 +27,8 @@ THREADS=2
 THRESHOLD=5
 MIN_GROUP_SIZE=3
 ARCHIVE_NON_BEST=0
+USE_DUPLICATES=0
+RESOLVE_DUPLICATES=0
 VERBOSE=0
 
 # Load config file if exists and not already set
@@ -98,6 +100,14 @@ while [[ $# -gt 0 ]]; do
             ARCHIVE_NON_BEST=1
             shift
             ;;
+        --immich-use-duplicates)
+            USE_DUPLICATES=1
+            shift
+            ;;
+        --resolve-duplicates)
+            RESOLVE_DUPLICATES=1
+            shift
+            ;;
         --verbose)
             VERBOSE=1
             shift
@@ -161,6 +171,16 @@ if [ "$ARCHIVE_NON_BEST" = "1" ]; then
     COMMON_ARGS+=(--archive-non-best)
 fi
 
+# Add --immich-use-duplicates flag if requested
+if [ "$USE_DUPLICATES" = "1" ]; then
+    COMMON_ARGS+=(--immich-use-duplicates)
+fi
+
+# Add --resolve-duplicates flag if requested
+if [ "$RESOLVE_DUPLICATES" = "1" ]; then
+    COMMON_ARGS+=(--resolve-duplicates)
+fi
+
 # Add --verbose flag if requested
 if [ "$VERBOSE" = "1" ]; then
     COMMON_ARGS+=(--verbose)
@@ -173,6 +193,8 @@ FEATURES=()
 [ "$ENABLE_FACE_SWAP" = "1" ] && FEATURES+=("face-swap")
 [ "$RESUME" = "1" ] && FEATURES+=("resume")
 [ "$ARCHIVE_NON_BEST" = "1" ] && FEATURES+=("archive-non-best")
+[ "$USE_DUPLICATES" = "1" ] && FEATURES+=("immich-use-duplicates")
+[ "$RESOLVE_DUPLICATES" = "1" ] && FEATURES+=("resolve-duplicates")
 
 if [ ${#FEATURES[@]} -gt 0 ]; then
     echo "✨ Active features: ${FEATURES[*]}"
@@ -372,6 +394,11 @@ OPTIONS:
   --threshold N, -t N   Similarity threshold (0-64, lower=stricter, default: 5)
   --min-group-size N    Minimum photos per group (default: 3, min: 2)
   --archive-non-best    Archive non-best photos (hides without deleting)
+  --immich-use-duplicates  Group by Immich's own server-side duplicate
+                        detection instead of visual-similarity grouping
+  --resolve-duplicates  Keep the best photo, trash the rest via Immich's
+                        native duplicate-resolve API. Requires
+                        --immich-use-duplicates. No per-group confirmation.
   --verbose             Show detailed error messages on console
 
 MODES:
