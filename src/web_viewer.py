@@ -236,6 +236,7 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   /* Merge / reprocess bulk bar buttons */
   .btn-merge { background: #2980b9; color: #fff; }
   .btn-reprocess { background: #16a085; color: #fff; }
+  .btn-download-fullres { background: #d35400; color: #fff; }
 
   /* Reprocess modal */
   .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
@@ -308,6 +309,7 @@ _FRONTEND_HTML = r"""<!DOCTYPE html>
   <div class="sep"></div>
   <button class="btn-merge" id="bulkMerge" style="display:none" onclick="mergeGroups()">Merge groups</button>
   <button class="btn-reprocess" id="bulkReprocess" onclick="showReprocessModal()">Reprocess...</button>
+  <button class="btn-download-fullres" id="bulkDownloadFullRes">Download Full-Res</button>
   <div class="sep"></div>
   <button class="btn-cancel" id="bulkCancel">Cancel</button>
 </div>
@@ -638,6 +640,7 @@ async function bulkAction(action) {
     'archive-non-best': `Archive non-best photos in ${indices.length} group(s)?`,
     'delete-non-best': `Move non-best photos in ${indices.length} group(s) to the Immich trash? They can be restored from Immich's trash until it's emptied.`,
     'discard': `Discard organizer changes for ${indices.length} group(s)? This will unfavorite, unarchive, and remove tags.`,
+    'download-fullres': `Download true full-resolution originals for all photos in ${indices.length} group(s)? This overwrites any lower-quality preview copies already on disk.`,
   };
   if (!confirm(labels[action] || `Run ${action} on ${indices.length} group(s)?`)) return;
   try {
@@ -657,6 +660,7 @@ async function bulkAction(action) {
 document.getElementById('bulkArchive').onclick = () => bulkAction('archive-non-best');
 document.getElementById('bulkDelete').onclick = () => bulkAction('delete-non-best');
 document.getElementById('bulkDiscard').onclick = () => bulkAction('discard');
+document.getElementById('bulkDownloadFullRes').onclick = () => bulkAction('download-fullres');
 
 document.getElementById('bulkCancel').onclick = () => {
   selectedGroups.clear();
@@ -1382,12 +1386,17 @@ class ViewerHandler(BaseHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_bulk(self, body):
-        """Handle bulk actions: archive-non-best, delete-non-best, discard."""
+        """Handle bulk actions: archive-non-best, delete-non-best, discard,
+        download-fullres."""
         action = body.get("action")
         indices = body.get("group_indices", [])
 
         if not _immich_client:
             self._send_json({"ok": False, "error": "No Immich client"}, 503)
+            return
+
+        if action == "download-fullres":
+            self._handle_bulk_download_fullres(indices)
             return
 
         report = _load_report()
@@ -1450,6 +1459,50 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "discard": f"Discarded changes for {affected} group(s) ({asset_count} assets unfavorited/unarchived)",
         }
         self._send_json({"ok": True, "message": messages.get(action, "Done")})
+
+    def _handle_bulk_download_fullres(self, indices):
+        """Download true full-resolution originals for every photo in the
+        given groups, overwriting whatever lower-quality copy (e.g. a
+        'preview' thumbnail fetched during the main run) is already on disk.
+        Written to the same <output_dir>/group_NNNN/originals/ layout that
+        _handle_reprocess_group looks for, so reprocessing picks them up."""
+        if not _output_dir:
+            self._send_json({"ok": False,
+                             "error": "No output directory configured for this viewer"}, 422)
+            return
+
+        report = _load_report()
+        affected = 0
+        downloaded = 0
+        failed = []
+
+        for g in report.get("groups", []):
+            if g["group_index"] not in indices:
+                continue
+            affected += 1
+
+            orig_dir = Path(_output_dir) / f"group_{g['group_index']:04d}" / "originals"
+            orig_dir.mkdir(parents=True, exist_ok=True)
+
+            for p in g.get("photos", []):
+                aid = p.get("asset_id") or p.get("id")
+                if not aid:
+                    continue
+                filename = p.get("filename") or f"{aid}.jpg"
+                data = _immich_client.download_asset(aid)
+                if not data:
+                    failed.append(filename)
+                    continue
+                (orig_dir / filename).write_bytes(data)
+                downloaded += 1
+
+        message = f"Downloaded {downloaded} full-resolution photo(s) in {affected} group(s)"
+        if failed:
+            shown = ", ".join(failed[:5]) + ("..." if len(failed) > 5 else "")
+            message += f" ({len(failed)} failed: {shown})"
+
+        self._send_json({"ok": True, "message": message,
+                         "downloaded": downloaded, "failed": failed})
 
     def _handle_merge_groups(self, body):
         """Merge multiple groups into the lowest-indexed one."""
