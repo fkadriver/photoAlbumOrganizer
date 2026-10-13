@@ -74,8 +74,16 @@ def compute_hash(photo: Photo, photo_source: PhotoSource):
                 # Fall through to re-download
                 pass
 
-        # Load from bytes (re-download if cache missing or deleted)
-        data = photo_source.get_photo_data(photo)
+        # Load from bytes (re-download if cache missing or deleted). Prefer
+        # an uncached fetch when the source offers one — hashing is a
+        # one-time pass over the whole library, and most photos never get
+        # looked at again after this, so there's no reason to grow the
+        # disk cache for them (grouped photos get cached normally on their
+        # first real use, in _process_groups()).
+        if hasattr(photo_source, 'get_photo_data_uncached'):
+            data = photo_source.get_photo_data_uncached(photo)
+        else:
+            data = photo_source.get_photo_data(photo)
         with Image.open(BytesIO(data)) as img:
             if img.mode != 'RGB':
                 img = img.convert('RGB')

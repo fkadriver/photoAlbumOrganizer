@@ -456,10 +456,14 @@ class PhotoOrganizer:
         for photo in photos:
             self.state.mark_photo_discovered()
 
-        # Pre-fetch photos for Immich sources (images only, videos are too large)
-        if hasattr(self.photo_source, 'prefetch_photos') and self.media_type == 'image':
-            self.photo_source.prefetch_photos(photos, max_workers=self.threads)
-
+        # No bulk prefetch here on purpose: the vast majority of a library
+        # ends up in no group at all, and eagerly caching every photo just
+        # to hash it once grows the disk cache to roughly the size of the
+        # whole library. compute_hash() fetches each photo's bytes itself
+        # (via the thread pool inside group_similar_photos), preferring an
+        # uncached fetch when the source offers one. Grouped photos get
+        # cached normally afterward, on their first real use in
+        # _process_groups() (quality scoring, HDR, face swap).
         return group_similar_photos(
             photos, self.photo_source, self.state,
             self.extract_metadata, self.get_datetime_from_metadata,

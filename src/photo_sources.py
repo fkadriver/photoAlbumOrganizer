@@ -554,6 +554,29 @@ class ImmichPhotoSource(PhotoSource):
         else:
             raise ValueError(f"Failed to download photo {photo.id}")
 
+    def get_photo_data_uncached(self, photo: Photo) -> bytes:
+        """
+        Fetch photo data without writing it to the local disk cache.
+
+        For similarity grouping, every photo in the library needs its
+        bytes fetched once just to compute a hash, but the overwhelming
+        majority end up in no group at all — caching every one of them
+        (what get_photo_data()/prefetch_photos() do) means the cache grows
+        to roughly the size of the whole library to support that one-time
+        pass. Group members still get cached normally: whichever helper
+        processes them first (quality scoring, HDR, face swap) calls
+        get_photo_data(), which caches on demand and sets cached_path so
+        every later use of that same photo reads from disk, not network.
+        """
+        asset_id = photo.metadata.get('asset_id', photo.id)
+        if self.use_thumbnails:
+            data = self.client.get_asset_thumbnail(asset_id, size='preview')
+        else:
+            data = self.client.download_asset(asset_id)
+        if not data:
+            raise ValueError(f"Failed to download photo {photo.id}")
+        return data
+
     def get_metadata(self, photo: Photo) -> Dict:
         """Get metadata from Immich asset."""
         asset_id = photo.metadata.get('asset_id', photo.id)
