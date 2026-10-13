@@ -86,6 +86,30 @@ def _photo_data(pid, metadata):
     return {'photo': photo, 'metadata': metadata}
 
 
+class TestHasGps:
+    """ImmichPhotoSource.get_metadata() stringifies every EXIF value, and
+    Immich stores a placeholder "0" for missing GPS — Python's bool("0") is
+    True (any non-empty string is truthy), so a naive truthiness check
+    reports a placeholder-zero coordinate as real GPS data. Caught this via
+    live debug logging: a group where the override's own _has_gps() said
+    the best photo already had GPS (so it never checked the sibling),
+    while the final report — whose filter already excludes stringified "0"
+    for a different reason — showed that same photo with no GPS at all."""
+
+    def test_placeholder_zero_string_is_not_gps(self):
+        assert image_processing._has_gps({'exif_latitude': '0', 'exif_longitude': '0'}) is False
+
+    def test_placeholder_zero_float_string_is_not_gps(self):
+        assert image_processing._has_gps({'exif_latitude': '0.0', 'exif_longitude': '0.0'}) is False
+
+    def test_real_coordinate_is_gps(self):
+        assert image_processing._has_gps({'exif_latitude': '40.815042',
+                                           'exif_longitude': '-96.712472'}) is True
+
+    def test_missing_keys_is_not_gps(self):
+        assert image_processing._has_gps({}) is False
+
+
 class TestPreferGeotaggedDuplicate:
     """Quality/face scoring can't see GPS data, so on a true duplicate
     (same capture timestamp, different copy) it can just as easily pick the
@@ -140,6 +164,19 @@ class TestPreferGeotaggedDuplicate:
         best = _photo_data('a', {'exif_dateTimeOriginal': 't1'})  # no GPS
         sibling = _photo_data('b', {'exif_dateTimeOriginal': 't2',  # different/incomplete timestamp
                                      'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        group = [best, sibling]
+
+        result = image_processing.prefer_geotagged_duplicate(
+            group, best, group_is_known_duplicate=True)
+
+        assert result['photo'].id == 'b'
+
+    def test_switches_away_from_placeholder_zero_gps(self):
+        # The actual bug reproduced live: best's lat/lon were the string "0"
+        # (Immich's placeholder for missing GPS), which read as truthy and
+        # made the override think best already had real GPS.
+        best = _photo_data('a', {'exif_latitude': '0', 'exif_longitude': '0'})
+        sibling = _photo_data('b', {'exif_latitude': '40.815042', 'exif_longitude': '-96.712472'})
         group = [best, sibling]
 
         result = image_processing.prefer_geotagged_duplicate(

@@ -193,8 +193,18 @@ def _find_best_by_quality_score(group, photo_source: PhotoSource, quality_scorer
     return best_photo
 
 
+def _has_meaningful_value(value) -> bool:
+    """True if value isn't None/empty and doesn't stringify to a placeholder
+    zero. ImmichPhotoSource.get_metadata() stringifies every EXIF field, and
+    Python's bool("0") is True (any non-empty string is truthy) — so a
+    literal placeholder "0"/"0.0" for missing GPS reads as present unless
+    checked for explicitly."""
+    return value is not None and str(value) not in ('', 'None', '0', '0.0')
+
+
 def _has_gps(metadata: dict) -> bool:
-    return bool(metadata.get('exif_latitude') or metadata.get('exif_longitude'))
+    return (_has_meaningful_value(metadata.get('exif_latitude'))
+            or _has_meaningful_value(metadata.get('exif_longitude')))
 
 
 def prefer_geotagged_duplicate(group, best_photo_data, group_is_known_duplicate: bool = False):
