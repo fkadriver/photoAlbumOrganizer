@@ -193,6 +193,48 @@ def _find_best_by_quality_score(group, photo_source: PhotoSource, quality_scorer
     return best_photo
 
 
+def _has_gps(metadata: dict) -> bool:
+    return bool(metadata.get('exif_latitude') or metadata.get('exif_longitude'))
+
+
+def prefer_geotagged_duplicate(group, best_photo_data):
+    """
+    If the selected best photo shares its capture timestamp with another
+    photo in the group (i.e. they're really just different copies/exports of
+    the same shot, not meaningfully different images — common for a photo
+    re-saved without EXIF, or a messaging-app copy that strips GPS) but is
+    missing GPS coordinates that sibling has, prefer that sibling instead.
+
+    Face/quality scoring has no way to know GPS data exists, so on a true
+    near-duplicate it can just as easily pick the metadata-stripped copy —
+    and once the other copy is deleted, that location data is gone for good.
+
+    Args:
+        group: List of photo_data dictionaries
+        best_photo_data: The currently selected best photo_data dict
+
+    Returns:
+        photo_data dict to use as best — either best_photo_data unchanged,
+        or a same-timestamp sibling that has GPS data
+    """
+    best_metadata = best_photo_data.get('metadata') or {}
+    if _has_gps(best_metadata):
+        return best_photo_data
+
+    best_timestamp = best_metadata.get('exif_dateTimeOriginal')
+    if not best_timestamp:
+        return best_photo_data
+
+    for photo_data in group:
+        if photo_data is best_photo_data:
+            continue
+        metadata = photo_data.get('metadata') or {}
+        if metadata.get('exif_dateTimeOriginal') == best_timestamp and _has_gps(metadata):
+            return photo_data
+
+    return best_photo_data
+
+
 def find_best_photo(group, photo_source: PhotoSource, quality_scorer=None):
     """
     Find the best photo in a group based on face quality, falling back to

@@ -18,7 +18,7 @@ from processing_state import ProcessingState
 from grouping import group_similar_photos
 import image_processing
 from image_processing import (
-    find_best_photo, find_best_photo_immich_faces,
+    find_best_photo, find_best_photo_immich_faces, prefer_geotagged_duplicate,
     should_merge_hdr, merge_exposures_hdr,
     create_face_swapped_image, set_face_backend
 )
@@ -991,6 +991,9 @@ class PhotoOrganizer:
             else:
                 best_photo_data = find_best_photo(
                     group, self.photo_source, quality_scorer=self.ml_quality_scorer)
+            # Never discard the only geotagged copy of an otherwise-identical
+            # duplicate just because quality scoring can't see GPS data.
+            best_photo_data = prefer_geotagged_duplicate(group, best_photo_data)
             best_photo = best_photo_data['photo']
 
             # Determine which modifications apply to this group

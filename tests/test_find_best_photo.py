@@ -79,3 +79,55 @@ def test_immich_faces_fallback_passes_quality_scorer_through(monkeypatch):
     result = image_processing.find_best_photo_immich_faces(group, source, quality_scorer=scorer)
 
     assert result['photo'].id == 'b'
+
+
+def _photo_data(pid, metadata):
+    photo = Photo(photo_id=pid, source='immich', metadata={'asset_id': pid})
+    return {'photo': photo, 'metadata': metadata}
+
+
+class TestPreferGeotaggedDuplicate:
+    """Quality/face scoring can't see GPS data, so on a true duplicate
+    (same capture timestamp, different copy) it can just as easily pick the
+    metadata-stripped copy — once the other copy is deleted that location
+    data is gone for good. 45 of 266 groups in one real run hit exactly
+    this, which is why this has its own dedicated override step."""
+
+    def test_switches_to_same_timestamp_sibling_with_gps(self):
+        best = _photo_data('a', {'exif_dateTimeOriginal': 't1'})  # no GPS
+        sibling = _photo_data('b', {'exif_dateTimeOriginal': 't1',
+                                     'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        group = [best, sibling]
+
+        result = image_processing.prefer_geotagged_duplicate(group, best)
+
+        assert result['photo'].id == 'b'
+
+    def test_keeps_best_when_it_already_has_gps(self):
+        best = _photo_data('a', {'exif_dateTimeOriginal': 't1',
+                                  'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        other = _photo_data('b', {'exif_dateTimeOriginal': 't1'})
+        group = [best, other]
+
+        result = image_processing.prefer_geotagged_duplicate(group, best)
+
+        assert result['photo'].id == 'a'
+
+    def test_keeps_best_when_no_sibling_shares_timestamp(self):
+        best = _photo_data('a', {'exif_dateTimeOriginal': 't1'})
+        different_moment = _photo_data('b', {'exif_dateTimeOriginal': 't2',
+                                              'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        group = [best, different_moment]
+
+        result = image_processing.prefer_geotagged_duplicate(group, best)
+
+        assert result['photo'].id == 'a'
+
+    def test_keeps_best_when_timestamp_missing(self):
+        best = _photo_data('a', {})
+        other = _photo_data('b', {'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        group = [best, other]
+
+        result = image_processing.prefer_geotagged_duplicate(group, best)
+
+        assert result['photo'].id == 'a'
