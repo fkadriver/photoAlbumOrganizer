@@ -998,9 +998,18 @@ class PhotoOrganizer:
             # that field can be transiently inconsistent if Immich's own EXIF
             # extraction hadn't finished for one copy yet when this ran.
             group_is_known_duplicate = bool(group[0]['photo'].metadata.get('immich_duplicate_id'))
+            _pre_geotag_id = best_photo_data['photo'].id
+            _gps_summary = ', '.join(
+                f"{pd['photo'].id}:{image_processing._has_gps(pd.get('metadata') or {})}"
+                for pd in group
+            )
             best_photo_data = prefer_geotagged_duplicate(
                 group, best_photo_data, group_is_known_duplicate=group_is_known_duplicate)
             best_photo = best_photo_data['photo']
+            logging.debug(
+                f"Group {i}: geotag check — known_dup={group_is_known_duplicate}, "
+                f"pre={_pre_geotag_id}, post={best_photo.id}, group_gps=[{_gps_summary}]"
+            )
 
             # Determine which modifications apply to this group
             modifications = []
