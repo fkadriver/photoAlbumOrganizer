@@ -207,6 +207,24 @@ class TestDeleteTagsByPrefix:
         assert matched == 2
         assert deleted == 0
 
+    def test_deletes_deepest_tags_before_shallower_ones(self, client):
+        # Deleting a parent while a child still exists has been observed to
+        # 400 in practice; deepest-first avoids that regardless of the
+        # order get_tags() happens to return.
+        client.session.get.return_value = FakeResponse(200, [
+            {'id': 'root', 'value': 'photo-organizer'},
+            {'id': 'parent', 'value': 'photo-organizer/modified'},
+            {'id': 'child', 'value': 'photo-organizer/modified/face-swapped'},
+        ])
+        client.session.delete.return_value = FakeResponse(200)
+
+        client.delete_tags_by_prefix('photo-organizer/', dry_run=False)
+
+        deleted_order = [call.args[0].rsplit('/', 1)[-1]
+                          for call in client.session.delete.call_args_list]
+        # 'child' (2 slashes) must come before 'parent' (1 slash).
+        assert deleted_order.index('child') < deleted_order.index('parent')
+
 
 class TestSearchAssetsByTag:
     def test_matches_full_path_not_leaf_name(self, client):

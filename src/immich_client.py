@@ -1149,6 +1149,10 @@ class ImmichClient:
                 # 'name' is leaf-only ("best") and will never match a path prefix.
                 if (t.get('value') or t.get('name', '')).startswith(prefix)
             ]
+            # Deepest first: deleting a parent while its child still exists
+            # can 400 (observed in practice), or leave the child orphaned and
+            # silently recreated by a later get_or_create_tag() call elsewhere.
+            matched.sort(key=lambda t: (t.get('value') or '').count('/'), reverse=True)
 
             if not matched:
                 print(f"No tags found with prefix '{prefix}'")
