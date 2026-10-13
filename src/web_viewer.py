@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import logging
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
@@ -525,6 +526,21 @@ function showDetail(g) {
       <button onclick="uploadToPhotos(${g.group_index})" style="padding:0.4rem 1rem;font-size:0.8rem;background:#27ae60;color:#fff;border:none;border-radius:4px;cursor:pointer;">Import face swap to Photos</button>
       <span id="uploadStatus_${g.group_index}" style="font-size:0.75rem;opacity:0.7"></span>
     </div>` : ''}
+    <div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;padding:0.5rem;background:rgba(39,174,96,0.08);border-radius:6px;">
+      <span style="font-size:0.82rem;font-weight:600;opacity:0.8">Finalize to Immich:</span>
+      <select id="fzSource_${g.group_index}" style="font-size:0.8rem;">
+        <option value="existing">Keep current best as-is</option>
+        ${g.actions_taken.includes('modified:face-swapped') ? '<option value="face_swap">Upload face-swapped result</option>' : ''}
+        ${g.actions_taken.includes('modified:hdr-merged') ? '<option value="hdr">Upload HDR-merged result</option>' : ''}
+      </select>
+      <select id="fzCleanup_${g.group_index}" style="font-size:0.8rem;">
+        <option value="none">Leave other photos alone</option>
+        <option value="archive">Archive the rest</option>
+        <option value="trash">Trash the rest</option>
+      </select>
+      <button onclick="finalizeGroup(${g.group_index})" style="padding:0.3rem 0.8rem;font-size:0.8rem;background:#27ae60;color:#fff;border:none;border-radius:4px;cursor:pointer;">Finalize</button>
+      <span id="fzStatus_${g.group_index}" style="font-size:0.75rem;opacity:0.7"></span>
+    </div>
     <div class="actions-list" style="margin-top:0.5rem">Actions: ${g.actions_taken.map(a => `<span>${esc(a)}</span>`).join('')}</div>
     <table class="meta-table">${metaRows}</table>`;
 
@@ -774,6 +790,44 @@ async function uploadToPhotos(groupIndex) {
     } else {
       if (statusEl) statusEl.textContent = 'Error: ' + (result.error || 'unknown');
       alert('Upload failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = 'Error';
+    alert('Request failed: ' + e);
+  }
+}
+
+async function finalizeGroup(groupIndex) {
+  const source = document.getElementById('fzSource_' + groupIndex)?.value ?? 'existing';
+  const cleanup = document.getElementById('fzCleanup_' + groupIndex)?.value ?? 'none';
+  const statusEl = document.getElementById('fzStatus_' + groupIndex);
+
+  const cleanupWarning = {
+    trash: 'Trash the rest of this group’s photos in Immich? Recoverable from Immich’s trash until emptied.',
+    archive: 'Archive the rest of this group’s photos in Immich?',
+    none: null,
+  }[cleanup];
+  if (cleanupWarning && !confirm(cleanupWarning)) return;
+
+  if (statusEl) statusEl.textContent = 'Finalizing…';
+  try {
+    const resp = await fetch('/api/actions/finalize-group', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group_index: groupIndex, source, cleanup})
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      const msg = result.uploaded
+        ? `Uploaded as new best (${result.cleanup_count} other photo(s) ${cleanup === 'none' ? 'left alone' : cleanup + 'd'})`
+        : `Best confirmed (${result.cleanup_count} other photo(s) ${cleanup === 'none' ? 'left alone' : cleanup + 'd'})`;
+      if (statusEl) statusEl.textContent = msg;
+      toast('Group finalized');
+      await load();
+      showDetail((report.groups || []).find(g => g.group_index === groupIndex));
+    } else {
+      if (statusEl) statusEl.textContent = 'Error: ' + (result.error || 'unknown');
+      alert('Finalize failed: ' + (result.error || 'Unknown error'));
     }
   } catch(e) {
     if (statusEl) statusEl.textContent = 'Error';
@@ -1269,6 +1323,8 @@ class ViewerHandler(BaseHTTPRequestHandler):
             self._handle_reprocess(body)
         elif path == "/api/actions/reprocess-group":
             self._handle_reprocess_group(body)
+        elif path == "/api/actions/finalize-group":
+            self._handle_finalize_group(body)
         elif path == "/api/actions/upload-to-photos":
             self._handle_upload_to_photos(body)
         else:
@@ -1716,6 +1772,151 @@ class ViewerHandler(BaseHTTPRequestHandler):
             "hdr_saved": hdr_saved,
             "face_swap_saved": face_swap_saved,
             "ml_scores": ml_scores,
+        })
+
+    def _handle_finalize_group(self, body):
+        """
+        Finalize a group: optionally upload a locally-reprocessed result
+        (face swap or HDR merge) to Immich as the new "best" photo, then
+        archive or trash the rest of the group's photos.
+
+        Body:
+            group_index: int
+            source: "face_swap" | "hdr" | "existing" — which file becomes
+                the new best. "face_swap"/"hdr" upload the matching local
+                reprocess output (see _handle_reprocess_group) as a new
+                Immich asset. "existing" just uses whatever the report
+                already marks as best (e.g. after a plain quality-score
+                reprocess that didn't produce a new file) — no upload.
+            cleanup: "trash" | "archive" | "none" (default "none") — what
+                happens to the group's other photos afterward.
+        """
+        if not _immich_client:
+            self._send_json({"ok": False, "error": "No Immich client"}, 503)
+            return
+
+        group_index = body.get("group_index")
+        source = body.get("source", "existing")
+        cleanup = body.get("cleanup", "none")
+
+        report = _load_report()
+        group = next((g for g in report.get("groups", [])
+                      if g.get("group_index") == group_index), None)
+        if not group:
+            self._send_json({"ok": False, "error": "Group not found"}, 404)
+            return
+
+        photos = group.get("photos", [])
+        old_best = group.get("best_photo") or {}
+        new_best_id = old_best.get("asset_id")
+        new_best_filename = old_best.get("filename", new_best_id)
+        uploaded = False
+
+        if source in ("face_swap", "hdr"):
+            if not _output_dir:
+                self._send_json({"ok": False, "error": "No output directory configured"}, 422)
+                return
+            candidates = {
+                "face_swap": ["face_swapped_reprocessed.jpg", "face_swapped.jpg"],
+                "hdr": ["hdr_merged_reprocessed.jpg", "hdr_merged.jpg"],
+            }[source]
+            group_dir = Path(_output_dir) / f"group_{group_index:04d}"
+            local_path = next((group_dir / fn for fn in candidates if (group_dir / fn).exists()), None)
+            if not local_path:
+                self._send_json({"ok": False,
+                                 "error": f"No {source} result found for this group. "
+                                          f"Run reprocess first."}, 404)
+                return
+
+            # Inherit the original best photo's capture time so the upload
+            # sorts correctly in the timeline instead of landing at "now".
+            file_created_at = next(
+                (p["exif_dateTimeOriginal"] for p in photos if p.get("exif_dateTimeOriginal")),
+                None,
+            ) or datetime.now(timezone.utc).isoformat()
+
+            result = _immich_client.upload_asset(
+                str(local_path), file_created_at=file_created_at,
+                filename=f"group{group_index:04d}_{local_path.name}",
+            )
+            if not result or not result.get("id"):
+                self._send_json({"ok": False, "error": "Upload to Immich failed"}, 500)
+                return
+
+            new_best_id = result["id"]
+            new_best_filename = local_path.name
+            uploaded = True
+
+        elif source != "existing":
+            self._send_json({"ok": False, "error": f"Unknown source '{source}'"}, 400)
+            return
+
+        if not new_best_id:
+            self._send_json({"ok": False, "error": "No best photo to finalize"}, 422)
+            return
+
+        if uploaded:
+            # Tag it like everything else this tool creates, so it's
+            # identifiable alongside the rest.
+            best_tag_id = _immich_client.get_or_create_tag("photo-organizer/best")
+            if best_tag_id:
+                _immich_client.tag_assets_by_tag_id(best_tag_id, [new_best_id])
+
+        # Update the report. Original members that aren't the new best stay
+        # in the list (as non-best) so the cleanup step below, and the
+        # viewer, can still see what the group was built from.
+        for p in photos:
+            p["is_best"] = False
+        if uploaded:
+            photos.append({
+                "id": new_best_id, "asset_id": new_best_id,
+                "filename": new_best_filename, "is_best": True, "hash": None,
+            })
+        else:
+            matched = False
+            for p in photos:
+                if (p.get("asset_id") or p.get("id")) == new_best_id:
+                    p["is_best"] = True
+                    matched = True
+            if not matched:
+                self._send_json({"ok": False, "error": "Best photo not found among group photos"}, 500)
+                return
+
+        group["best_photo"] = {"id": new_best_id, "asset_id": new_best_id, "filename": new_best_filename}
+        if uploaded:
+            acts = group.setdefault("actions_taken", [])
+            if "uploaded_reprocessed" not in acts:
+                acts.append("uploaded_reprocessed")
+
+        # Clean up the rest of the group, if requested. A newly-uploaded
+        # asset was never part of Immich's own duplicate detection, so it
+        # can't be a "keep" id for resolve_duplicates — only use that
+        # native path when the kept photo was already a real group member.
+        cleanup_count = 0
+        if cleanup in ("trash", "archive"):
+            non_best_ids = [p["asset_id"] for p in photos if p["asset_id"] != new_best_id]
+            if non_best_ids:
+                if cleanup == "trash":
+                    duplicate_id = group.get("immich_duplicate_id")
+                    if duplicate_id and not uploaded:
+                        _immich_client.resolve_duplicates([{
+                            'duplicate_id': duplicate_id,
+                            'keep_asset_ids': [new_best_id],
+                            'trash_asset_ids': non_best_ids,
+                        }])
+                    else:
+                        _immich_client.bulk_delete_assets(non_best_ids, force=False)
+                else:
+                    _immich_client.bulk_update_assets(non_best_ids, is_archived=True)
+                cleanup_count = len(non_best_ids)
+
+        _save_report(report)
+        self._send_json({
+            "ok": True,
+            "uploaded": uploaded,
+            "new_best_asset_id": new_best_id,
+            "cleanup_action": cleanup,
+            "cleanup_count": cleanup_count,
         })
 
     def _handle_upload_to_photos(self, body):
