@@ -3,9 +3,52 @@ Immich API client for interacting with Immich photo server.
 """
 
 import requests
+import threading
 from typing import List, Dict, Optional
 import io
 from PIL import Image
+
+
+def _run_with_deadline(fn, deadline_seconds: float):
+    """
+    Run fn() with a hard wall-clock deadline, raising TimeoutError if it's
+    exceeded.
+
+    requests' own (connect, read) timeout only bounds each individual
+    socket read, not the total call duration — a stalled DNS lookup, or a
+    reverse proxy that sends periodic keep-alive bytes while its backend is
+    stuck, can keep every read under that window while the call never
+    actually finishes, hanging forever with no error. This is a real
+    failure mode this tool hit in practice (see git history).
+
+    fn() keeps running in a background daemon thread even after this
+    raises — Python threads can't be forcibly killed — but the thread
+    won't block process exit and will be garbage collected once (if) the
+    underlying call eventually returns or errors.
+    """
+    result: Dict = {}
+
+    def _target():
+        try:
+            result['value'] = fn()
+        except Exception as e:
+            result['error'] = e
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(deadline_seconds)
+
+    if thread.is_alive():
+        raise TimeoutError(
+            f"Call did not complete within {deadline_seconds:.0f}s. "
+            f"This is a hard backstop, not the usual per-read timeout — it "
+            f"likely means a stalled DNS lookup or a proxy/connection that "
+            f"stayed 'alive' without the server ever actually responding. "
+            f"Check your network path to the Immich server and retry."
+        )
+    if 'error' in result:
+        raise result['error']
+    return result.get('value')
 
 
 class ImmichAsset:
@@ -49,8 +92,13 @@ class ImmichClient:
     # (connect, read) seconds. Long read timeout tolerates slow ML endpoints.
     DEFAULT_TIMEOUT = (10, 120)
 
+    # Hard wall-clock cap per call, independent of DEFAULT_TIMEOUT — see
+    # _run_with_deadline(). Generous because some endpoints (bulk ops,
+    # duplicate detection on large libraries) are legitimately slow.
+    DEFAULT_HARD_DEADLINE = 600
+
     def __init__(self, url: str, api_key: str, verify_ssl: bool = True,
-                 timeout=None):
+                 timeout=None, hard_deadline: Optional[float] = None):
         """
         Initialize Immich client.
 
@@ -60,11 +108,16 @@ class ImmichClient:
             verify_ssl: Whether to verify SSL certificates
             timeout: Per-request timeout as float or (connect, read) tuple.
                 Defaults to DEFAULT_TIMEOUT.
+            hard_deadline: Hard wall-clock seconds per call, enforced even if
+                the connection looks "alive" the whole time (see
+                _run_with_deadline). Defaults to DEFAULT_HARD_DEADLINE.
         """
         self.url = url.rstrip('/')
         self.api_key = api_key
         self.verify_ssl = verify_ssl
         self.timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
+        self.hard_deadline = (hard_deadline if hard_deadline is not None
+                               else self.DEFAULT_HARD_DEADLINE)
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -160,7 +213,7 @@ class ImmichClient:
         """Make GET request to Immich API."""
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
-        response = self.session.get(url, **kwargs)
+        response = _run_with_deadline(lambda: self.session.get(url, **kwargs), self.hard_deadline)
         self._raise_with_hint(response, 'GET', endpoint)
         return response
 
@@ -168,7 +221,7 @@ class ImmichClient:
         """Make POST request to Immich API."""
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
-        response = self.session.post(url, **kwargs)
+        response = _run_with_deadline(lambda: self.session.post(url, **kwargs), self.hard_deadline)
         self._raise_with_hint(response, 'POST', endpoint)
         return response
 
@@ -176,7 +229,7 @@ class ImmichClient:
         """Make PUT request to Immich API."""
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
-        response = self.session.put(url, **kwargs)
+        response = _run_with_deadline(lambda: self.session.put(url, **kwargs), self.hard_deadline)
         self._raise_with_hint(response, 'PUT', endpoint)
         return response
 
@@ -184,7 +237,7 @@ class ImmichClient:
         """Make PATCH request to Immich API."""
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
-        response = self.session.patch(url, **kwargs)
+        response = _run_with_deadline(lambda: self.session.patch(url, **kwargs), self.hard_deadline)
         self._raise_with_hint(response, 'PATCH', endpoint)
         return response
 
@@ -192,7 +245,7 @@ class ImmichClient:
         """Make DELETE request to Immich API."""
         kwargs.setdefault('timeout', self.timeout)
         url = f"{self.url}{endpoint}"
-        response = self.session.delete(url, **kwargs)
+        response = _run_with_deadline(lambda: self.session.delete(url, **kwargs), self.hard_deadline)
         self._raise_with_hint(response, 'DELETE', endpoint)
         return response
 

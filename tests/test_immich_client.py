@@ -12,7 +12,9 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from immich_client import ImmichClient  # noqa: E402
+import time  # noqa: E402
+
+from immich_client import ImmichClient, _run_with_deadline  # noqa: E402
 
 
 class FakeResponse:
@@ -218,3 +220,44 @@ class TestSearchAssetsByTag:
         assert asset_ids == ['asset-1', 'asset-2']
         _, kwargs = client.session.post.call_args
         assert kwargs['json']['tagIds'] == ['tag-1']
+
+
+class TestRunWithDeadline:
+    """requests' (connect, read) timeout only bounds each individual socket
+    read, not total call duration — a stalled DNS lookup or a proxy that
+    keeps a stuck connection "alive" with periodic bytes can hang forever
+    with no error. This hard wall-clock backstop is what actually caught
+    that in practice; cover it directly rather than only through mocks that
+    always return instantly."""
+
+    def test_returns_value_when_fn_completes_in_time(self):
+        assert _run_with_deadline(lambda: 42, deadline_seconds=1) == 42
+
+    def test_reraises_exception_from_fn(self):
+        def _boom():
+            raise ValueError("network broke")
+        with pytest.raises(ValueError, match="network broke"):
+            _run_with_deadline(_boom, deadline_seconds=1)
+
+    def test_raises_timeout_error_past_deadline(self):
+        def _hang_forever():
+            time.sleep(10)
+            return "too late"
+        start = time.monotonic()
+        with pytest.raises(TimeoutError, match="did not complete within"):
+            _run_with_deadline(_hang_forever, deadline_seconds=0.2)
+        # Must return control at the deadline, not wait for fn() to finish.
+        assert time.monotonic() - start < 2
+
+    def test_client_calls_respect_configured_hard_deadline(self):
+        c = ImmichClient(url="http://immich.test", api_key="fake-key",
+                          hard_deadline=0.2)
+        c.session = MagicMock()
+
+        def _slow_get(*args, **kwargs):
+            time.sleep(10)
+            return FakeResponse(200, {})
+        c.session.get.side_effect = _slow_get
+
+        with pytest.raises(TimeoutError):
+            c._get('/api/server/ping')
