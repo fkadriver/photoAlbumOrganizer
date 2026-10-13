@@ -2,9 +2,11 @@
 Photo/Video grouping functions for similarity matching and hash computation.
 """
 
+import bisect
 import logging
 import os
 import time
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
@@ -195,6 +197,106 @@ def process_photo_hash(photo: Photo, photo_source: PhotoSource, state: Processin
     }
 
 
+def _group_image_photo_data(photo_data: List[dict], similarity_threshold: int,
+                             use_time_window: bool, time_window: int,
+                             min_group_size: int) -> List[list]:
+    """
+    Group already-hashed image photo_data dicts by perceptual hash
+    similarity (and, if enabled, temporal proximity).
+
+    Each photo_data dict needs 'hash' (an imagehash-comparable value) and
+    'datetime' (a datetime or None).
+
+    When a time window is enforced, any pair further apart than it fails
+    the time check regardless of hash distance — so comparing against
+    photos outside that window is guaranteed-wasted work. Brute-force
+    all-pairs comparison here is O(n^2); for a real library (tens of
+    thousands of photos) that's billions of doomed comparisons. Dated
+    photos are indexed by time and each inner loop is binary-searched down
+    to just the candidates that could possibly match, instead of scanning
+    every remaining photo. This changes which comparisons get skipped, not
+    which pairs can match: every candidate still considered would have
+    failed the same checks before, just later. Photos with no datetime
+    (rare — can't be time-pruned either direction) fall back to the
+    original full scan, exactly preserving the "no datetime -> hash alone"
+    behavior below.
+
+    Returns:
+        List of groups, each a list of photo_data dicts (len >= min_group_size)
+    """
+    groups = []
+    used = set()
+    total = len(photo_data)
+    log_interval = max(1, total // 20)  # log every 5%
+
+    sorted_times: List = []
+    sorted_time_idx: List[int] = []
+    undated_idx: List[int] = []
+    if use_time_window:
+        dated = sorted(
+            ((pd['datetime'], k) for k, pd in enumerate(photo_data) if pd.get('datetime')),
+            key=lambda pair: pair[0],
+        )
+        sorted_times = [t for t, _ in dated]
+        sorted_time_idx = [k for _, k in dated]
+        undated_idx = [k for k, pd in enumerate(photo_data) if not pd.get('datetime')]
+
+    for i, data1 in enumerate(photo_data):
+        if i % log_interval == 0:
+            pct = i * 100 // total
+            msg = f"Grouping progress: {i}/{total} ({pct}%) — {len(groups)} groups so far"
+            logging.info(msg)
+            print(f"\r  {msg}", end="", flush=True)
+
+        if i in used:
+            continue
+
+        group = [data1]
+        used.add(i)
+
+        if use_time_window and data1.get('datetime'):
+            lo_time = data1['datetime'] - timedelta(seconds=time_window)
+            hi_time = data1['datetime'] + timedelta(seconds=time_window)
+            lo = bisect.bisect_left(sorted_times, lo_time)
+            hi = bisect.bisect_right(sorted_times, hi_time)
+            candidate_js = sorted_time_idx[lo:hi] + undated_idx
+        else:
+            # use_time_window is False, or this seed has no datetime —
+            # neither can be time-pruned; preserve the full scan.
+            candidate_js = range(i + 1, total)
+
+        for j in candidate_js:
+            if j <= i or j in used:
+                continue
+            data2 = photo_data[j]
+
+            # Check hash similarity
+            hash_diff = data1['hash'] - data2['hash']
+
+            if hash_diff <= similarity_threshold:
+                # Additional temporal check if enabled and both have datetime
+                if use_time_window and data1['datetime'] and data2['datetime']:
+                    time_diff = abs((data1['datetime'] - data2['datetime']).total_seconds())
+                    # If within time window, consider it part of burst
+                    if time_diff <= time_window:
+                        group.append(data2)
+                        used.add(j)
+                elif not use_time_window:
+                    # If time window disabled, rely on hash alone
+                    group.append(data2)
+                    used.add(j)
+                elif not data1['datetime'] or not data2['datetime']:
+                    # If no datetime available, rely on hash alone
+                    group.append(data2)
+                    used.add(j)
+
+        if len(group) >= min_group_size:
+            groups.append(group)
+
+    print()  # newline after progress line
+    return groups
+
+
 def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: ProcessingState,
                         extract_metadata_func, get_datetime_func,
                         similarity_threshold: int, use_time_window: bool, time_window: int,
@@ -320,50 +422,9 @@ def group_similar_photos(photos: List[Photo], photo_source: PhotoSource, state: 
             if len(group) >= min_group_size:
                 groups.append(group)
     else:
-        # Image grouping uses imagehash difference
-        total = len(photo_data)
-        log_interval = max(1, total // 20)  # log every 5%
-        for i, data1 in enumerate(photo_data):
-            if i % log_interval == 0:
-                pct = i * 100 // total
-                msg = f"Grouping progress: {i}/{total} ({pct}%) — {len(groups)} groups so far"
-                logging.info(msg)
-                print(f"\r  {msg}", end="", flush=True)
-
-            if i in used:
-                continue
-
-            group = [data1]
-            used.add(i)
-
-            for j, data2 in enumerate(photo_data[i+1:], start=i+1):
-                if j in used:
-                    continue
-
-                # Check hash similarity
-                hash_diff = data1['hash'] - data2['hash']
-
-                if hash_diff <= similarity_threshold:
-                    # Additional temporal check if enabled and both have datetime
-                    if use_time_window and data1['datetime'] and data2['datetime']:
-                        time_diff = abs((data1['datetime'] - data2['datetime']).total_seconds())
-                        # If within time window, consider it part of burst
-                        if time_diff <= time_window:
-                            group.append(data2)
-                            used.add(j)
-                    elif not use_time_window:
-                        # If time window disabled, rely on hash alone
-                        group.append(data2)
-                        used.add(j)
-                    elif not data1['datetime'] or not data2['datetime']:
-                        # If no datetime available, rely on hash alone
-                        group.append(data2)
-                        used.add(j)
-
-            if len(group) >= min_group_size:
-                groups.append(group)
-
-        print()  # newline after progress line
+        groups = _group_image_photo_data(
+            photo_data, similarity_threshold, use_time_window, time_window, min_group_size
+        )
 
     logging.info(f"Found {len(groups)} groups of similar {media_label}")
     return groups
