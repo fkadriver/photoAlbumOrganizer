@@ -263,6 +263,14 @@ class LocalPhotoSource(PhotoSource):
 class PhotoCache:
     """Cache for downloaded photos to avoid re-downloading."""
 
+    # How many cache_photo() calls to batch before persisting metadata to
+    # disk. The metadata file is informational only (get_cached_photo()
+    # never reads it back — a cache hit is just "file exists on disk"), so
+    # rewriting the whole, ever-growing JSON dict on every single call is
+    # pure waste for a large batch. Callers doing a big batch of writes
+    # should call flush() afterward so the last few aren't left unsaved.
+    _METADATA_SAVE_INTERVAL = 50
+
     def __init__(self, cache_dir: str, max_size_mb: int = 5000):
         """
         Initialize photo cache.
@@ -279,6 +287,14 @@ class PhotoCache:
         # Create metadata file for tracking cache
         self.metadata_file = self.cache_dir / 'cache_metadata.json'
         self._load_metadata()
+
+        # Tracked incrementally from here on — _get_cache_size() is an
+        # O(cache entry count) directory walk, too expensive to call on
+        # every single cache_photo() (it was: with a library-sized cache,
+        # that turned a bulk prefetch of tens of thousands of photos into a
+        # single-threaded, worse-than-O(n^2) pass).
+        self._current_size = self._get_cache_size()
+        self._dirty_writes = 0
 
     def _load_metadata(self):
         """Load cache metadata."""
@@ -300,8 +316,23 @@ class PhotoCache:
         with open(self.metadata_file, 'w') as f:
             json.dump(self.metadata, f)
 
+    def flush(self):
+        """Persist any metadata writes batched since the last save.
+
+        Call this after a batch of cache_photo() calls (e.g. a bulk
+        prefetch) so the most recent ones aren't left unsaved until the
+        next periodic save threshold — or lost entirely if the process
+        exits before then.
+        """
+        with self._lock:
+            if self._dirty_writes:
+                self._save_metadata()
+                self._dirty_writes = 0
+
     def _get_cache_size(self) -> int:
-        """Get current cache size in bytes."""
+        """Get current cache size in bytes (full directory walk — use
+        sparingly; self._current_size is the incrementally-tracked version
+        used everywhere else after __init__)."""
         total = 0
         for path in self.cache_dir.rglob('*'):
             if path.is_file() and path != self.metadata_file:
@@ -310,9 +341,7 @@ class PhotoCache:
 
     def _evict_old_entries(self, needed_space: int):
         """Evict old cache entries to make space."""
-        current_size = self._get_cache_size()
-
-        if current_size + needed_space <= self.max_size:
+        if self._current_size + needed_space <= self.max_size:
             return
 
         # Sort files by access time
@@ -324,7 +353,7 @@ class PhotoCache:
         files.sort()
 
         # Remove oldest files until we have space
-        space_needed = (current_size + needed_space) - self.max_size
+        space_needed = (self._current_size + needed_space) - self.max_size
         freed = 0
 
         for _, path in files:
@@ -341,6 +370,7 @@ class PhotoCache:
 
             freed += size
 
+        self._current_size -= freed
         self._save_metadata()
 
     def get_cached_photo(self, photo_id: str) -> Optional[Path]:
@@ -385,14 +415,19 @@ class PhotoCache:
 
             # Write file
             cache_file.write_bytes(data)
+            self._current_size += len(data)
 
-            # Update metadata
+            # Update metadata (persisted every _METADATA_SAVE_INTERVAL
+            # calls, not every one — see flush() for the final batch).
             self.metadata[safe_id] = {
                 'photo_id': photo_id,
                 'cached_at': datetime.now().isoformat(),
                 'size': len(data)
             }
-            self._save_metadata()
+            self._dirty_writes += 1
+            if self._dirty_writes >= self._METADATA_SAVE_INTERVAL:
+                self._save_metadata()
+                self._dirty_writes = 0
 
         return cache_file
 
@@ -632,6 +667,7 @@ class ImmichPhotoSource(PhotoSource):
                     cached_path = self.cache.cache_photo(photo.id, data)
                     photo.cached_path = cached_path
                     downloaded += 1
+        self.cache.flush()
 
         pct = (downloaded / len(to_download)) * 100 if to_download else 100
         print(f"  Pre-fetched {downloaded}/{len(to_download)} photos ({pct:.0f}%)")
