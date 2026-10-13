@@ -172,11 +172,17 @@ class PhotoOrganizer:
             "video_max_frames": video_max_frames,
         }
 
-        # Configure face detection backend with GPU support
-        from face_backend import get_face_backend
-        backend = get_face_backend(face_backend, gpu=gpu, gpu_device=gpu_device)
-        if backend:
-            set_face_backend(face_backend, gpu=gpu, gpu_device=gpu_device)
+        # Configure face detection backend with GPU support.
+        # set_face_backend() constructs the backend itself (and no-ops to
+        # FACE_DETECTION_ENABLED=False if none is available) — calling
+        # get_face_backend() separately first, just to check truthiness,
+        # would construct a second, throwaway instance for no reason. Each
+        # extra instance is a native resource (a MediaPipe FaceLandmarker,
+        # for example) that becomes orphaned the moment this returns, and
+        # is then at the mercy of whenever the GC happens to collect it —
+        # which, for some native extensions, can trigger an internal
+        # cleanup deadlock at a completely unrelated point later in the run.
+        set_face_backend(face_backend, gpu=gpu, gpu_device=gpu_device)
 
         # Initialize ML quality scorer if enabled
         if enable_ml_quality:
