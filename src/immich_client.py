@@ -4,6 +4,7 @@ Immich API client for interacting with Immich photo server.
 
 import requests
 import threading
+from pathlib import Path
 from typing import List, Dict, Optional
 import io
 from PIL import Image
@@ -191,7 +192,12 @@ class ImmichClient:
             else:
                 scope = 'album.read'
         elif endpoint.startswith('/api/assets'):
-            scope = 'asset.update' if method in ('PUT', 'PATCH', 'DELETE') else 'asset.read'
+            if method == 'POST' and endpoint.rstrip('/') == '/api/assets':
+                scope = 'asset.upload'
+            elif method in ('PUT', 'PATCH', 'DELETE'):
+                scope = 'asset.update'
+            else:
+                scope = 'asset.read'
 
         if not scope:
             return ""
@@ -1233,3 +1239,52 @@ class ImmichClient:
         except Exception as e:
             print(f"Failed to search assets by tag '{tag_name}': {e}")
             return []
+
+    # --- Upload ---
+
+    def upload_asset(self, filepath: str, file_created_at: str,
+                      file_modified_at: Optional[str] = None,
+                      filename: Optional[str] = None,
+                      is_favorite: bool = False) -> Optional[Dict]:
+        """
+        Upload a local file to Immich as a new asset.
+
+        For pushing a reprocessed result (face-swapped/HDR-merged) back as
+        the "best" photo for a group — the group's other photos stay as
+        real Immich assets to archive/trash via the existing bulk actions;
+        this is only for the one new file that doesn't exist there yet.
+
+        Args:
+            filepath: Path to the local file to upload
+            file_created_at: ISO 8601 timestamp for the asset's capture
+                time (pass through the original photo's timestamp so it
+                sorts correctly in the timeline)
+            file_modified_at: ISO 8601 timestamp for last modification;
+                defaults to file_created_at
+            filename: Filename to report to Immich; defaults to the local
+                file's own name
+            is_favorite: Mark the new asset as a favorite
+
+        Returns:
+            Dict with 'id' and 'status' ('created' or 'duplicate' — Immich
+            matches by checksum, so a 'duplicate' result points at an
+            already-existing asset rather than creating a new one), or
+            None on failure
+        """
+        try:
+            path = Path(filepath)
+            data = {
+                'fileCreatedAt': file_created_at,
+                'fileModifiedAt': file_modified_at or file_created_at,
+            }
+            if is_favorite:
+                data['isFavorite'] = 'true'
+
+            with open(path, 'rb') as f:
+                files = {'assetData': (filename or path.name, f, 'application/octet-stream')}
+                response = self._post('/api/assets', data=data, files=files)
+
+            return response.json()
+        except Exception as e:
+            print(f"Failed to upload asset '{filepath}': {e}")
+            return None

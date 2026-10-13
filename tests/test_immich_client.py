@@ -147,6 +147,9 @@ class TestPermissionHints:
         ("PUT", "/api/tags", "tag.create"),  # bulk upsert — same scope as POST
         ("PUT", "/api/tags/t1", "tag.update"),
         ("PUT", "/api/tags/t1/assets", "tag.asset"),
+        ("POST", "/api/assets", "asset.upload"),
+        ("PUT", "/api/assets/a1", "asset.update"),
+        ("GET", "/api/assets/a1", "asset.read"),
     ])
     def test_hint_names_correct_scope(self, client, method, endpoint, expected_scope):
         hint = client._permission_hint(method, endpoint)
@@ -279,3 +282,68 @@ class TestRunWithDeadline:
 
         with pytest.raises(TimeoutError):
             c._get('/api/server/ping')
+
+
+class TestUploadAsset:
+    def test_posts_multipart_with_required_fields(self, client, tmp_path):
+        f = tmp_path / "result.jpg"
+        f.write_bytes(b"fake-jpeg-bytes")
+        client.session.post.return_value = FakeResponse(200, {'id': 'new-id', 'status': 'created'})
+
+        result = client.upload_asset(str(f), file_created_at='2024-01-01T12:00:00.000Z')
+
+        assert result == {'id': 'new-id', 'status': 'created'}
+        url, kwargs = client.session.post.call_args
+        assert url[0] == "http://immich.test/api/assets"
+        assert kwargs['data']['fileCreatedAt'] == '2024-01-01T12:00:00.000Z'
+        # Defaults fileModifiedAt to fileCreatedAt when not given.
+        assert kwargs['data']['fileModifiedAt'] == '2024-01-01T12:00:00.000Z'
+        assert 'assetData' in kwargs['files']
+        assert kwargs['files']['assetData'][0] == 'result.jpg'
+
+    def test_uses_explicit_filename_and_modified_at(self, client, tmp_path):
+        f = tmp_path / "result.jpg"
+        f.write_bytes(b"x")
+        client.session.post.return_value = FakeResponse(200, {'id': 'a', 'status': 'created'})
+
+        client.upload_asset(str(f), file_created_at='2024-01-01T12:00:00.000Z',
+                             file_modified_at='2024-06-01T00:00:00.000Z',
+                             filename='renamed.jpg')
+
+        _, kwargs = client.session.post.call_args
+        assert kwargs['data']['fileModifiedAt'] == '2024-06-01T00:00:00.000Z'
+        assert kwargs['files']['assetData'][0] == 'renamed.jpg'
+
+    def test_is_favorite_sets_form_field(self, client, tmp_path):
+        f = tmp_path / "result.jpg"
+        f.write_bytes(b"x")
+        client.session.post.return_value = FakeResponse(200, {'id': 'a', 'status': 'created'})
+
+        client.upload_asset(str(f), file_created_at='2024-01-01T12:00:00.000Z', is_favorite=True)
+
+        _, kwargs = client.session.post.call_args
+        assert kwargs['data']['isFavorite'] == 'true'
+
+    def test_returns_duplicate_status_from_immich(self, client, tmp_path):
+        f = tmp_path / "result.jpg"
+        f.write_bytes(b"x")
+        client.session.post.return_value = FakeResponse(
+            200, {'id': 'existing-id', 'status': 'duplicate'})
+
+        result = client.upload_asset(str(f), file_created_at='2024-01-01T12:00:00.000Z')
+
+        assert result['status'] == 'duplicate'
+
+    def test_returns_none_on_error(self, client, tmp_path):
+        f = tmp_path / "result.jpg"
+        f.write_bytes(b"x")
+        client.session.post.return_value = FakeResponse(400)
+
+        result = client.upload_asset(str(f), file_created_at='2024-01-01T12:00:00.000Z')
+
+        assert result is None
+
+    def test_returns_none_when_file_missing(self, client, tmp_path):
+        result = client.upload_asset(str(tmp_path / "nope.jpg"),
+                                      file_created_at='2024-01-01T12:00:00.000Z')
+        assert result is None
