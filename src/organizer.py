@@ -992,8 +992,14 @@ class PhotoOrganizer:
                 best_photo_data = find_best_photo(
                     group, self.photo_source, quality_scorer=self.ml_quality_scorer)
             # Never discard the only geotagged copy of an otherwise-identical
-            # duplicate just because quality scoring can't see GPS data.
-            best_photo_data = prefer_geotagged_duplicate(group, best_photo_data)
+            # duplicate just because quality scoring can't see GPS data. For
+            # groups Immich itself already flagged as duplicates, no exact
+            # timestamp match is required — it's already vouched for, and
+            # that field can be transiently inconsistent if Immich's own EXIF
+            # extraction hadn't finished for one copy yet when this ran.
+            group_is_known_duplicate = bool(group[0]['photo'].metadata.get('immich_duplicate_id'))
+            best_photo_data = prefer_geotagged_duplicate(
+                group, best_photo_data, group_is_known_duplicate=group_is_known_duplicate)
             best_photo = best_photo_data['photo']
 
             # Determine which modifications apply to this group

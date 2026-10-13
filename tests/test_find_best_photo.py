@@ -131,3 +131,28 @@ class TestPreferGeotaggedDuplicate:
         result = image_processing.prefer_geotagged_duplicate(group, best)
 
         assert result['photo'].id == 'a'
+
+    def test_known_duplicate_group_ignores_mismatched_timestamp(self):
+        # Observed in practice: Immich's own EXIF extraction hadn't finished
+        # for one copy yet, so exif_dateTimeOriginal didn't match (or was
+        # missing) even though Immich's server-side detection already
+        # asserts these are duplicates of each other.
+        best = _photo_data('a', {'exif_dateTimeOriginal': 't1'})  # no GPS
+        sibling = _photo_data('b', {'exif_dateTimeOriginal': 't2',  # different/incomplete timestamp
+                                     'exif_latitude': '1.0', 'exif_longitude': '2.0'})
+        group = [best, sibling]
+
+        result = image_processing.prefer_geotagged_duplicate(
+            group, best, group_is_known_duplicate=True)
+
+        assert result['photo'].id == 'b'
+
+    def test_known_duplicate_group_still_keeps_best_when_no_sibling_has_gps(self):
+        best = _photo_data('a', {})
+        other = _photo_data('b', {})
+        group = [best, other]
+
+        result = image_processing.prefer_geotagged_duplicate(
+            group, best, group_is_known_duplicate=True)
+
+        assert result['photo'].id == 'a'

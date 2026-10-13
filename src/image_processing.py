@@ -197,38 +197,55 @@ def _has_gps(metadata: dict) -> bool:
     return bool(metadata.get('exif_latitude') or metadata.get('exif_longitude'))
 
 
-def prefer_geotagged_duplicate(group, best_photo_data):
+def prefer_geotagged_duplicate(group, best_photo_data, group_is_known_duplicate: bool = False):
     """
-    If the selected best photo shares its capture timestamp with another
-    photo in the group (i.e. they're really just different copies/exports of
-    the same shot, not meaningfully different images — common for a photo
-    re-saved without EXIF, or a messaging-app copy that strips GPS) but is
-    missing GPS coordinates that sibling has, prefer that sibling instead.
+    If the selected best photo is missing GPS coordinates that another photo
+    in the group has, prefer that geotagged sibling instead — unless we have
+    no real basis to believe they're the same shot.
 
     Face/quality scoring has no way to know GPS data exists, so on a true
     near-duplicate it can just as easily pick the metadata-stripped copy —
     and once the other copy is deleted, that location data is gone for good.
 
+    "Same shot" is established one of two ways:
+    - group_is_known_duplicate=True: the group came from Immich's own
+      server-side duplicate detection, which already asserts every member
+      is a near-identical copy — no further check needed. This also covers
+      the case where Immich's own EXIF extraction hadn't finished yet for
+      one copy at the moment this ran (observed in practice: a photo
+      lacking GPS *and* a mismatched/missing exif_dateTimeOriginal at
+      process time, which had both filled in moments later).
+    - otherwise: the best photo must share its exact capture timestamp with
+      the geotagged sibling, since a general similarity/person-based group
+      can otherwise contain genuinely different photos (e.g. a burst) where
+      GPS presence isn't a trustworthy tiebreaker.
+
     Args:
         group: List of photo_data dictionaries
         best_photo_data: The currently selected best photo_data dict
+        group_is_known_duplicate: True if this group came from Immich's
+            native duplicate detection (--immich-use-duplicates)
 
     Returns:
         photo_data dict to use as best — either best_photo_data unchanged,
-        or a same-timestamp sibling that has GPS data
+        or a sibling that has GPS data
     """
     best_metadata = best_photo_data.get('metadata') or {}
     if _has_gps(best_metadata):
         return best_photo_data
 
     best_timestamp = best_metadata.get('exif_dateTimeOriginal')
-    if not best_timestamp:
+    if not group_is_known_duplicate and not best_timestamp:
         return best_photo_data
 
     for photo_data in group:
         if photo_data is best_photo_data:
             continue
         metadata = photo_data.get('metadata') or {}
+        if group_is_known_duplicate:
+            if _has_gps(metadata):
+                return photo_data
+            continue
         if metadata.get('exif_dateTimeOriginal') == best_timestamp and _has_gps(metadata):
             return photo_data
 
