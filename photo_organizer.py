@@ -391,7 +391,8 @@ Examples:
             print("Connecting to Apple Photos library…")
             apple_source = ApplePhotoSource()
         start_viewer(report_path, port=args.port, immich_client=immich_client,
-                     apple_source=apple_source)
+                     apple_source=apple_source, report_dir=args.report_dir,
+                     output_dir=args.output)
         sys.exit(0)
 
     # Handle --cleanup early (no state file or validation needed)
